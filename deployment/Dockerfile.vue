@@ -10,6 +10,9 @@ COPY nginx.conf.template /etc/nginx/nginx.conf.template
 # 复制预打包的dist文件夹
 COPY dist /usr/share/nginx/html
 
+# 复制配置模板文件
+COPY config.template.js /usr/share/nginx/html/config.template.js
+
 # 创建运行时配置脚本
 COPY docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh

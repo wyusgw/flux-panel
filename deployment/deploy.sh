@@ -39,6 +39,17 @@ show_help() {
     echo "  VUE_APP_API_URL=http://192.168.1.100:6365/api/v1 VUE_APP_WS_URL=ws://192.168.1.100:6365 $0 start"
 }
 
+# 检测可用的Docker Compose命令
+get_docker_compose_cmd() {
+    if command -v docker-compose &> /dev/null; then
+        echo "docker-compose"
+    elif docker compose version &> /dev/null; then
+        echo "docker compose"
+    else
+        echo ""
+    fi
+}
+
 # 检查docker和docker-compose是否安装
 check_dependencies() {
     if ! command -v docker &> /dev/null; then
@@ -47,11 +58,15 @@ check_dependencies() {
         exit 1
     fi
     
-    if ! command -v docker-compose &> /dev/null; then
+    DOCKER_COMPOSE_CMD=$(get_docker_compose_cmd)
+    if [ -z "$DOCKER_COMPOSE_CMD" ]; then
         echo -e "${RED}错误: Docker Compose 未安装${NC}"
         echo "请先安装Docker Compose: https://docs.docker.com/compose/install/"
+        echo "或者更新Docker到最新版本（包含Compose插件）"
         exit 1
     fi
+    
+    echo -e "${GREEN}检测到Docker Compose命令: $DOCKER_COMPOSE_CMD${NC}"
 }
 
 # 从docker-compose.yml读取端口配置
@@ -88,7 +103,7 @@ start_services() {
     # 切换到脚本目录
     cd "$SCRIPT_DIR"
     
-    docker-compose up -d
+    $DOCKER_COMPOSE_CMD up -d
     
     if [ $? -eq 0 ]; then
         echo -e "${GREEN}服务启动成功!${NC}"
@@ -125,7 +140,7 @@ start_services() {
 stop_services() {
     echo -e "${YELLOW}停止所有服务...${NC}"
     cd "$SCRIPT_DIR"
-    docker-compose down
+    $DOCKER_COMPOSE_CMD down
     echo -e "${GREEN}服务已停止${NC}"
 }
 
@@ -133,7 +148,7 @@ stop_services() {
 restart_services() {
     echo -e "${YELLOW}重启所有服务...${NC}"
     cd "$SCRIPT_DIR"
-    docker-compose restart
+    $DOCKER_COMPOSE_CMD restart
     echo -e "${GREEN}服务重启完成${NC}"
 }
 
@@ -141,20 +156,20 @@ restart_services() {
 build_frontend() {
     echo -e "${YELLOW}重新构建前端镜像...${NC}"
     cd "$SCRIPT_DIR"
-    docker-compose build frontend --no-cache
+    $DOCKER_COMPOSE_CMD build frontend --no-cache
     echo -e "${GREEN}前端镜像构建完成${NC}"
 }
 
 # 查看日志
 show_logs() {
     cd "$SCRIPT_DIR"
-    docker-compose logs -f
+    $DOCKER_COMPOSE_CMD logs -f
 }
 
 # 查看状态
 show_status() {
     cd "$SCRIPT_DIR"
-    docker-compose ps
+    $DOCKER_COMPOSE_CMD ps
 }
 
 # 清理未使用的容器和镜像
@@ -171,7 +186,7 @@ clean_all() {
     echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
         cd "$SCRIPT_DIR"
-        docker-compose down -v
+        $DOCKER_COMPOSE_CMD down -v
         docker system prune -f
         echo -e "${GREEN}完全清理完成${NC}"
     else
@@ -182,6 +197,9 @@ clean_all() {
 # 主程序
 main() {
     check_dependencies
+    
+    # 设置全局的Docker Compose命令变量
+    DOCKER_COMPOSE_CMD=$(get_docker_compose_cmd)
     
     case "${1:-start}" in
         start)

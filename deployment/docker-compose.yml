@@ -44,12 +44,12 @@ services:
     container_name: gost-backend
     restart: unless-stopped
     environment:
-      DB_HOST: mysql # 数据库地址
-      DB_NAME: ${DB_NAME} # 数据库名
-      DB_USER: ${DB_USER} # 数据库用户
-      DB_PASSWORD: ${DB_PASSWORD} # 数据库密码
-      JWT_SECRET: ${JWT_SECRET} # JWT密钥
-      LOG_DIR: /app/logs # 日志目录
+      DB_HOST: mysql 
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD} 
+      JWT_SECRET: ${JWT_SECRET} 
+      LOG_DIR: /app/logs
       SERVER_ADDR: ${SERVER_HOST} # 服务器地址  ip:port 不能套cdn  用于节点连接
       JAVA_OPTS: >-
         -XX:+UseContainerSupport
@@ -101,10 +101,10 @@ services:
     ports:
       - "80:80"
     environment:
-      BACKEND_HOST: backend # 后端地址
-      BACKEND_PORT: 6365 # 后端端口
-      VUE_APP_API_URL: ${VUE_APP_API_URL} # 前端API地址
-      VUE_APP_WS_URL: ${VUE_APP_WS_URL} # 前端WebSocket地址
+      BACKEND_HOST: backend
+      BACKEND_PORT: 6365
+      VUE_APP_API_URL: ${VUE_APP_API_URL}
+      VUE_APP_WS_URL: ${VUE_APP_WS_URL}
     depends_on:
       backend:
         condition: service_healthy

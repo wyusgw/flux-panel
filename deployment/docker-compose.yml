@@ -6,13 +6,13 @@ services:
     container_name: gost-mysql
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: rootpwd # 数据库密码
-      MYSQL_DATABASE: gost # 数据库名
-      MYSQL_USER: gost # 数据库用户
-      MYSQL_PASSWORD: pwd # 数据库密码
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD} # 数据库密码
+      MYSQL_DATABASE: ${DB_NAME} # 数据库名
+      MYSQL_USER: ${DB_USER} # 数据库用户
+      MYSQL_PASSWORD: ${DB_PASSWORD} # 数据库密码
       TZ: Asia/Shanghai
-    ports:
-      - "3306:3306"
+    # ports:
+    #   - "3306:3306"  # 不暴露到公网，只在容器内部访问
     volumes:
       - mysql_data:/var/lib/mysql
       - ./gost.sql:/docker-entrypoint-initdb.d/init.sql:ro
@@ -29,8 +29,8 @@ services:
     image: redis:alpine
     container_name: gost-redis
     restart: unless-stopped
-    ports:
-      - "6379:6379"
+    # ports:
+    #   - "6379:6379"  # 不暴露到公网，只在容器内部访问
     networks:
       - gost-network
     healthcheck:
@@ -46,12 +46,12 @@ services:
     restart: unless-stopped
     environment:
       DB_HOST: mysql # 数据库地址
-      DB_NAME: gost # 数据库名
-      DB_USER: gost # 数据库用户
-      DB_PASSWORD: pwd # 数据库密码
-      JWT_SECRET: test123 # JWT密钥
+      DB_NAME: ${DB_NAME} # 数据库名
+      DB_USER: ${DB_USER} # 数据库用户
+      DB_PASSWORD: ${DB_PASSWORD} # 数据库密码
+      JWT_SECRET: ${JWT_SECRET} # JWT密钥
       LOG_DIR: /app/logs # 日志目录
-      SERVER_ADDR: 127.0.0.1:6365 # 服务器地址  ip:port 不能套cdn  用于节点连接
+      SERVER_ADDR: ${SERVER_HOST} # 服务器地址  ip:port 不能套cdn  用于节点连接
       JAVA_OPTS: "-Xms256m -Xmx512m -Dfile.encoding=UTF-8 -Duser.timezone=Asia/Shanghai"
     ports:
       - "6365:6365"
@@ -84,8 +84,8 @@ services:
     environment:
       BACKEND_HOST: backend # 后端地址
       BACKEND_PORT: 6365 # 后端端口
-      VUE_APP_API_URL: ${VUE_APP_API_URL:-http://localhost:6365/api/v1} # 前端API地址
-      VUE_APP_WS_URL: ${VUE_APP_WS_URL:-ws://localhost:6365} # 前端WebSocket地址
+      VUE_APP_API_URL: ${VUE_APP_API_URL} # 前端API地址
+      VUE_APP_WS_URL: ${VUE_APP_WS_URL} # 前端WebSocket地址
     depends_on:
       backend:
         condition: service_healthy

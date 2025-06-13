@@ -28,19 +28,18 @@ show_help() {
     echo "  -h, --help    显示此帮助信息"
     echo ""
     echo "环境变量配置:"
-    echo "  SERVER_HOST       服务器地址 (默认: localhost:6365)"
-    echo "  VUE_APP_API_URL   前端API地址 (默认: http://localhost:6365/api/v1)"
-    echo "  VUE_APP_WS_URL    WebSocket地址 (默认: ws://localhost:6365)"
+    echo "  DB_NAME           数据库名 (必须设置)"
+    echo "  DB_USER           数据库用户 (必须设置)"
+    echo "  DB_PASSWORD       数据库密码 (必须设置)"
+    echo "  JWT_SECRET        JWT密钥 (必须设置)"
+    echo "  SERVER_HOST       服务器地址 (必须设置，格式: ip:port)"
+    echo ""
+    echo -e "${RED}注意: 所有环境变量都是必需的，不提供默认配置！${NC}"
     echo ""
     echo "示例:"
-    echo "  # 启动服务"
-    echo "  $0 start"
+    echo "  DB_NAME=gost DB_USER=gost DB_PASSWORD=yourpwd JWT_SECRET=yoursecret SERVER_HOST=192.168.1.100:6365 $0 start"
     echo ""
-    echo "  # 使用服务器IP启动"
-    echo "  SERVER_HOST=192.168.1.100:6365 $0 start"
-    echo ""
-    echo "  # 自定义完整地址启动"
-    echo "  VUE_APP_API_URL=http://192.168.1.100:6365/api/v1 VUE_APP_WS_URL=ws://192.168.1.100:6365 $0 start"
+
 }
 
 # 检测可用的Docker Compose命令
@@ -95,20 +94,34 @@ get_db_config() {
 start_services() {
     echo -e "${GREEN}启动Gost转发面板服务...${NC}"
     
-    # 如果设置了 SERVER_HOST，自动生成 API 和 WS 地址
-    if [ -n "$SERVER_HOST" ]; then
-        export VUE_APP_API_URL="http://${SERVER_HOST}/api/v1"
-        export VUE_APP_WS_URL="ws://${SERVER_HOST}"
-    else
-        # 设置默认环境变量
-        export VUE_APP_API_URL=${VUE_APP_API_URL:-"http://localhost:6365/api/v1"}
-        export VUE_APP_WS_URL=${VUE_APP_WS_URL:-"ws://localhost:6365"}
+    # 检查必需的环境变量
+    local missing_vars=()
+    
+    [ -z "$DB_NAME" ] && missing_vars+=("DB_NAME")
+    [ -z "$DB_USER" ] && missing_vars+=("DB_USER")
+    [ -z "$DB_PASSWORD" ] && missing_vars+=("DB_PASSWORD")
+    [ -z "$JWT_SECRET" ] && missing_vars+=("JWT_SECRET")
+    [ -z "$SERVER_HOST" ] && missing_vars+=("SERVER_HOST")
+    
+    if [ ${#missing_vars[@]} -gt 0 ]; then
+        echo -e "${RED}错误: 缺少必需的环境变量！${NC}"
+        echo -e "${YELLOW}缺少的变量: ${missing_vars[*]}${NC}"
+        echo ""
+        echo -e "${YELLOW}使用方法:${NC}"
+        echo "DB_NAME=gost DB_USER=gost DB_PASSWORD=yourpwd JWT_SECRET=yoursecret SERVER_HOST=your.server.ip:6365 $0 start"
+        exit 1
     fi
     
+    # 设置环境变量
+    export VUE_APP_API_URL="http://${SERVER_HOST}/api/v1"
+    export VUE_APP_WS_URL="ws://${SERVER_HOST}"
+    
     echo -e "${YELLOW}环境变量配置:${NC}"
-    if [ -n "$SERVER_HOST" ]; then
-        echo "SERVER_HOST: $SERVER_HOST"
-    fi
+    echo "DB_NAME: $DB_NAME"
+    echo "DB_USER: $DB_USER"
+    echo "DB_PASSWORD: $DB_PASSWORD"
+    echo "JWT_SECRET: $JWT_SECRET"
+    echo "SERVER_HOST: $SERVER_HOST"
     echo "VUE_APP_API_URL: $VUE_APP_API_URL"
     echo "VUE_APP_WS_URL: $VUE_APP_WS_URL"
     echo ""
@@ -143,10 +156,10 @@ EOF
         DB_PASSWORD=$(get_db_config "MYSQL_PASSWORD")
         
         echo -e "${YELLOW}访问地址:${NC}"
-        echo "  前端界面: http://localhost:${FRONTEND_PORT:-80}"
-        echo "  后端API: http://localhost:${BACKEND_PORT:-6365}"
-        echo "  数据库: localhost:${MYSQL_PORT:-3306} (用户名: ${DB_USER:-gost}, 密码: ${DB_PASSWORD:-pwd})"
-        echo "  Redis: localhost:${REDIS_PORT:-6379}"
+        # 提取IP地址（去掉端口）
+        SERVER_IP=$(echo "$SERVER_HOST" | cut -d':' -f1)
+        echo "  前端界面: http://${SERVER_IP}:${FRONTEND_PORT:-80}"
+        echo "  后端API: http://${SERVER_HOST}"
         echo ""
         echo -e "${YELLOW}默认管理员账号:${NC}"
         echo "  用户名: admin_user"

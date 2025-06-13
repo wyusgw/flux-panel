@@ -82,8 +82,8 @@ services:
     environment:
       BACKEND_HOST: backend # 后端地址
       BACKEND_PORT: 6365 # 后端端口
-      VUE_APP_API_URL: http://localhost:6365/api/v1 # 前端API地址
-      VUE_APP_WS_URL: ws://localhost:6365 # 前端WebSocket地址
+      VUE_APP_API_URL: ${VUE_APP_API_URL:-http://localhost:6365/api/v1} # 前端API地址
+      VUE_APP_WS_URL: ${VUE_APP_WS_URL:-ws://localhost:6365} # 前端WebSocket地址
     depends_on:
       backend:
         condition: service_healthy

@@ -28,6 +28,7 @@ show_help() {
     echo "  -h, --help    显示此帮助信息"
     echo ""
     echo "环境变量配置:"
+    echo "  SERVER_HOST       服务器地址 (默认: localhost:6365)"
     echo "  VUE_APP_API_URL   前端API地址 (默认: http://localhost:6365/api/v1)"
     echo "  VUE_APP_WS_URL    WebSocket地址 (默认: ws://localhost:6365)"
     echo ""
@@ -35,7 +36,10 @@ show_help() {
     echo "  # 启动服务"
     echo "  $0 start"
     echo ""
-    echo "  # 自定义服务器地址启动"
+    echo "  # 使用服务器IP启动"
+    echo "  SERVER_HOST=192.168.1.100:6365 $0 start"
+    echo ""
+    echo "  # 自定义完整地址启动"
     echo "  VUE_APP_API_URL=http://192.168.1.100:6365/api/v1 VUE_APP_WS_URL=ws://192.168.1.100:6365 $0 start"
 }
 
@@ -91,17 +95,36 @@ get_db_config() {
 start_services() {
     echo -e "${GREEN}启动Gost转发面板服务...${NC}"
     
-    # 设置默认环境变量
-    export VUE_APP_API_URL=${VUE_APP_API_URL:-"http://localhost:6365/api/v1"}
-    export VUE_APP_WS_URL=${VUE_APP_WS_URL:-"ws://localhost:6365"}
+    # 如果设置了 SERVER_HOST，自动生成 API 和 WS 地址
+    if [ -n "$SERVER_HOST" ]; then
+        export VUE_APP_API_URL="http://${SERVER_HOST}/api/v1"
+        export VUE_APP_WS_URL="ws://${SERVER_HOST}"
+    else
+        # 设置默认环境变量
+        export VUE_APP_API_URL=${VUE_APP_API_URL:-"http://localhost:6365/api/v1"}
+        export VUE_APP_WS_URL=${VUE_APP_WS_URL:-"ws://localhost:6365"}
+    fi
     
     echo -e "${YELLOW}环境变量配置:${NC}"
+    if [ -n "$SERVER_HOST" ]; then
+        echo "SERVER_HOST: $SERVER_HOST"
+    fi
     echo "VUE_APP_API_URL: $VUE_APP_API_URL"
     echo "VUE_APP_WS_URL: $VUE_APP_WS_URL"
     echo ""
     
     # 切换到脚本目录
     cd "$SCRIPT_DIR"
+    
+    # 生成前端配置文件
+    echo -e "${YELLOW}生成前端配置文件...${NC}"
+    cat > dist/config.js << EOF
+window.APP_CONFIG = {
+  VUE_APP_API_URL: "$VUE_APP_API_URL",
+  VUE_APP_WS_URL: "$VUE_APP_WS_URL"
+}
+EOF
+    echo -e "${GREEN}配置文件已生成: dist/config.js${NC}"
     
     $DOCKER_COMPOSE_CMD up -d
     

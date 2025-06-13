@@ -1,3 +1,4 @@
+
 version: "3.7"
 services:
   mysql:
@@ -44,38 +45,19 @@ services:
     container_name: gost-backend
     restart: unless-stopped
     environment:
-      DB_HOST: mysql 
-      DB_NAME: ${DB_NAME}
-      DB_USER: ${DB_USER}
-      DB_PASSWORD: ${DB_PASSWORD} 
-      JWT_SECRET: ${JWT_SECRET} 
-      LOG_DIR: /app/logs
+      DB_HOST: mysql # 数据库地址
+      DB_NAME: ${DB_NAME} # 数据库名
+      DB_USER: ${DB_USER} # 数据库用户
+      DB_PASSWORD: ${DB_PASSWORD} # 数据库密码
+      JWT_SECRET: ${JWT_SECRET} # JWT密钥
+      LOG_DIR: /app/logs # 日志目录
       SERVER_ADDR: ${SERVER_HOST} # 服务器地址  ip:port 不能套cdn  用于节点连接
-      JAVA_OPTS: >-
-        -XX:+UseContainerSupport
-        -XX:InitialRAMPercentage=25.0
-        -XX:MaxRAMPercentage=75.0
-        -XX:MinRAMPercentage=50.0
-        -XX:+UseG1GC
-        -XX:MaxGCPauseMillis=200
-        -XX:+UseStringDeduplication
-        -XX:+UseCompressedOops
-        -XX:+UseCompressedClassPointers
-        -XX:MaxMetaspaceSize=128m
-        -Dfile.encoding=UTF-8
-        -Duser.timezone=Asia/Shanghai
-        -Djava.awt.headless=true
+      JAVA_OPTS: "-Xms256m -Xmx512m -Dfile.encoding=UTF-8 -Duser.timezone=Asia/Shanghai"
     ports:
       - "6365:6365"
     volumes:
       - ./admin-0.0.1-SNAPSHOT.jar:/app/admin.jar:ro
       - ./applog:/app/logs
-    deploy:
-      resources:
-        limits:
-          memory: 512M  
-        reservations:
-          memory: 128M 
     command: sh -c "java $$JAVA_OPTS -jar /app/admin.jar"
     depends_on:
       mysql:
@@ -100,10 +82,10 @@ services:
     ports:
       - "80:80"
     environment:
-      BACKEND_HOST: backend
-      BACKEND_PORT: 6365
-      VUE_APP_API_URL: ${VUE_APP_API_URL}
-      VUE_APP_WS_URL: ${VUE_APP_WS_URL}
+      BACKEND_HOST: backend # 后端地址
+      BACKEND_PORT: 6365 # 后端端口
+      VUE_APP_API_URL: ${VUE_APP_API_URL} # 前端API地址
+      VUE_APP_WS_URL: ${VUE_APP_WS_URL} # 前端WebSocket地址
     depends_on:
       backend:
         condition: service_healthy

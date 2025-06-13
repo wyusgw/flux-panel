@@ -11,8 +11,8 @@ services:
       MYSQL_USER: ${DB_USER} # 数据库用户
       MYSQL_PASSWORD: ${DB_PASSWORD} # 数据库密码
       TZ: Asia/Shanghai
-    # ports:
-    #   - "3306:3306"  # 不暴露到公网，只在容器内部访问
+    ports:
+      - "127.0.0.1:3306:3306"  # 只绑定到本机内部，不暴露到公网
     volumes:
       - mysql_data:/var/lib/mysql
       - ./gost.sql:/docker-entrypoint-initdb.d/init.sql:ro
@@ -29,8 +29,8 @@ services:
     image: redis:alpine
     container_name: gost-redis
     restart: unless-stopped
-    # ports:
-    #   - "6379:6379"  # 不暴露到公网，只在容器内部访问
+    ports:
+      - "127.0.0.1:6379:6379"  # 只绑定到本机内部，不暴露到公网
     networks:
       - gost-network
     healthcheck:

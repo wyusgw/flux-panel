@@ -57,7 +57,7 @@ services:
         -XX:MaxRAMPercentage=75.0
         -XX:MinRAMPercentage=50.0
         -XX:+UseG1GC
-        -XX:MaxGCPause=200ms
+        -XX:MaxGCPauseMillis=200
         -XX:+UseStringDeduplication
         -XX:+UseCompressedOops
         -XX:+UseCompressedClassPointers
@@ -65,7 +65,6 @@ services:
         -Dfile.encoding=UTF-8
         -Duser.timezone=Asia/Shanghai
         -Djava.awt.headless=true
-        --add-opens=java.base/java.lang=ALL-UNNAMED
     ports:
       - "6365:6365"
     volumes:

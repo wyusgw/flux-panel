@@ -60490,7 +60490,7 @@ function useAriaButton$7(props, ref) {
   };
 }
 "use client";
-var domAnimation$9 = () => __vitePreload(() => import("./index-Yh65tUeq.js"), true ? [] : void 0, import.meta.url).then((res2) => res2.default);
+var domAnimation$9 = () => __vitePreload(() => import("./index-ZrWL6Zdd.js"), true ? [] : void 0, import.meta.url).then((res2) => res2.default);
 var Ripple = (props) => {
   const { ripples = [], motionProps, color: color2 = "currentColor", style: style2, onClear } = props;
   return /* @__PURE__ */ jsxRuntimeExports.jsx(jsxRuntimeExports.Fragment, { children: ripples.map((ripple) => {
@@ -79636,7 +79636,7 @@ function $8ac8429251c45e4b$export$dbc0f175b25fb0fb$2(props, state2, ref) {
   };
 }
 "use client";
-var domAnimation$8 = () => __vitePreload(() => import("./index-Yh65tUeq.js"), true ? [] : void 0, import.meta.url).then((res2) => res2.default);
+var domAnimation$8 = () => __vitePreload(() => import("./index-ZrWL6Zdd.js"), true ? [] : void 0, import.meta.url).then((res2) => res2.default);
 var NavbarMenu = forwardRef$4((props, ref) => {
   var _a2, _b;
   const { className, children, portalContainer, motionProps, style: style2, ...otherProps } = props;
@@ -80176,7 +80176,7 @@ function useNavbar(originalProps) {
   };
 }
 "use client";
-var domAnimation$7 = () => __vitePreload(() => import("./index-Yh65tUeq.js"), true ? [] : void 0, import.meta.url).then((res2) => res2.default);
+var domAnimation$7 = () => __vitePreload(() => import("./index-ZrWL6Zdd.js"), true ? [] : void 0, import.meta.url).then((res2) => res2.default);
 var Navbar$1 = forwardRef$4((props, ref) => {
   const { children, ...otherProps } = props;
   const context = useNavbar({ ...otherProps, ref });
@@ -81000,7 +81000,7 @@ const VERSION = "1.2.11";
 const getInitialConfig = () => {
   if (typeof window === "undefined") {
     return {
-      name: "哆啦A梦",
+      name: "flux-panel",
       version: VERSION
     };
   }
@@ -81012,7 +81012,7 @@ const getInitialConfig = () => {
     };
   }
   return {
-    name: "哆啦A梦",
+    name: "flux-panel",
     version: VERSION
   };
 };
@@ -84108,7 +84108,7 @@ function getViewportSize() {
   };
 }
 "use client";
-var domAnimation$6 = () => __vitePreload(() => import("./index-Yh65tUeq.js"), true ? [] : void 0, import.meta.url).then((res2) => res2.default);
+var domAnimation$6 = () => __vitePreload(() => import("./index-ZrWL6Zdd.js"), true ? [] : void 0, import.meta.url).then((res2) => res2.default);
 var ModalContent = (props) => {
   const { as, children, role = "dialog", ...otherProps } = props;
   const {
@@ -145746,7 +145746,7 @@ function usePopover$1(originalProps) {
   };
 }
 "use client";
-var domAnimation$5 = () => __vitePreload(() => import("./index-Yh65tUeq.js"), true ? [] : void 0, import.meta.url).then((res2) => res2.default);
+var domAnimation$5 = () => __vitePreload(() => import("./index-ZrWL6Zdd.js"), true ? [] : void 0, import.meta.url).then((res2) => res2.default);
 var FreeSoloPopoverWrapper$1 = forwardRef$4(
   ({
     children,
@@ -145861,7 +145861,7 @@ var [PopoverProvider$1, usePopoverContext$1] = createContext2({
   errorMessage: "usePopoverContext: `context` is undefined. Seems you forgot to wrap all popover components within `<Popover />`"
 });
 "use client";
-var domAnimation$4 = () => __vitePreload(() => import("./index-Yh65tUeq.js"), true ? [] : void 0, import.meta.url).then((res2) => res2.default);
+var domAnimation$4 = () => __vitePreload(() => import("./index-ZrWL6Zdd.js"), true ? [] : void 0, import.meta.url).then((res2) => res2.default);
 var PopoverContent$1 = (props) => {
   const { as, children, className, ...otherProps } = props;
   const {
@@ -148392,7 +148392,7 @@ function useAccordionItem(props) {
   };
 }
 "use client";
-var domAnimation$3 = () => __vitePreload(() => import("./index-Yh65tUeq.js"), true ? [] : void 0, import.meta.url).then((res2) => res2.default);
+var domAnimation$3 = () => __vitePreload(() => import("./index-ZrWL6Zdd.js"), true ? [] : void 0, import.meta.url).then((res2) => res2.default);
 var AccordionItem = forwardRef$4((props, ref) => {
   const {
     Component: Component2,
@@ -170561,7 +170561,7 @@ function $5c3e21d68f1c4674$export$439d29a4e110a164(props) {
   return /* @__PURE__ */ (0, React$3).createElement(Element2, (0, $3ef42575df84b30b$export$9d1611c77c2fe928$4)(otherProps, visuallyHiddenProps), children);
 }
 "use client";
-var domAnimation$2 = () => __vitePreload(() => import("./index-Yh65tUeq.js"), true ? [] : void 0, import.meta.url).then((res2) => res2.default);
+var domAnimation$2 = () => __vitePreload(() => import("./index-ZrWL6Zdd.js"), true ? [] : void 0, import.meta.url).then((res2) => res2.default);
 var PopLayoutWrapper = reactExports.forwardRef(
   (props, ref) => {
     return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { ref, ...props });
@@ -172768,11 +172768,11 @@ function ProfilePage() {
         /* @__PURE__ */ jsxRuntimeExports.jsx(
           "a",
           {
-            href: "https://github.com/bqlpfy/forward-panel",
+            href: "https://github.com/bqlpfy/flux-panel",
             target: "_blank",
             rel: "noopener noreferrer",
             className: "text-gray-500 dark:text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors",
-            children: "哆啦A梦"
+            children: "flux-panel"
           }
         )
       ] }),
@@ -179821,7 +179821,7 @@ function $40df3f8667284809$export$d55e7ee900f34e93(props, ref) {
   };
 }
 "use client";
-var domAnimation$1 = () => __vitePreload(() => import("./index-Yh65tUeq.js"), true ? [] : void 0, import.meta.url).then((res2) => res2.default);
+var domAnimation$1 = () => __vitePreload(() => import("./index-ZrWL6Zdd.js"), true ? [] : void 0, import.meta.url).then((res2) => res2.default);
 var FreeSoloPopoverWrapper = forwardRef$4(
   ({
     children,
@@ -179936,7 +179936,7 @@ var [PopoverProvider, usePopoverContext] = createContext2({
   errorMessage: "usePopoverContext: `context` is undefined. Seems you forgot to wrap all popover components within `<Popover />`"
 });
 "use client";
-var domAnimation = () => __vitePreload(() => import("./index-Yh65tUeq.js"), true ? [] : void 0, import.meta.url).then((res2) => res2.default);
+var domAnimation = () => __vitePreload(() => import("./index-ZrWL6Zdd.js"), true ? [] : void 0, import.meta.url).then((res2) => res2.default);
 var PopoverContent = (props) => {
   const { as, children, className, ...otherProps } = props;
   const {
@@ -186288,11 +186288,11 @@ function AdminLayout({
         /* @__PURE__ */ jsxRuntimeExports.jsx(
           "a",
           {
-            href: "https://github.com/bqlpfy/forward-panel",
+            href: "https://github.com/bqlpfy/flux-panel",
             target: "_blank",
             rel: "noopener noreferrer",
             className: "text-gray-500 dark:text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors",
-            children: "哆啦A梦"
+            children: "flux-panel"
           }
         )
       ] }) }) })
@@ -186806,7 +186806,7 @@ function Provider({ children }) {
   ] }) }) });
 }
 client.createRoot(document.getElementById("root")).render(
-  /* @__PURE__ */ jsxRuntimeExports.jsx(MemoryRouter, { children: /* @__PURE__ */ jsxRuntimeExports.jsx(Provider, { children: /* @__PURE__ */ jsxRuntimeExports.jsx(App, {}) }) })
+  /* @__PURE__ */ jsxRuntimeExports.jsx(HashRouter, { children: /* @__PURE__ */ jsxRuntimeExports.jsx(Provider, { children: /* @__PURE__ */ jsxRuntimeExports.jsx(App, {}) }) })
 );
 export {
   domAnimation$a as d

@@ -1,21 +1,23 @@
 name: Build and Push Images Based on Version
 
-# 在这里定义统一版本号
-env:
-  VERSION: "1.4.3"
-
 on:
   push:
     branches:
       - main
       - beta
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "手动指定版本号（留空则自动识别上一个 tag 并 +0.0.1）"
+        required: false
+        type: string
 
 jobs:
   check-version:
     name: Check Version and Decide Build
     runs-on: ubuntu-latest
     outputs:
-      version: ${{ env.VERSION }}
+      version: ${{ steps.resolve-version.outputs.version }}
       should_build: ${{ steps.check-tag.outputs.should_build }}
       should_build_gost: ${{ steps.check-tag.outputs.should_build_gost }}
       tag_exists: ${{ steps.check-tag.outputs.tag_exists }}
@@ -24,20 +26,50 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Resolve version
+        id: resolve-version
+        run: |
+          # 手动触发时可以直接指定版本号
+          MANUAL_VERSION="${{ github.event.inputs.version }}"
+
+          if [ -n "$MANUAL_VERSION" ]; then
+            VERSION="$MANUAL_VERSION"
+            echo "使用手动指定的版本号: $VERSION"
+          else
+            # 自动识别：取仓库里符合 x.y.z 格式的最新 tag，patch 位 +1
+            LATEST_TAG=$(git tag --list '[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n 1)
+
+            if [ -z "$LATEST_TAG" ]; then
+              VERSION="0.0.1"
+              echo "仓库内未找到已有版本 tag，使用初始版本: $VERSION"
+            else
+              echo "识别到最新 tag: $LATEST_TAG"
+              MAJOR=$(echo "$LATEST_TAG" | cut -d. -f1)
+              MINOR=$(echo "$LATEST_TAG" | cut -d. -f2)
+              PATCH=$(echo "$LATEST_TAG" | cut -d. -f3)
+              PATCH=$((PATCH + 1))
+              VERSION="${MAJOR}.${MINOR}.${PATCH}"
+              echo "自动递增后的版本号: $VERSION"
+            fi
+          fi
+
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
       - name: Display version
         run: |
-          echo "Current version: ${{ env.VERSION }}"
+          echo "Current version: ${{ steps.resolve-version.outputs.version }}"
 
       - name: Check if tag exists and detect changes
         id: check-tag
         run: |
-          if git rev-parse "${{ env.VERSION }}" >/dev/null 2>&1; then
-            echo "Tag ${{ env.VERSION }} already exists"
+          VERSION="${{ steps.resolve-version.outputs.version }}"
+          if git rev-parse "$VERSION" >/dev/null 2>&1; then
+            echo "Tag $VERSION already exists"
             echo "tag_exists=true" >> $GITHUB_OUTPUT
             echo "should_build=false" >> $GITHUB_OUTPUT
 
             # 检查从tag到现在，go-gost目录下的文件是否有变化
-            TAG_COMMIT=$(git rev-list -n 1 "${{ env.VERSION }}")
+            TAG_COMMIT=$(git rev-list -n 1 "$VERSION")
             echo "Tag commit: $TAG_COMMIT"
             echo "Current HEAD: $(git rev-parse HEAD)"
 
@@ -54,7 +86,7 @@ jobs:
               echo "should_build_gost=true" >> $GITHUB_OUTPUT
             fi
           else
-            echo "Tag ${{ env.VERSION }} does not exist, will build all components"
+            echo "Tag $VERSION does not exist, will build all components"
             echo "should_build=true" >> $GITHUB_OUTPUT
             echo "should_build_gost=true" >> $GITHUB_OUTPUT
             echo "tag_exists=false" >> $GITHUB_OUTPUT

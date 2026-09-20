@@ -311,7 +311,7 @@ jobs:
           gh release upload "${VERSION}" ./artifacts/gost-arm64 --clobber
 
           echo "GOST 二进制文件更新完成！"
-          echo "ℹ️ Docker 镜像未重新构建"
+          echo "Docker 镜像未重新构建"
 
   update-release-files:
     name: Update Release Files Only
@@ -346,4 +346,4 @@ jobs:
           gh release upload "${VERSION}" ./gost.sql --clobber
 
           echo "文件更新完成！Release ${VERSION} 中的脚本和配置已更新"
-          echo "ℹ️ Docker 镜像和 GOST 二进制未重新构建"
+          echo "Docker 镜像和 GOST 二进制未重新构建"

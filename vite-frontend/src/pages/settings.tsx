@@ -106,13 +106,13 @@ export const SettingsPage = () => {
               <h2 className="text-lg font-medium text-gray-900 dark:text-white mb-4">添加新面板地址</h2>
               <div className="space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <Input
+                  <Input autoComplete="off"
                     label="名称"
                     placeholder="请输入面板名称"
                     value={newName}
                     onChange={(e) => setNewName(e.target.value)}
                   />
-                  <Input
+                  <Input autoComplete="off"
                     label="地址"
                     placeholder="http://192.168.1.100:3000"
                     value={newAddress}

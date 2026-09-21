@@ -411,37 +411,10 @@ public class UserTunnelServiceImpl extends ServiceImpl<UserTunnelMapper, UserTun
             return;
         }
 
-        // 2. 获取隧道信息
-        Tunnel tunnel = tunnelService.getById(tunnelId);
-        if (tunnel == null) {
-            return;
-        }
-
-        // 3. 获取用户隧道权限信息
-        UserTunnel userTunnel = getUserTunnelByUserAndTunnel(userId, tunnelId);
-        if (userTunnel == null) {
-            return;
-        }
-
-        // 4. 获取入口节点信息
-        Node inNode = nodeService.getById(tunnel.getInNodeId());
-
-        if (inNode == null) {
-            return;
-        }
-
-        // 5. 批量更新该用户在该隧道下所有转发的限速配置（只更新入口节点）
+        // 2. 逐条重新下发限速配置：updateForwardA 会重新读取该用户隧道的最新限速规则，
+        //    并综合规则限速、套餐用户限速、本次变更后的管理员指派限速，取三者中最严格的非零值
         for (Forward forward : userTunnelForwards) {
-            String serviceName = buildServiceName(forward.getId(), Long.valueOf(userId), userTunnel.getId());
-
-            String interfaceName = null;
-            // 创建主服务
-            if (tunnel.getType() != 2) { // 不是隧道转发服务才会存在网络接口
-                interfaceName = forward.getInterfaceName();
-            }
-
-            // 6. 更新入口节点的主服务限速配置（使用批量UpdateService接口）
-            GostUtil.UpdateService(inNode.getId(), serviceName, forward.getInPort(), speedId, forward.getRemoteAddr(), tunnel.getType(), tunnel, forward.getStrategy(), interfaceName);
+            forwardService.updateForwardA(forward);
         }
     }
 }

@@ -92,7 +92,7 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
     public R createNode(NodeDto nodeDto) {
         Node node = buildNewNode(nodeDto);
         boolean result = this.save(node);
-        return result ? R.ok(SUCCESS_CREATE_MSG) : R.err(ERROR_CREATE_MSG);
+        return result ? R.ok(node) : R.err(ERROR_CREATE_MSG);
     }
 
 
@@ -351,8 +351,29 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
     }
 
     /**
+     * 重置节点密钥
+     * 生成新的节点密钥并返回最新的安装信息
+     *
+     * @param id 节点ID
+     * @return 包含新安装命令的响应对象
+     */
+    @Override
+    public R resetSecret(Long id) {
+        Node node = this.getById(id);
+        if (node == null) {
+            return R.err(ERROR_NODE_NOT_FOUND);
+        }
+
+        node.setSecret(IdUtil.simpleUUID());
+        node.setUpdatedTime(System.currentTimeMillis());
+        this.updateById(node);
+
+        return buildInstallCommand(node);
+    }
+
+    /**
      * 构建节点安装命令
-     * 
+     *
      * @param node 节点对象
      * @return 格式化的安装命令
      */
@@ -360,21 +381,29 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
         ViteConfig viteConfig = viteConfigService.getOne(new QueryWrapper<ViteConfig>().eq("name", "ip"));
         if (viteConfig == null) return R.err("请先前往网站配置中设置ip");
 
-        StringBuilder command = new StringBuilder();
-        
-        // 第一部分：下载安装脚本  
-        command.append("curl -L https://github.com/bqlpfy/flux-panel/releases/download/1.4.3/install.sh")
-               .append(" -o ./install.sh && chmod +x ./install.sh && ");
-        
         // 处理服务器地址，如果是IPv6需要添加方括号
         String processedServerAddr = processServerAddress(viteConfig.getValue());
-        
-        // 第二部分：执行安装脚本（去掉-u参数）
-        command.append("./install.sh")
-               .append(" -a ").append(processedServerAddr)  // 服务器地址
-               .append(" -s ").append(node.getSecret());    // 节点密钥
-        
-        return R.ok(command.toString());
+
+        String scriptUrl = "https://github.com/wyusgw/flux-panel/releases/latest/download/install.sh";
+        // 自动探测路线：通过加速镜像下载安装脚本，适合大陆网络访问 GitHub 受限的服务器
+        String mirrorScriptUrl = "https://ghfast.top/" + scriptUrl;
+        String execArgs = " -o ./install.sh && chmod +x ./install.sh && ./install.sh"
+                + " -a " + processedServerAddr   // 服务器地址
+                + " -s " + node.getSecret();     // 节点密钥
+
+        JSONObject result = new JSONObject();
+        result.put("commandAuto", "curl -L " + mirrorScriptUrl + execArgs);
+        result.put("commandOverseas", "curl -L " + scriptUrl + execArgs);
+        result.put("addr", processedServerAddr);
+        result.put("secret", node.getSecret());
+
+        // 离线部署：直接提供 GitHub Releases 最新版二进制包下载链接
+        JSONObject downloadUrls = new JSONObject();
+        downloadUrls.put("amd64", "https://github.com/wyusgw/flux-panel/releases/latest/download/gost-amd64");
+        downloadUrls.put("arm64", "https://github.com/wyusgw/flux-panel/releases/latest/download/gost-arm64");
+        result.put("downloadUrls", downloadUrls);
+
+        return R.ok(result);
     }
 
     /**

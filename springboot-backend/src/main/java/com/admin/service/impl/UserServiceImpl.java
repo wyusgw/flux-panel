@@ -3,18 +3,22 @@ package com.admin.service.impl;
 import cloud.tianai.captcha.application.ImageCaptchaApplication;
 import cloud.tianai.captcha.spring.plugins.secondary.SecondaryVerificationApplication;
 import cn.hutool.core.map.MapUtil;
+import cn.hutool.core.util.RandomUtil;
 import cn.hutool.core.util.StrUtil;
 import com.admin.common.dto.*;
 import com.admin.common.lang.R;
 import com.admin.common.utils.GostUtil;
 import com.admin.common.utils.JwtUtil;
 import com.admin.common.utils.Md5Util;
+import com.admin.common.utils.NotificationUtil;
 import com.admin.entity.*;
 import com.admin.mapper.ForwardMapper;
 import com.admin.mapper.UserMapper;
 import com.admin.mapper.UserTunnelMapper;
 import com.admin.service.*;
+import com.alibaba.fastjson.JSON;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
@@ -25,7 +29,10 @@ import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -118,6 +125,18 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     @Resource
     private ImageCaptchaApplication application;
 
+    @Resource
+    @Lazy
+    private UserGroupService userGroupService;
+
+    @Resource
+    @Lazy
+    private PackagePlanService packagePlanService;
+
+    @Resource
+    @Lazy
+    private NotificationUtil notificationUtil;
+
     // ========== 公共接口实现 ==========
 
     /**
@@ -162,6 +181,55 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     }
 
     /**
+     * 用户自助注册
+     * 检查是否允许注册、用户名唯一性、两次密码是否一致，创建普通用户
+     *
+     * @param registerDto 注册数据传输对象
+     * @return 注册结果响应
+     */
+    @Override
+    public R register(RegisterDto registerDto) {
+        // 1. 检查站点是否开放注册（未配置时默认关闭，需管理员在网站配置中显式开启）
+        ViteConfig allowRegisterConfig = viteConfigService.getOne(new QueryWrapper<ViteConfig>().eq("name", "allow_register"));
+        if (allowRegisterConfig == null || !Objects.equals(allowRegisterConfig.getValue(), "true")) {
+            return R.err("当前站点已关闭注册");
+        }
+
+        // 2. 校验两次密码是否一致
+        if (!registerDto.getPassword().equals(registerDto.getConfirmPassword())) {
+            return R.err(ERROR_PASSWORD_NOT_MATCH);
+        }
+
+        // 3. 校验用户名唯一性
+        R usernameValidationResult = validateUsernameUniqueness(registerDto.getUsername(), null);
+        if (usernameValidationResult.getCode() != 0) {
+            return usernameValidationResult;
+        }
+
+        // 4. 创建普通用户，默认无套餐、无配额，需管理员或后续购买套餐后才能使用转发功能
+        User user = new User();
+        user.setUser(registerDto.getUsername());
+        user.setPwd(Md5Util.md5(registerDto.getPassword()));
+        user.setRoleId(USER_ROLE_ID);
+        user.setStatus(USER_STATUS_ACTIVE);
+        user.setFlow(0L);
+        user.setInFlow(0L);
+        user.setOutFlow(0L);
+        user.setNum(0);
+        user.setExpTime(System.currentTimeMillis());
+        user.setFlowResetTime(0L);
+        user.setWalletBalance(java.math.BigDecimal.ZERO);
+        user.setAutoRenew(0);
+
+        long currentTime = System.currentTimeMillis();
+        user.setCreatedTime(currentTime);
+        user.setUpdatedTime(currentTime);
+
+        boolean result = this.save(user);
+        return result ? R.ok("注册成功") : R.err(ERROR_CREATE_FAILED);
+    }
+
+    /**
      * 创建用户
      * 检查用户名唯一性，设置默认属性，加密密码
      * 
@@ -196,7 +264,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
      */
     @Override
     public R getAllUsers() {
-        return R.ok(this.list(new QueryWrapper<User>().ne("role_id", ADMIN_ROLE_ID)));
+        List<User> users = this.list();
+        users.forEach(user -> user.setPwd(null));
+        return R.ok(users);
     }
 
     /**
@@ -359,6 +429,176 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
             userTunnelService.updateById(tunnel);
         }
         return R.ok();
+    }
+
+    /**
+     * 更新当前登录用户的自动续费开关
+     *
+     * @param autoRenew 是否开启自动续费
+     * @return 更新结果响应
+     */
+    @Override
+    public R updateAutoRenew(Boolean autoRenew) {
+        CurrentUserInfo currentUser = getCurrentUserInfo();
+        if (currentUser.isHasError()) {
+            return R.err(currentUser.getErrorMessage());
+        }
+
+        User updateUser = new User();
+        updateUser.setId(currentUser.getUser().getId());
+        updateUser.setAutoRenew(Boolean.TRUE.equals(autoRenew) ? 1 : 0);
+        updateUser.setUpdatedTime(System.currentTimeMillis());
+
+        boolean result = this.updateById(updateUser);
+        return result ? R.ok() : R.err(ERROR_UPDATE_FAILED);
+    }
+
+    /**
+     * 个人中心「重置密码」：当前密码校验通过后，新密码留空则随机生成
+     * 注意：不做token失效/强制下线其他设备（当前JWT为无状态签名，暂不支持该能力）
+     *
+     * @param resetPasswordDto 重置密码数据传输对象
+     * @return 重置结果响应，若为随机生成密码则在data中返回一次性明文，前端需展示后引导用户重新登录
+     */
+    @Override
+    public R resetPassword(ResetPasswordDto resetPasswordDto) {
+        try {
+            CurrentUserInfo currentUser = getCurrentUserInfo();
+            if (currentUser.isHasError()) {
+                return R.err(currentUser.getErrorMessage());
+            }
+
+            User user = currentUser.getUser();
+            String currentPasswordMd5 = Md5Util.md5(resetPasswordDto.getCurrentPassword());
+            if (!user.getPwd().equals(currentPasswordMd5)) {
+                return R.err(ERROR_CURRENT_PASSWORD_WRONG);
+            }
+
+            boolean generated = StringUtils.isBlank(resetPasswordDto.getNewPassword());
+            String newPassword = generated ? RandomUtil.randomString(10) : resetPasswordDto.getNewPassword();
+
+            User updateUser = new User();
+            updateUser.setId(user.getId());
+            updateUser.setPwd(Md5Util.md5(newPassword));
+            updateUser.setUpdatedTime(System.currentTimeMillis());
+
+            boolean result = this.updateById(updateUser);
+            if (!result) {
+                return R.err(ERROR_UPDATE_FAILED);
+            }
+
+            if (generated) {
+                Map<String, Object> data = new HashMap<>();
+                data.put("generatedPassword", newPassword);
+                return R.ok(data);
+            }
+            return R.ok();
+        } catch (Exception e) {
+            e.printStackTrace();
+            return R.err("重置密码时发生错误：" + e.getMessage());
+        }
+    }
+
+    /**
+     * 更新当前登录用户的推送设置（收款信息推送 + 设备离线与恢复推送）
+     *
+     * @param notifySettingsDto 推送设置数据传输对象
+     * @return 更新结果响应
+     */
+    @Override
+    public R updateNotifySettings(NotifySettingsDto notifySettingsDto) {
+        CurrentUserInfo currentUser = getCurrentUserInfo();
+        if (currentUser.isHasError()) {
+            return R.err(currentUser.getErrorMessage());
+        }
+
+        Integer paymentMode = notifySettingsDto.getPaymentMode() != null ? notifySettingsDto.getPaymentMode() : 0;
+        Integer deviceMode = notifySettingsDto.getDeviceMode() != null ? notifySettingsDto.getDeviceMode() : 0;
+        String deviceGroupsJson = (notifySettingsDto.getDeviceGroupIds() != null && !notifySettingsDto.getDeviceGroupIds().isEmpty())
+                ? JSON.toJSONString(notifySettingsDto.getDeviceGroupIds())
+                : null;
+
+        boolean result = this.update(new UpdateWrapper<User>()
+                .eq("id", currentUser.getUser().getId())
+                .set("notify_payment_mode", paymentMode)
+                .set("notify_device_mode", deviceMode)
+                .set("notify_device_groups", deviceGroupsJson)
+                .set("updated_time", System.currentTimeMillis()));
+
+        return result ? R.ok() : R.err(ERROR_UPDATE_FAILED);
+    }
+
+    /**
+     * 生成 Telegram 绑定码，供用户在 Telegram 客户端中向机器人发送 /start 或 /bind 完成绑定
+     *
+     * @return 绑定码及机器人用户名（用于拼接 t.me 深链）
+     */
+    @Override
+    public R getTelegramBindCode() {
+        CurrentUserInfo currentUser = getCurrentUserInfo();
+        if (currentUser.isHasError()) {
+            return R.err(currentUser.getErrorMessage());
+        }
+
+        String code = RandomUtil.randomNumbers(6);
+        long now = System.currentTimeMillis();
+
+        boolean result = this.update(new UpdateWrapper<User>()
+                .eq("id", currentUser.getUser().getId())
+                .set("telegram_bind_code", code)
+                .set("telegram_bind_time", now)
+                .set("updated_time", now));
+        if (!result) {
+            return R.err(ERROR_UPDATE_FAILED);
+        }
+
+        Map<String, Object> data = new HashMap<>();
+        data.put("code", code);
+        data.put("botUsername", getConfigValue("telegram_bot_username"));
+        return R.ok(data);
+    }
+
+    /**
+     * 取消 Telegram 关联
+     *
+     * @return 取消结果响应
+     */
+    @Override
+    public R unbindTelegram() {
+        CurrentUserInfo currentUser = getCurrentUserInfo();
+        if (currentUser.isHasError()) {
+            return R.err(currentUser.getErrorMessage());
+        }
+
+        boolean result = this.update(new UpdateWrapper<User>()
+                .eq("id", currentUser.getUser().getId())
+                .set("telegram_chat_id", null)
+                .set("telegram_bind_code", null)
+                .set("telegram_bind_time", null)
+                .set("updated_time", System.currentTimeMillis()));
+
+        return result ? R.ok() : R.err(ERROR_UPDATE_FAILED);
+    }
+
+    /**
+     * 管理员在站点设置中发送测试消息，验证 Bot Token 与自身 Telegram 绑定是否配置正确
+     *
+     * @return 发送结果响应
+     */
+    @Override
+    public R sendTelegramTestMessage() {
+        CurrentUserInfo currentUser = getCurrentUserInfo();
+        if (currentUser.isHasError()) {
+            return R.err(currentUser.getErrorMessage());
+        }
+
+        User user = currentUser.getUser();
+        if (StringUtils.isBlank(user.getTelegramChatId())) {
+            return R.err("请先在个人中心绑定 Telegram 后再测试");
+        }
+
+        boolean sent = notificationUtil.sendTestMessage(user);
+        return sent ? R.ok("测试消息已发送，请查看 Telegram") : R.err("发送失败，请检查 Bot Token 配置是否正确");
     }
 
     // ========== 私有辅助方法 ==========
@@ -577,6 +817,12 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         // 删除主服务
         GostUtil.DeleteService(inNode.getId(), serviceName);
 
+        // 清理连接数/IP限制器（如果存在，忽略不存在的错误）
+        if ((forward.getConnLimit() != null && forward.getConnLimit() > 0)
+                || (forward.getIpLimit() != null && forward.getIpLimit() > 0)) {
+            GostUtil.DeleteCLimiters(inNode.getId(), forward.getId());
+        }
+
         // 如果是隧道转发，还需要删除链和远程服务
         if (tunnel.getType() == TUNNEL_TYPE_TUNNEL_FORWARD) {
             deleteGostTunnelForwardServices(tunnel, serviceName, inNode);
@@ -707,7 +953,47 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         userInfo.setFlowResetTime(user.getFlowResetTime());
         userInfo.setCreatedTime(user.getCreatedTime());
         userInfo.setUpdatedTime(user.getUpdatedTime());
+        userInfo.setGroupId(user.getGroupId());
+        userInfo.setPackageId(user.getPackageId());
+        userInfo.setWalletBalance(user.getWalletBalance());
+        userInfo.setAutoRenew(user.getAutoRenew());
+        userInfo.setTelegramBound(StringUtils.isNotBlank(user.getTelegramChatId()));
+        userInfo.setNotifyPaymentMode(user.getNotifyPaymentMode() != null ? user.getNotifyPaymentMode() : 0);
+        userInfo.setNotifyDeviceMode(user.getNotifyDeviceMode() != null ? user.getNotifyDeviceMode() : 0);
+        userInfo.setNotifyDeviceGroupIds(parseDeviceGroupIds(user.getNotifyDeviceGroups()));
+
+        if (user.getGroupId() != null) {
+            UserGroup group = userGroupService.getById(user.getGroupId());
+            userInfo.setGroupName(group != null ? group.getName() : null);
+        }
+        if (user.getPackageId() != null) {
+            PackagePlan packagePlan = packagePlanService.getById(user.getPackageId());
+            userInfo.setPackageName(packagePlan != null ? packagePlan.getName() : null);
+        }
+
         return userInfo;
+    }
+
+    /**
+     * 解析设备离线推送范围的JSON字符串为ID列表，解析失败或为空时返回空列表
+     */
+    private List<Long> parseDeviceGroupIds(String json) {
+        if (StringUtils.isBlank(json)) {
+            return Collections.emptyList();
+        }
+        try {
+            return JSON.parseArray(json, Long.class);
+        } catch (Exception e) {
+            return Collections.emptyList();
+        }
+    }
+
+    /**
+     * 读取单个站点配置值（如 telegram_bot_username），不存在时返回null
+     */
+    private String getConfigValue(String name) {
+        ViteConfig config = viteConfigService.getOne(new QueryWrapper<ViteConfig>().eq("name", name));
+        return config != null ? config.getValue() : null;
     }
 
     /**

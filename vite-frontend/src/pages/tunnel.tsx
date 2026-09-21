@@ -9,6 +9,8 @@ import { Spinner } from "@heroui/spinner";
 import { Divider } from "@heroui/divider";
 import { Alert } from "@heroui/alert";
 import toast from 'react-hot-toast';
+import { EmptyState } from "@/components/empty-state";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 
 
 import { 
@@ -402,12 +404,12 @@ export default function TunnelPage() {
   const getQualityDisplay = (averageTime?: number, packetLoss?: number) => {
     if (averageTime === undefined || packetLoss === undefined) return null;
     
-    if (averageTime < 30 && packetLoss === 0) return { text: '🚀 优秀', color: 'success' };
-    if (averageTime < 50 && packetLoss === 0) return { text: '✨ 很好', color: 'success' };
-    if (averageTime < 100 && packetLoss < 1) return { text: '👍 良好', color: 'primary' };
-    if (averageTime < 150 && packetLoss < 2) return { text: '😐 一般', color: 'warning' };
-    if (averageTime < 200 && packetLoss < 5) return { text: '😟 较差', color: 'warning' };
-    return { text: '😵 很差', color: 'danger' };
+    if (averageTime < 30 && packetLoss === 0) return { text: '优秀', color: 'success' };
+    if (averageTime < 50 && packetLoss === 0) return { text: '很好', color: 'success' };
+    if (averageTime < 100 && packetLoss < 1) return { text: '良好', color: 'primary' };
+    if (averageTime < 150 && packetLoss < 2) return { text: '一般', color: 'warning' };
+    if (averageTime < 200 && packetLoss < 5) return { text: '较差', color: 'warning' };
+    return { text: '很差', color: 'danger' };
   };
 
   if (loading) {
@@ -584,18 +586,8 @@ export default function TunnelPage() {
         ) : (
           /* 空状态 */
           <Card className="shadow-sm border border-gray-200 dark:border-gray-700">
-            <CardBody className="text-center py-16">
-              <div className="flex flex-col items-center gap-4">
-                <div className="w-16 h-16 bg-default-100 rounded-full flex items-center justify-center">
-                  <svg className="w-8 h-8 text-default-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0" />
-                  </svg>
-                </div>
-                <div>
-                  <h3 className="text-lg font-semibold text-foreground">暂无隧道配置</h3>
-                  <p className="text-default-500 text-sm mt-1">还没有创建任何隧道配置，点击上方按钮开始创建</p>
-                </div>
-              </div>
+            <CardBody>
+              <EmptyState />
             </CardBody>
           </Card>
         )}
@@ -622,7 +614,7 @@ export default function TunnelPage() {
                 </ModalHeader>
                 <ModalBody>
                   <div className="space-y-4">
-                    <Input
+                    <Input autoComplete="off"
                       label="隧道名称"
                       placeholder="请输入隧道名称"
                       value={form.name}
@@ -670,7 +662,7 @@ export default function TunnelPage() {
                         <SelectItem key="2">双向计算（上传+下载）</SelectItem>
                       </Select>
 
-                      <Input
+                      <Input autoComplete="off"
                         label="流量倍率"
                         placeholder="请输入流量倍率"
                         type="number"
@@ -728,7 +720,7 @@ export default function TunnelPage() {
                     </Select>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <Input
+                      <Input autoComplete="off"
                         label="TCP监听地址"
                         placeholder="请输入TCP监听地址"
                         value={form.tcpListenAddr}
@@ -743,7 +735,7 @@ export default function TunnelPage() {
                         }
                       />
 
-                      <Input
+                      <Input autoComplete="off"
                         label="UDP监听地址"
                         placeholder="请输入UDP监听地址"
                         value={form.udpListenAddr}
@@ -761,7 +753,7 @@ export default function TunnelPage() {
 
                     {/* 隧道转发时显示出口网卡配置 */}
                     {form.type === 2 && (
-                      <Input
+                      <Input autoComplete="off"
                         label="出口网卡名或IP"
                         placeholder="请输入出口网卡名或IP"
                         value={form.interfaceName}
@@ -877,40 +869,16 @@ export default function TunnelPage() {
         </Modal>
 
         {/* 删除确认模态框 */}
-        <Modal 
+        <ConfirmDialog
           isOpen={deleteModalOpen}
           onOpenChange={setDeleteModalOpen}
-          size="2xl"
-        scrollBehavior="outside"
-        backdrop="blur"
-        placement="center"
-        >
-          <ModalContent>
-            {(onClose) => (
-              <>
-                <ModalHeader className="flex flex-col gap-1">
-                  <h2 className="text-xl font-bold">确认删除</h2>
-                </ModalHeader>
-                <ModalBody>
-                  <p>确定要删除隧道 <strong>"{tunnelToDelete?.name}"</strong> 吗？</p>
-                  <p className="text-small text-default-500">此操作不可恢复，请谨慎操作。</p>
-                </ModalBody>
-                <ModalFooter>
-                  <Button variant="light" onPress={onClose}>
-                    取消
-                  </Button>
-                  <Button 
-                    color="danger" 
-                    onPress={confirmDelete}
-                    isLoading={deleteLoading}
-                  >
-                    {deleteLoading ? '删除中...' : '确认删除'}
-                  </Button>
-                </ModalFooter>
-              </>
-            )}
-          </ModalContent>
-        </Modal>
+          title="确认删除"
+          message={<>你确定要删除隧道 {tunnelToDelete?.name} 吗？此操作不可恢复，请谨慎操作。</>}
+          confirmText="确定"
+          confirmColor="danger"
+          onConfirm={confirmDelete}
+          loading={deleteLoading}
+        />
 
         {/* 诊断结果模态框 */}
         <Modal 
@@ -1021,14 +989,7 @@ export default function TunnelPage() {
                       })}
                     </div>
                   ) : (
-                    <div className="text-center py-16">
-                      <div className="w-16 h-16 bg-default-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <svg className="w-8 h-8 text-default-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.75 9.75l4.5 4.5m0-4.5l-4.5 4.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                      </div>
-                      <h3 className="text-lg font-semibold text-foreground">暂无诊断数据</h3>
-                    </div>
+                    <EmptyState />
                   )}
                 </ModalBody>
                 <ModalFooter>

@@ -34,10 +34,10 @@ func SetHTTPReportURL(addr string, secret string) {
 	var err error
 	httpAESCrypto, err = crypto.NewAESCrypto(secret)
 	if err != nil {
-		fmt.Printf("❌ 创建 HTTP AES 加密器失败: %v\n", err)
+		fmt.Printf("创建 HTTP AES 加密器失败: %v\n", err)
 		httpAESCrypto = nil
 	} else {
-		fmt.Printf("🔐 HTTP AES 加密器创建成功\n")
+		fmt.Printf("HTTP AES 加密器创建成功\n")
 	}
 }
 
@@ -54,7 +54,7 @@ func sendTrafficReport(ctx context.Context, reportItems TrafficReportItem) (bool
 	if httpAESCrypto != nil {
 		encryptedData, err := httpAESCrypto.Encrypt(jsonData)
 		if err != nil {
-			fmt.Printf("⚠️ 加密流量报告失败，发送原始数据: %v\n", err)
+			fmt.Printf("加密流量报告失败，发送原始数据: %v\n", err)
 			requestBody = jsonData
 		} else {
 			// 创建加密消息包装器
@@ -65,7 +65,7 @@ func sendTrafficReport(ctx context.Context, reportItems TrafficReportItem) (bool
 			}
 			requestBody, err = json.Marshal(encryptedMessage)
 			if err != nil {
-				fmt.Printf("⚠️ 序列化加密流量报告失败，发送原始数据: %v\n", err)
+				fmt.Printf("序列化加密流量报告失败，发送原始数据: %v\n", err)
 				requestBody = jsonData
 			}
 		}
@@ -130,7 +130,7 @@ func sendConfigReport(ctx context.Context) (bool, error) {
 	if httpAESCrypto != nil {
 		encryptedData, err := httpAESCrypto.Encrypt(configData)
 		if err != nil {
-			fmt.Printf("⚠️ 加密配置报告失败，发送原始数据: %v\n", err)
+			fmt.Printf("加密配置报告失败，发送原始数据: %v\n", err)
 			requestBody = configData
 		} else {
 			// 创建加密消息包装器
@@ -141,7 +141,7 @@ func sendConfigReport(ctx context.Context) (bool, error) {
 			}
 			requestBody, err = json.Marshal(encryptedMessage)
 			if err != nil {
-				fmt.Printf("⚠️ 序列化加密配置报告失败，发送原始数据: %v\n", err)
+				fmt.Printf("序列化加密配置报告失败，发送原始数据: %v\n", err)
 				requestBody = configData
 			}
 		}
@@ -191,11 +191,11 @@ func sendConfigReport(ctx context.Context) (bool, error) {
 // StartConfigReporter 启动配置定时上报器（每10分钟上报一次）
 func StartConfigReporter(ctx context.Context) {
 	if configReportURL == "" {
-		fmt.Printf("⚠️ 配置上报URL未设置，跳过定时上报\n")
+		fmt.Printf("配置上报URL未设置，跳过定时上报\n")
 		return
 	}
 
-	fmt.Printf("🚀 配置定时上报器已启动，每10分钟上报一次（WebSocket连接稳定后启动）\n")
+	fmt.Printf("配置定时上报器已启动，每10分钟上报一次（WebSocket连接稳定后启动）\n")
 
 	// 创建10分钟定时器
 	ticker := time.NewTicker(10 * time.Minute)
@@ -205,9 +205,9 @@ func StartConfigReporter(ctx context.Context) {
 	go func() {
 		success, err := sendConfigReport(ctx)
 		if err != nil {
-			fmt.Printf("❌ 初始配置上报失败: %v\n", err)
+			fmt.Printf("初始配置上报失败: %v\n", err)
 		} else if success {
-			fmt.Printf("✅ 初始配置上报成功\n")
+			fmt.Printf("初始配置上报成功\n")
 		}
 	}()
 
@@ -218,14 +218,14 @@ func StartConfigReporter(ctx context.Context) {
 			go func() {
 				success, err := sendConfigReport(ctx)
 				if err != nil {
-					fmt.Printf("❌ 定时配置上报失败: %v\n", err)
+					fmt.Printf("定时配置上报失败: %v\n", err)
 				} else if success {
-					fmt.Printf("✅ 定时配置上报成功\n")
+					fmt.Printf("定时配置上报成功\n")
 				}
 			}()
 
 		case <-ctx.Done():
-			fmt.Printf("⏹️ 配置定时上报器已停止\n")
+			fmt.Printf("配置定时上报器已停止\n")
 			return
 		}
 	}

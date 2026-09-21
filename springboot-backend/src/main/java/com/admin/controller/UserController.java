@@ -30,6 +30,12 @@ public class UserController extends BaseController {
     }
 
     @LogAnnotation
+    @PostMapping("/register")
+    public R register(@Validated @RequestBody RegisterDto registerDto) {
+        return userService.register(registerDto);
+    }
+
+    @LogAnnotation
     @RequireRole
     @PostMapping("/create")
     public R create(@Validated @RequestBody UserDto userDto) {
@@ -78,6 +84,42 @@ public class UserController extends BaseController {
         return userService.reset(resetFlowDto);
     }
 
+    @LogAnnotation
+    @PostMapping("/autoRenew")
+    public R updateAutoRenew(@RequestBody Map<String, Object> params) {
+        Boolean autoRenew = Boolean.valueOf(String.valueOf(params.get("autoRenew")));
+        return userService.updateAutoRenew(autoRenew);
+    }
 
+    @LogAnnotation
+    @PostMapping("/resetPassword")
+    public R resetPassword(@Validated @RequestBody ResetPasswordDto resetPasswordDto) {
+        return userService.resetPassword(resetPasswordDto);
+    }
+
+    @LogAnnotation
+    @PostMapping("/notifySettings")
+    public R updateNotifySettings(@RequestBody NotifySettingsDto notifySettingsDto) {
+        return userService.updateNotifySettings(notifySettingsDto);
+    }
+
+    @LogAnnotation
+    @PostMapping("/telegram/bindCode")
+    public R getTelegramBindCode() {
+        return userService.getTelegramBindCode();
+    }
+
+    @LogAnnotation
+    @PostMapping("/telegram/unbind")
+    public R unbindTelegram() {
+        return userService.unbindTelegram();
+    }
+
+    @LogAnnotation
+    @RequireRole
+    @PostMapping("/telegram/test")
+    public R testTelegramNotify() {
+        return userService.sendTelegramTestMessage();
+    }
 
 }

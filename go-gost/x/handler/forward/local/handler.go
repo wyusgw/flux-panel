@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"strconv"
 	"time"
 
 	"github.com/go-gost/core/chain"
@@ -16,6 +17,7 @@ import (
 	"github.com/go-gost/core/recorder"
 	ctxvalue "github.com/go-gost/x/ctx"
 	xnet "github.com/go-gost/x/internal/net"
+	"github.com/go-gost/x/internal/net/proxyproto"
 	"github.com/go-gost/x/internal/util/forwarder"
 	"github.com/go-gost/x/internal/util/sniffing"
 	tls_util "github.com/go-gost/x/internal/util/tls"
@@ -218,9 +220,35 @@ func (h *forwardHandler) Handle(ctx context.Context, conn net.Conn, opts ...hand
 	}
 	defer cc.Close()
 
+	cc = proxyproto.WrapClientConn(h.md.proxyProtocol, conn.RemoteAddr(), convertAddr(conn.LocalAddr()), cc)
+
 	xnet.Transport(conn, cc)
 
 	return nil
+}
+
+func convertAddr(addr net.Addr) net.Addr {
+	host, sp, _ := net.SplitHostPort(addr.String())
+	ip := net.ParseIP(host)
+	port, _ := strconv.Atoi(sp)
+
+	if ip == nil || ip.Equal(net.IPv6zero) {
+		ip = net.IPv4zero
+	}
+
+	switch addr.Network() {
+	case "tcp", "tcp4", "tcp6":
+		return &net.TCPAddr{
+			IP:   ip,
+			Port: port,
+		}
+
+	default:
+		return &net.UDPAddr{
+			IP:   ip,
+			Port: port,
+		}
+	}
 }
 
 func (h *forwardHandler) checkRateLimit(addr net.Addr) bool {

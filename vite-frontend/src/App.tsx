@@ -2,14 +2,22 @@ import { Route, Routes, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 
 import IndexPage from "@/pages/index";
+import RegisterPage from "@/pages/register";
 import ChangePasswordPage from "@/pages/change-password";
-import DashboardPage from "@/pages/dashboard";
+import AdminDashboardPage from "@/pages/admin-dashboard";
+import HomePage from "@/pages/home";
 import ForwardPage from "@/pages/forward";
 import TunnelPage from "@/pages/tunnel";
 import NodePage from "@/pages/node";
+import NodeProbePage from "@/pages/node-probe";
 import UserPage from "@/pages/user";
-import ProfilePage from "@/pages/profile";
-import LimitPage from "@/pages/limit";
+import ShopPage from "@/pages/shop";
+import OrdersPage from "@/pages/orders";
+import AccountCenterPage from "@/pages/account-center";
+import RedeemCodePage from "@/pages/redeemcode";
+import DeviceGroupPage from "@/pages/devicegroup";
+import UserGroupPage from "@/pages/usergroup";
+import PackagePlanPage from "@/pages/package";
 import ConfigPage from "@/pages/config";
 import { SettingsPage } from "@/pages/settings";
 
@@ -149,6 +157,7 @@ function App() {
   return (
     <Routes>
       <Route path="/" element={<LoginRoute />} />
+      <Route path="/register" element={<RegisterPage />} />
       <Route 
         path="/change-password" 
         element={
@@ -161,7 +170,15 @@ function App() {
         path="/dashboard" 
         element={
           <ProtectedRoute>
-            <DashboardPage />
+            <HomePage />
+          </ProtectedRoute>
+        } 
+      />
+      <Route 
+        path="/admin/dashboard" 
+        element={
+          <ProtectedRoute>
+            <AdminDashboardPage />
           </ProtectedRoute>
         } 
       />
@@ -189,6 +206,7 @@ function App() {
           </ProtectedRoute>
         } 
       />
+      <Route path="/node/probe" element={<ProtectedRoute skipLayout={true}><NodeProbePage /></ProtectedRoute>} />
       <Route 
         path="/user" 
         element={
@@ -197,24 +215,64 @@ function App() {
           </ProtectedRoute>
         } 
       />
-      <Route 
-        path="/profile" 
-        element={
-          <ProtectedRoute>
-            <ProfilePage />
-          </ProtectedRoute>
-        } 
-      />
-      <Route 
-        path="/limit" 
+      <Route
+        path="/shop"
         element={
           <ProtectedRoute useSimpleLayout={true}>
-            <LimitPage />
+            <ShopPage />
           </ProtectedRoute>
-        } 
+        }
       />
-      <Route 
-        path="/config" 
+      <Route
+        path="/orders"
+        element={
+          <ProtectedRoute useSimpleLayout={true}>
+            <OrdersPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/account-center"
+        element={
+          <ProtectedRoute useSimpleLayout={true}>
+            <AccountCenterPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/devicegroup"
+        element={
+          <ProtectedRoute useSimpleLayout={true}>
+            <DeviceGroupPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/redeemcode"
+        element={
+          <ProtectedRoute useSimpleLayout={true}>
+            <RedeemCodePage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/usergroup"
+        element={
+          <ProtectedRoute useSimpleLayout={true}>
+            <UserGroupPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/package"
+        element={
+          <ProtectedRoute useSimpleLayout={true}>
+            <PackagePlanPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/config"
         element={
           <ProtectedRoute useSimpleLayout={true}>
             <ConfigPage />

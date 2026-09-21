@@ -226,6 +226,121 @@ export const UserIcon = ({
   </svg>
 );
 
+export const LockIcon = ({
+  size = 24,
+  width,
+  height,
+  ...props
+}: IconSvgProps) => (
+  <svg
+    aria-hidden="true"
+    focusable="false"
+    height={size || height}
+    role="presentation"
+    viewBox="0 0 24 24"
+    width={size || width}
+    {...props}
+  >
+    <rect
+      x="5"
+      y="11"
+      width="14"
+      height="10"
+      rx="2"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+      fill="none"
+    />
+    <path
+      d="M8 11V7C8 4.79086 9.79086 3 12 3C14.2091 3 16 4.79086 16 7V11"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+      fill="none"
+    />
+  </svg>
+);
+
+export const EyeIcon = ({
+  size = 24,
+  width,
+  height,
+  ...props
+}: IconSvgProps) => (
+  <svg
+    aria-hidden="true"
+    focusable="false"
+    height={size || height}
+    role="presentation"
+    viewBox="0 0 24 24"
+    width={size || width}
+    {...props}
+  >
+    <path
+      d="M2 12C2 12 5.5 5 12 5C18.5 5 22 12 22 12C22 12 18.5 19 12 19C5.5 19 2 12 2 12Z"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+      fill="none"
+    />
+    <circle
+      cx="12"
+      cy="12"
+      r="3"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+      fill="none"
+    />
+  </svg>
+);
+
+export const EyeOffIcon = ({
+  size = 24,
+  width,
+  height,
+  ...props
+}: IconSvgProps) => (
+  <svg
+    aria-hidden="true"
+    focusable="false"
+    height={size || height}
+    role="presentation"
+    viewBox="0 0 24 24"
+    width={size || width}
+    {...props}
+  >
+    <path
+      d="M9.88 9.88C9.34 10.42 9 11.17 9 12C9 13.66 10.34 15 12 15C12.83 15 13.58 14.66 14.12 14.12"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+      fill="none"
+    />
+    <path
+      d="M6.53 6.53C4.24 8.02 2.5 10.5 2.5 12C2.5 12 6 19 12 19C13.97 19 15.66 18.51 17.06 17.77M10.7 5.11C11.12 5.04 11.56 5 12 5C18 5 21.5 12 21.5 12C21.5 12 20.68 13.61 19.17 15.17"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+      fill="none"
+    />
+    <path
+      d="M2 2L22 22"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+    />
+  </svg>
+);
+
 export const SettingsIcon = ({
   size = 24,
   width,
@@ -257,5 +372,27 @@ export const SettingsIcon = ({
       strokeWidth="2"
       fill="none"
     />
+  </svg>
+);
+
+export const NoDataIcon = ({
+  size = 64,
+  width,
+  height,
+  ...props
+}: IconSvgProps) => (
+  <svg
+    aria-hidden="true"
+    focusable="false"
+    height={size || height}
+    role="presentation"
+    viewBox="0 0 64 64"
+    width={size || width}
+    fill="currentColor"
+    {...props}
+  >
+    <ellipse cx="32" cy="54" rx="18" ry="3" opacity="0.3" />
+    <path d="M16 22h32a2 2 0 012 2v18a4 4 0 01-4 4H18a4 4 0 01-4-4V24a2 2 0 012-2z" />
+    <rect x="25" y="27" width="14" height="6" rx="2" className="fill-content1" />
   </svg>
 );

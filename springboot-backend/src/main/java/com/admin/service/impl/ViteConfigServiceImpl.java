@@ -4,6 +4,7 @@ import com.admin.entity.ViteConfig;
 import com.admin.mapper.ViteConfigMapper;
 import com.admin.service.ViteConfigService;
 import com.admin.common.lang.R;
+import com.admin.common.utils.TelegramBotUtil;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import org.springframework.stereotype.Service;
@@ -154,6 +155,27 @@ public class ViteConfigServiceImpl extends ServiceImpl<ViteConfigMapper, ViteCon
             newConfig.setValue(value);
             newConfig.setTime(System.currentTimeMillis());
             this.save(newConfig);
+        }
+
+        // Bot Token 保存时顺带校验并自动回填机器人用户名，供绑定页面生成 t.me 深链
+        if ("telegram_bot_token".equals(name)) {
+            String username = TelegramBotUtil.getMe(value);
+            if (username != null) {
+                QueryWrapper<ViteConfig> usernameQuery = new QueryWrapper<>();
+                usernameQuery.eq("name", "telegram_bot_username");
+                ViteConfig usernameConfig = this.getOne(usernameQuery);
+                if (usernameConfig != null) {
+                    usernameConfig.setValue(username);
+                    usernameConfig.setTime(System.currentTimeMillis());
+                    this.updateById(usernameConfig);
+                } else {
+                    ViteConfig newUsernameConfig = new ViteConfig();
+                    newUsernameConfig.setName("telegram_bot_username");
+                    newUsernameConfig.setValue(username);
+                    newUsernameConfig.setTime(System.currentTimeMillis());
+                    this.save(newUsernameConfig);
+                }
+            }
         }
     }
 

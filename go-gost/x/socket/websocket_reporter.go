@@ -109,10 +109,10 @@ func NewWebSocketReporter(serverURL string, secret string) *WebSocketReporter {
 	// 创建 AES 加密器
 	aesCrypto, err := crypto.NewAESCrypto(secret)
 	if err != nil {
-		fmt.Printf("❌ 创建 AES 加密器失败: %v\n", err)
+		fmt.Printf("创建 AES 加密器失败: %v\n", err)
 		aesCrypto = nil
 	} else {
-		fmt.Printf("🔐 AES 加密器创建成功\n")
+		fmt.Printf("AES 加密器创建成功\n")
 	}
 
 	return &WebSocketReporter{
@@ -156,7 +156,7 @@ func (w *WebSocketReporter) run() {
 
 			if needConnect {
 				if err := w.connect(); err != nil {
-					fmt.Printf("❌ WebSocket连接失败: %v，%v后重试\n", err, w.reconnectTime)
+					fmt.Printf("WebSocket连接失败: %v，%v后重试\n", err, w.reconnectTime)
 					select {
 					case <-time.After(w.reconnectTime):
 						continue
@@ -246,7 +246,7 @@ func (w *WebSocketReporter) connect() error {
 		return nil
 	})
 
-	fmt.Printf("✅ WebSocket连接建立成功 (http=%d, tls=%d, socks=%d)\n", cfg.Http, cfg.Tls, cfg.Socks)
+	fmt.Printf("WebSocket连接建立成功 (http=%d, tls=%d, socks=%d)\n", cfg.Http, cfg.Tls, cfg.Socks)
 	return nil
 }
 
@@ -260,7 +260,7 @@ func (w *WebSocketReporter) handleConnection() {
 		}
 		w.connected = false
 		w.connMutex.Unlock()
-		fmt.Printf("🔌 WebSocket连接已关闭\n")
+		fmt.Printf("WebSocket连接已关闭\n")
 	}()
 
 	// 启动消息接收goroutine
@@ -287,7 +287,7 @@ func (w *WebSocketReporter) handleConnection() {
 			// 获取系统信息并发送
 			sysInfo := w.collectSystemInfo()
 			if err := w.sendSystemInfo(sysInfo); err != nil {
-				fmt.Printf("❌ 发送系统信息失败: %v，准备重连\n", err)
+				fmt.Printf("发送系统信息失败: %v，准备重连\n", err)
 				return
 			}
 		}
@@ -330,7 +330,7 @@ func (w *WebSocketReporter) sendSystemInfo(sysInfo SystemInfo) error {
 	if w.aesCrypto != nil {
 		encryptedData, err := w.aesCrypto.Encrypt(jsonData)
 		if err != nil {
-			fmt.Printf("⚠️ 加密失败，发送原始数据: %v\n", err)
+			fmt.Printf("加密失败，发送原始数据: %v\n", err)
 			messageData = jsonData
 		} else {
 			// 创建加密消息包装器
@@ -341,7 +341,7 @@ func (w *WebSocketReporter) sendSystemInfo(sysInfo SystemInfo) error {
 			}
 			messageData, err = json.Marshal(encryptedMessage)
 			if err != nil {
-				fmt.Printf("⚠️ 序列化加密消息失败，发送原始数据: %v\n", err)
+				fmt.Printf("序列化加密消息失败，发送原始数据: %v\n", err)
 				messageData = jsonData
 			}
 		}
@@ -382,7 +382,7 @@ func (w *WebSocketReporter) receiveMessages() {
 			messageType, message, err := conn.ReadMessage()
 			if err != nil {
 				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-					fmt.Printf("❌ WebSocket读取消息错误: %v\n", err)
+					fmt.Printf("WebSocket读取消息错误: %v\n", err)
 				}
 				w.connMutex.Lock()
 				w.connected = false
@@ -413,13 +413,13 @@ func (w *WebSocketReporter) handleReceivedMessage(messageType int, message []byt
 				// 解密数据
 				decryptedData, err := w.aesCrypto.Decrypt(encryptedWrapper.Data)
 				if err != nil {
-					fmt.Printf("❌ 解密失败: %v\n", err)
+					fmt.Printf("解密失败: %v\n", err)
 					w.sendErrorResponse("DecryptError", fmt.Sprintf("解密失败: %v", err))
 					return
 				}
 				message = decryptedData
 			} else {
-				fmt.Printf("❌ 收到加密消息但没有加密器\n")
+				fmt.Printf("收到加密消息但没有加密器\n")
 				w.sendErrorResponse("NoDecryptor", "没有可用的解密器")
 				return
 			}
@@ -434,12 +434,12 @@ func (w *WebSocketReporter) handleReceivedMessage(messageType int, message []byt
 
 		if err := json.Unmarshal(message, &compressedMsg); err == nil && compressedMsg.Compressed {
 			// 处理压缩消息
-			fmt.Printf("📥 收到压缩消息，正在解压...\n")
+			fmt.Printf("收到压缩消息，正在解压...\n")
 
 			// 解压数据
 			gzipReader, err := gzip.NewReader(bytes.NewReader(compressedMsg.Data))
 			if err != nil {
-				fmt.Printf("❌ 创建解压读取器失败: %v\n", err)
+				fmt.Printf("创建解压读取器失败: %v\n", err)
 				w.sendErrorResponse("DecompressError", fmt.Sprintf("解压失败: %v", err))
 				return
 			}
@@ -447,7 +447,7 @@ func (w *WebSocketReporter) handleReceivedMessage(messageType int, message []byt
 
 			var decompressedData bytes.Buffer
 			if _, err := decompressedData.ReadFrom(gzipReader); err != nil {
-				fmt.Printf("❌ 解压数据失败: %v\n", err)
+				fmt.Printf("解压数据失败: %v\n", err)
 				w.sendErrorResponse("DecompressError", fmt.Sprintf("解压失败: %v", err))
 				return
 			}
@@ -460,7 +460,7 @@ func (w *WebSocketReporter) handleReceivedMessage(messageType int, message []byt
 			cmdMsg.Type = compressedMsg.Type
 			cmdMsg.RequestId = compressedMsg.RequestId
 			if err := json.Unmarshal(message, &cmdMsg.Data); err != nil {
-				fmt.Printf("❌ 解析解压后的命令数据失败: %v\n", err)
+				fmt.Printf("解析解压后的命令数据失败: %v\n", err)
 				w.sendErrorResponse("ParseError", fmt.Sprintf("解析命令失败: %v", err))
 				return
 			}
@@ -472,7 +472,7 @@ func (w *WebSocketReporter) handleReceivedMessage(messageType int, message []byt
 			// 处理普通消息
 			var cmdMsg CommandMessage
 			if err := json.Unmarshal(message, &cmdMsg); err != nil {
-				fmt.Printf("❌ 解析命令消息失败: %v\n", err)
+				fmt.Printf("解析命令消息失败: %v\n", err)
 				w.sendErrorResponse("ParseError", fmt.Sprintf("解析命令失败: %v", err))
 				return
 			}
@@ -482,7 +482,7 @@ func (w *WebSocketReporter) handleReceivedMessage(messageType int, message []byt
 		}
 
 	default:
-		fmt.Printf("📨 收到未知类型消息: %d\n", messageType)
+		fmt.Printf("收到未知类型消息: %d\n", messageType)
 	}
 }
 
@@ -494,7 +494,7 @@ func (w *WebSocketReporter) routeCommand(cmd CommandMessage) {
 		return
 	}
 
-	fmt.Println("🔔 收到命令: ", string(jsonBytes))
+	fmt.Println("收到命令: ", string(jsonBytes))
 	var err error
 	var response CommandResponse
 
@@ -540,6 +540,17 @@ func (w *WebSocketReporter) routeCommand(cmd CommandMessage) {
 	case "DeleteLimiters":
 		err = w.handleDeleteLimiter(cmd.Data)
 		response.Type = "DeleteLimitersResponse"
+
+	// 连接数/IP 限制器相关命令
+	case "AddCLimiters":
+		err = w.handleAddCLimiter(cmd.Data)
+		response.Type = "AddCLimitersResponse"
+	case "UpdateCLimiters":
+		err = w.handleUpdateCLimiter(cmd.Data)
+		response.Type = "UpdateCLimitersResponse"
+	case "DeleteCLimiters":
+		err = w.handleDeleteCLimiter(cmd.Data)
+		response.Type = "DeleteCLimitersResponse"
 
 	// TCP Ping 诊断命令
 	case "TcpPing":
@@ -772,6 +783,64 @@ func (w *WebSocketReporter) handleUpdateLimiter(data interface{}) error {
 	return updateLimiter(req)
 }
 
+func (w *WebSocketReporter) handleAddCLimiter(data interface{}) error {
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		return fmt.Errorf("序列化数据失败: %v", err)
+	}
+
+	var limiterConfig config.LimiterConfig
+	if err := json.Unmarshal(jsonData, &limiterConfig); err != nil {
+		return fmt.Errorf("解析连接限制器配置失败: %v", err)
+	}
+
+	req := createCLimiterRequest{Data: limiterConfig}
+	return createCLimiter(req)
+}
+
+func (w *WebSocketReporter) handleUpdateCLimiter(data interface{}) error {
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		return fmt.Errorf("序列化数据失败: %v", err)
+	}
+
+	var updateReq struct {
+		Limiter string               `json:"limiter"`
+		Data    config.LimiterConfig `json:"data"`
+	}
+
+	if err := json.Unmarshal(jsonData, &updateReq); err != nil {
+		var limiterConfig config.LimiterConfig
+		if err := json.Unmarshal(jsonData, &limiterConfig); err != nil {
+			return fmt.Errorf("解析连接限制器配置失败: %v", err)
+		}
+		updateReq.Limiter = limiterConfig.Name
+		updateReq.Data = limiterConfig
+	}
+
+	req := updateCLimiterRequest{Limiter: updateReq.Limiter, Data: updateReq.Data}
+	return updateCLimiter(req)
+}
+
+func (w *WebSocketReporter) handleDeleteCLimiter(data interface{}) error {
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		return fmt.Errorf("序列化数据失败: %v", err)
+	}
+
+	var deleteReq deleteCLimiterRequest
+
+	if err := json.Unmarshal(jsonData, &deleteReq); err != nil {
+		var limiterName string
+		if err := json.Unmarshal(jsonData, &limiterName); err != nil {
+			return fmt.Errorf("解析连接限制器删除请求失败: %v", err)
+		}
+		deleteReq.Limiter = limiterName
+	}
+
+	return deleteCLimiter(deleteReq)
+}
+
 func (w *WebSocketReporter) handleDeleteLimiter(data interface{}) error {
 	jsonData, err := json.Marshal(data)
 	if err != nil {
@@ -887,22 +956,22 @@ func (w *WebSocketReporter) handleCall(data interface{}) error {
 		return fmt.Errorf("解析call数据失败: %v", err)
 	}
 
-	fmt.Printf("🔔 收到服务端call回调: %v\n", callData)
+	fmt.Printf("收到服务端call回调: %v\n", callData)
 
 	// 根据call的类型执行不同的操作
 	if callType, exists := callData["type"]; exists {
 		switch callType {
 		case "ping":
-			fmt.Printf("📡 收到ping，发送pong回应\n")
+			fmt.Printf("收到ping，发送pong回应\n")
 			// 可以在这里发送pong响应
 		case "info_request":
-			fmt.Printf("📊 服务端请求额外信息\n")
+			fmt.Printf("服务端请求额外信息\n")
 			// 可以在这里发送额外的系统信息
 		case "command":
-			fmt.Printf("⚡ 服务端发送执行命令\n")
+			fmt.Printf("服务端发送执行命令\n")
 			// 可以在这里执行特定命令
 		default:
-			fmt.Printf("❓ 未知的call类型: %v\n", callType)
+			fmt.Printf("未知的call类型: %v\n", callType)
 		}
 	}
 
@@ -916,13 +985,13 @@ func (w *WebSocketReporter) sendResponse(response CommandResponse) {
 	defer w.connMutex.Unlock()
 
 	if w.conn == nil || !w.connected {
-		fmt.Printf("❌ 无法发送响应：连接未建立\n")
+		fmt.Printf("无法发送响应：连接未建立\n")
 		return
 	}
 
 	jsonData, err := json.Marshal(response)
 	if err != nil {
-		fmt.Printf("❌ 序列化响应失败: %v\n", err)
+		fmt.Printf("序列化响应失败: %v\n", err)
 		return
 	}
 
@@ -932,7 +1001,7 @@ func (w *WebSocketReporter) sendResponse(response CommandResponse) {
 	if w.aesCrypto != nil {
 		encryptedData, err := w.aesCrypto.Encrypt(jsonData)
 		if err != nil {
-			fmt.Printf("⚠️ 加密响应失败，发送原始数据: %v\n", err)
+			fmt.Printf("加密响应失败，发送原始数据: %v\n", err)
 			messageData = jsonData
 		} else {
 			// 创建加密消息包装器
@@ -943,7 +1012,7 @@ func (w *WebSocketReporter) sendResponse(response CommandResponse) {
 			}
 			messageData, err = json.Marshal(encryptedMessage)
 			if err != nil {
-				fmt.Printf("⚠️ 序列化加密响应失败，发送原始数据: %v\n", err)
+				fmt.Printf("序列化加密响应失败，发送原始数据: %v\n", err)
 				messageData = jsonData
 			}
 		}
@@ -953,7 +1022,7 @@ func (w *WebSocketReporter) sendResponse(response CommandResponse) {
 
 	// 检查消息大小，如果超过10MB则记录警告
 	if len(messageData) > 10*1024*1024 {
-		fmt.Printf("⚠️ 响应消息过大 (%.2f MB)，可能会被拒绝\n", float64(len(messageData))/(1024*1024))
+		fmt.Printf("响应消息过大 (%.2f MB)，可能会被拒绝\n", float64(len(messageData))/(1024*1024))
 	}
 
 	// 设置较长的写入超时，以应对大消息
@@ -964,7 +1033,7 @@ func (w *WebSocketReporter) sendResponse(response CommandResponse) {
 
 	w.conn.SetWriteDeadline(time.Now().Add(timeout))
 	if err := w.conn.WriteMessage(websocket.TextMessage, messageData); err != nil {
-		fmt.Printf("❌ 发送响应失败: %v\n", err)
+		fmt.Printf("发送响应失败: %v\n", err)
 		w.connected = false
 	}
 }
@@ -1045,7 +1114,7 @@ func StartWebSocketReporterWithConfig(addr string, secret string, http int, tls 
 	// 构建初始 WebSocket URL
 	fullURL := "ws://" + addr + "/system-info?type=1&secret=" + secret + "&version=" + version + "&http=" + strconv.Itoa(http) + "&tls=" + strconv.Itoa(tls) + "&socks=" + strconv.Itoa(socks)
 
-	fmt.Printf("🔗 WebSocket连接URL: %s\n", fullURL)
+	fmt.Printf("WebSocket连接URL: %s\n", fullURL)
 
 	reporter := NewWebSocketReporter(fullURL, secret)
 	// 保存 addr, secret, version 供重连时使用
@@ -1130,12 +1199,12 @@ func tcpPingHost(ip string, port int, count int, timeoutMs int) (float64, float6
 	// 它会自动为IPv6地址添加方括号
 	target := net.JoinHostPort(ip, fmt.Sprintf("%d", port))
 
-	fmt.Printf("🔍 开始TCP ping测试: %s，次数: %d，超时: %dms\n", target, count, timeoutMs)
+	fmt.Printf("开始TCP ping测试: %s，次数: %d，超时: %dms\n", target, count, timeoutMs)
 
 	// 如果是域名，先解析一次DNS，避免每次连接都重新解析导致延迟累加
 	if net.ParseIP(ip) == nil {
 		// 是域名，需要解析
-		fmt.Printf("🔍 检测到域名，正在解析DNS...\n")
+		fmt.Printf("检测到域名，正在解析DNS...\n")
 		dnsStart := time.Now()
 
 		addrs, err := net.LookupHost(ip)
@@ -1148,14 +1217,14 @@ func tcpPingHost(ip string, port int, count int, timeoutMs int) (float64, float6
 			return 0, 100.0, fmt.Errorf("DNS解析未返回任何IP地址")
 		}
 
-		fmt.Printf("✅ DNS解析完成 (%.2fms)，解析到 %d 个IP: %v\n",
+		fmt.Printf("DNS解析完成 (%.2fms)，解析到 %d 个IP: %v\n",
 			dnsDuration.Seconds()*1000, len(addrs), addrs)
 
 		// 使用第一个解析到的IP进行测试
 		target = net.JoinHostPort(addrs[0], fmt.Sprintf("%d", port))
-		fmt.Printf("🎯 使用IP地址进行测试: %s\n", target)
+		fmt.Printf("使用IP地址进行测试: %s\n", target)
 	} else {
-		fmt.Printf("🎯 使用IP地址进行测试: %s\n", target)
+		fmt.Printf("使用IP地址进行测试: %s\n", target)
 	}
 
 	for i := 0; i < count; i++ {
@@ -1188,7 +1257,7 @@ func tcpPingHost(ip string, port int, count int, timeoutMs int) (float64, float6
 	avgTime := totalTime / float64(successCount)
 	packetLoss := float64(count-successCount) / float64(count) * 100
 
-	fmt.Printf("✅ TCP ping完成: 平均连接时间 %.2fms，失败率 %.1f%%\n", avgTime, packetLoss)
+	fmt.Printf("TCP ping完成: 平均连接时间 %.2fms，失败率 %.1f%%\n", avgTime, packetLoss)
 
 	return avgTime, packetLoss, nil
 }

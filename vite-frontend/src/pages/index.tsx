@@ -1,15 +1,14 @@
 import { Button } from "@heroui/button";
 import { Input } from "@heroui/input";
 import { Card, CardBody, CardHeader } from "@heroui/card";
+import { Divider } from "@heroui/divider";
 import { useState, useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import toast from 'react-hot-toast';
 import axios from 'axios';
-import { isWebViewFunc } from '@/utils/panel';
-import { siteConfig } from '@/config/site';
-import { title } from "@/components/primitives";
 import DefaultLayout from "@/layouts/default";
 import { login, LoginData, checkCaptcha } from "@/api";
+import { UserIcon, LockIcon, EyeIcon, EyeOffIcon } from "@/components/icons";
 import "@/utils/tac.css";
 import "@/utils/tac.min.js";
 import bgImage from "@/images/bg.jpg";
@@ -50,10 +49,10 @@ export default function IndexPage() {
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Partial<LoginForm>>({});
   const [showCaptcha, setShowCaptcha] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const navigate = useNavigate();
   const tacInstanceRef = useRef<any>(null);
   const captchaContainerRef = useRef<HTMLDivElement>(null);
-  const [isWebView, setIsWebView] = useState(false);
   // 清理验证码实例
   useEffect(() => {
     return () => {
@@ -62,10 +61,6 @@ export default function IndexPage() {
         tacInstanceRef.current = null;
       }
     };
-  }, []);
-  // 检测是否在WebView中运行
-  useEffect(() => {
-    setIsWebView(isWebViewFunc());
   }, []);
   // 验证表单
   const validateForm = (): boolean => {
@@ -254,17 +249,17 @@ export default function IndexPage() {
   return (
     <DefaultLayout>
       <section className="flex flex-col items-center justify-center gap-4 py-4 sm:py-8 md:py-10 pb-20 min-h-[calc(100dvh-120px)] sm:min-h-[calc(100dvh-200px)]">
-        <div className="w-full max-w-md px-4 sm:px-0">
+        <div className="w-full max-w-[400px] px-4 sm:px-0">
           <Card className="w-full">
-            <CardHeader className="pb-0 pt-6 px-6 flex-col items-center">
-              <h1 className={title({ size: "sm" })}>登陆</h1>
-              <p className="text-small text-default-500 mt-2">请输入您的账号信息</p>
+            <CardHeader className="px-6 pt-5 pb-4">
+              <h1 className="text-lg font-bold text-foreground">登录</h1>
             </CardHeader>
+            <Divider />
             <CardBody className="px-6 py-6">
               <div className="flex flex-col gap-4">
-                <Input
-                  label="用户名"
-                  placeholder="请输入用户名"
+                <Input autoComplete="off"
+                  size="sm"
+                  placeholder="用户名"
                   value={form.username}
                   onChange={(e) => handleInputChange('username', e.target.value)}
                   onKeyDown={handleKeyPress}
@@ -272,57 +267,52 @@ export default function IndexPage() {
                   isDisabled={loading}
                   isInvalid={!!errors.username}
                   errorMessage={errors.username}
+                  startContent={<UserIcon className="w-4 h-4 text-gray-400 dark:text-gray-300 flex-shrink-0" />}
                 />
-                
-                <Input
-                  label="密码"
-                  placeholder="请输入密码"
-                  type="password"
+
+                <Input autoComplete="off"
+                  size="sm"
+                  placeholder="密码"
+                  type={showPassword ? "text" : "password"}
                   value={form.password}
                   onChange={(e) => handleInputChange('password', e.target.value)}
                   onKeyDown={handleKeyPress}
                   variant="bordered"
                   isDisabled={loading}
                   isInvalid={!!errors.password}
+                  errorMessage={errors.password}
+                  startContent={<LockIcon className="w-4 h-4 text-gray-400 dark:text-gray-300 flex-shrink-0" />}
+                  endContent={
+                    <button
+                      type="button"
+                      className="text-gray-400 dark:text-gray-300 hover:text-gray-600 dark:hover:text-white focus:outline-none"
+                      onClick={() => setShowPassword(prev => !prev)}
+                      tabIndex={-1}
+                    >
+                      {showPassword ? <EyeOffIcon className="w-4 h-4" /> : <EyeIcon className="w-4 h-4" />}
+                    </button>
+                  }
                 />
 
-                
-                <Button
-                  color="primary"
-                  size="lg"
-                  onClick={handleLogin}
-                  isLoading={loading}
-                  disabled={loading}
-                  className="mt-2"
-                >
-                  {loading ? (showCaptcha ? "验证中..." : "登录中...") : "登录"}
-                </Button>
+                <div className="flex items-center gap-4 mt-1">
+                  <Button
+                    size="sm"
+                    color="primary"
+                    onClick={handleLogin}
+                    isLoading={loading}
+                    disabled={loading}
+                  >
+                    {loading ? (showCaptcha ? "验证中..." : "登录中...") : "登录"}
+                  </Button>
+
+                  <Link to="/register" className="text-primary text-small">
+                    前往注册
+                  </Link>
+                </div>
               </div>
             </CardBody>
           </Card>
         </div>
-
-
-      {/* 版权信息 - 固定在底部，不占据布局空间 */}
-      
-               <div className="fixed inset-x-0 bottom-4 text-center py-4">
-               <p className="text-xs text-gray-400 dark:text-gray-500">
-                 Powered by{' '}
-                 <a 
-                   href="https://github.com/bqlpfy/flux-panel" 
-                   target="_blank" 
-                   rel="noopener noreferrer"
-                   className="text-gray-500 dark:text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
-                 >
-                   flux-panel
-                 </a>
-               </p>
-               <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-                 v{ isWebView ? siteConfig.app_version : siteConfig.version}
-               </p>
-             </div>
-      
-   
 
         {/* 验证码弹层 */}
         {showCaptcha && (

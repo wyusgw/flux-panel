@@ -18,6 +18,11 @@ export interface User {
   createdTime?: number; // 创建时间戳
   inFlow?: number; // 下载流量(字节)
   outFlow?: number; // 上传流量(字节)
+  groupId?: number | null; // 用户组ID
+  packageId?: number | null; // 套餐ID
+  walletBalance?: number; // 钱包余额(元)
+  autoRenew?: number; // 自动续费(0-关闭,1-开启)
+  roleId?: number; // 角色ID(0-管理员,1-普通用户)
 }
 
 export interface UserForm {
@@ -30,6 +35,9 @@ export interface UserForm {
   num: number;
   expTime: Date | null;
   flowResetTime: number;
+  groupId?: number | null;
+  packageId?: number | null;
+  walletBalance?: number;
 }
 
 export interface UserTunnel {

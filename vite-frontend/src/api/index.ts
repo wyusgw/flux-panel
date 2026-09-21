@@ -15,6 +15,7 @@ export interface LoginResponse {
 }
 
 export const login = (data: LoginData) => Network.post<LoginResponse>("/user/login", data);
+export const register = (data: { username: string; password: string; confirmPassword: string }) => Network.post("/user/register", data);
 
 // 用户CRUD操作 - 全部使用POST请求
 export const createUser = (data: any) => Network.post("/user/create", data);
@@ -22,6 +23,47 @@ export const getAllUsers = (pageData: any = {}) => Network.post("/user/list", pa
 export const updateUser = (data: any) => Network.post("/user/update", data);
 export const deleteUser = (id: number) => Network.post("/user/delete", { id });
 export const getUserPackageInfo = () => Network.post("/user/package");
+export const updateAutoRenew = (autoRenew: boolean) => Network.post("/user/autoRenew", { autoRenew });
+export const resetPassword = (currentPassword: string, newPassword?: string) => Network.post("/user/resetPassword", { currentPassword, newPassword });
+export const updateNotifySettings = (paymentMode: number, deviceMode: number, deviceGroupIds: number[]) => Network.post("/user/notifySettings", { paymentMode, deviceMode, deviceGroupIds });
+export const getTelegramBindCode = () => Network.post("/user/telegram/bindCode");
+export const unbindTelegram = () => Network.post("/user/telegram/unbind");
+export const testTelegramNotify = () => Network.post("/user/telegram/test");
+
+// 用户组CRUD操作 - 全部使用POST请求
+export const createUserGroup = (data: any) => Network.post("/user-group/create", data);
+export const getUserGroupList = () => Network.post("/user-group/list");
+export const updateUserGroup = (data: any) => Network.post("/user-group/update", data);
+export const deleteUserGroup = (id: number) => Network.post("/user-group/delete", { id });
+export const batchDeleteUserGroups = (ids: number[]) => Network.post("/user-group/batch-delete", { ids });
+export const reorderUserGroups = (groups: Array<{ id: number; sort: number }>) => Network.post("/user-group/reorder", { groups });
+
+// 套餐CRUD操作 - 全部使用POST请求
+export const createPackagePlan = (data: any) => Network.post("/package/create", data);
+export const getPackagePlanList = () => Network.post("/package/list");
+export const updatePackagePlan = (data: any) => Network.post("/package/update", data);
+export const deletePackagePlan = (id: number) => Network.post("/package/delete", { id });
+export const batchDeletePackagePlans = (ids: number[]) => Network.post("/package/batch-delete", { ids });
+export const reorderPackagePlans = (plans: Array<{ id: number; sort: number }>) => Network.post("/package/reorder", { plans });
+
+// 订单相关操作 - 全部使用POST请求
+export const purchasePackage = (packageId: number, redeemCode?: string) => Network.post("/order/purchase", { packageId, redeemCode });
+export const redeemPackageCode = (redeemCode: string) => Network.post("/order/redeem", { redeemCode });
+export const createRechargeOrder = (amount: number, channelId: string) => Network.post("/recharge/create", { amount, channelId });
+export const getOrderList = () => Network.post("/order/list");
+
+// 兑换码相关操作 - 全部使用POST请求
+export const batchCreateRedeemCodes = (data: any) => Network.post("/redeem-code/batch-create", data);
+export const getRedeemCodeList = () => Network.post("/redeem-code/list");
+export const deleteRedeemCode = (id: number) => Network.post("/redeem-code/delete", { id });
+
+// 设备组CRUD操作 - 全部使用POST请求
+export const createDeviceGroup = (data: any) => Network.post("/device-group/create", data);
+export const getDeviceGroupList = () => Network.post("/device-group/list");
+export const updateDeviceGroup = (data: any) => Network.post("/device-group/update", data);
+export const deleteDeviceGroup = (id: number) => Network.post("/device-group/delete", { id });
+export const batchDeleteDeviceGroups = (ids: number[]) => Network.post("/device-group/batch-delete", { ids });
+export const reorderDeviceGroups = (groups: Array<{ id: number; sort: number }>) => Network.post("/device-group/reorder", { groups });
 
 // 节点CRUD操作 - 全部使用POST请求
 export const createNode = (data: any) => Network.post("/node/create", data);
@@ -29,6 +71,7 @@ export const getNodeList = () => Network.post("/node/list");
 export const updateNode = (data: any) => Network.post("/node/update", data);
 export const deleteNode = (id: number) => Network.post("/node/delete", { id });
 export const getNodeInstallCommand = (id: number) => Network.post("/node/install", { id });
+export const resetNodeSecret = (id: number) => Network.post("/node/reset-secret", { id });
 export const checkNodeStatus = (nodeId?: number) => {
   const params = nodeId ? { nodeId } : {};
   return Network.post("/node/check-status", params);
@@ -65,6 +108,12 @@ export const diagnoseForward = (forwardId: number) => Network.post("/forward/dia
 
 // 转发排序操作
 export const updateForwardOrder = (data: { forwards: Array<{ id: number; inx: number }> }) => Network.post("/forward/update-order", data);
+
+// 转发规则分组CRUD操作 - 全部使用POST请求
+export const createForwardGroup = (data: any) => Network.post("/forward-group/create", data);
+export const getForwardGroupList = () => Network.post("/forward-group/list");
+export const updateForwardGroup = (data: any) => Network.post("/forward-group/update", data);
+export const deleteForwardGroup = (id: number) => Network.post("/forward-group/delete", { id });
 
 // 限速规则CRUD操作 - 全部使用POST请求
 export const createSpeedLimit = (data: any) => Network.post("/speed-limit/create", data);

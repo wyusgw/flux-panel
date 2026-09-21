@@ -4,7 +4,7 @@
 
     <!-- 查询所有转发信息（包含隧道信息） -->
     <select id="selectAllForwardsWithTunnel" resultType="com.admin.common.dto.ForwardWithTunnelDto">
-        SELECT 
+        SELECT
             f.id,
             f.user_id AS userId,
             f.name,
@@ -21,22 +21,30 @@
             f.out_flow AS outFlow,
             f.inx AS inx,
             f.interface_name AS interfaceName,
+            f.group_id AS groupId,
+            f.accept_proxy_protocol AS acceptProxyProtocol,
+            f.send_proxy_protocol AS sendProxyProtocol,
+            f.ip_limit AS ipLimit,
+            f.conn_limit AS connLimit,
+            f.in_device_group_id AS inDeviceGroupId,
+            f.out_device_group_id AS outDeviceGroupId,
+            f.speed_limit AS speedLimit,
             t.name AS tunnelName,
             t.in_ip AS inIp,
             t.out_ip AS outIp,
             t.type,
             t.protocol
-        FROM 
+        FROM
             forward f
-        LEFT JOIN 
+        LEFT JOIN
             tunnel t ON f.tunnel_id = t.id
-        ORDER BY 
+        ORDER BY
             f.created_time DESC
     </select>
 
     <!-- 根据用户ID查询转发信息（包含隧道信息） -->
     <select id="selectForwardsWithTunnelByUserId" resultType="com.admin.common.dto.ForwardWithTunnelDto">
-        SELECT 
+        SELECT
             f.id,
             f.user_id AS userId,
             f.name,
@@ -53,18 +61,26 @@
             f.strategy AS strategy,
             f.inx AS inx,
             f.interface_name AS interfaceName,
+            f.group_id AS groupId,
+            f.accept_proxy_protocol AS acceptProxyProtocol,
+            f.send_proxy_protocol AS sendProxyProtocol,
+            f.ip_limit AS ipLimit,
+            f.conn_limit AS connLimit,
+            f.in_device_group_id AS inDeviceGroupId,
+            f.out_device_group_id AS outDeviceGroupId,
+            f.speed_limit AS speedLimit,
             t.name AS tunnelName,
             t.in_ip AS inIp,
             t.out_ip AS outIp,
             t.type,
             t.protocol
-        FROM 
+        FROM
             forward f
-        LEFT JOIN 
+        LEFT JOIN
             tunnel t ON f.tunnel_id = t.id
-        WHERE 
+        WHERE
             f.user_id = #{userId}
-        ORDER BY 
+        ORDER BY
             f.created_time DESC
     </select>
 

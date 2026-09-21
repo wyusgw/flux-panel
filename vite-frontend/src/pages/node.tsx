@@ -18,7 +18,6 @@ import {
   getNodeList, 
   updateNode, 
   deleteNode,
-  getNodeInstallCommand
 } from "@/api";
 
 interface Node {
@@ -62,14 +61,14 @@ export default function NodePage() {
   const [nodeList, setNodeList] = useState<Node[]>([]);
   const [loading, setLoading] = useState(false);
   const [dialogVisible, setDialogVisible] = useState(false);
-  const [dialogTitle, setDialogTitle] = useState('');
-  const [isEdit, setIsEdit] = useState(false);
+  const [dialogTitle] = useState('');
+  const [isEdit] = useState(false);
   const [submitLoading, setSubmitLoading] = useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [nodeToDelete, setNodeToDelete] = useState<Node | null>(null);
-  const [protocolDisabled, setProtocolDisabled] = useState(false);
-  const [protocolDisabledReason, setProtocolDisabledReason] = useState('');
+  const [protocolDisabled] = useState(false);
+  const [protocolDisabledReason] = useState('');
   const [form, setForm] = useState<NodeForm>({
     id: null,
     name: '',
@@ -85,8 +84,8 @@ export default function NodePage() {
   
   // 安装命令相关状态
   const [installCommandModal, setInstallCommandModal] = useState(false);
-  const [installCommand, setInstallCommand] = useState('');
-  const [currentNodeName, setCurrentNodeName] = useState('');
+  const [installCommand] = useState('');
+  const [currentNodeName] = useState('');
   
   const websocketRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -410,43 +409,6 @@ export default function NodePage() {
     return Object.keys(newErrors).length === 0;
   };
 
-  // 新增节点
-  const handleAdd = () => {
-    setDialogTitle('新增节点');
-    setIsEdit(false);
-    setDialogVisible(true);
-    resetForm();
-    setProtocolDisabled(true);
-    setProtocolDisabledReason('节点未在线，等待节点上线后再设置');
-  };
-
-  // 编辑节点
-  const handleEdit = (node: Node) => {
-    setDialogTitle('编辑节点');
-    setIsEdit(true);
-    setForm({
-      id: node.id,
-      name: node.name,
-      ipString: node.ip ? node.ip.split(',').map(ip => ip.trim()).join('\n') : '',
-      serverIp: node.serverIp || '',
-      portSta: node.portSta,
-      portEnd: node.portEnd,
-      http: typeof node.http === 'number' ? node.http : 1,
-      tls: typeof node.tls === 'number' ? node.tls : 1,
-      socks: typeof node.socks === 'number' ? node.socks : 1
-    });
-    const offline = node.connectionStatus !== 'online';
-    setProtocolDisabled(offline);
-    setProtocolDisabledReason(offline ? '节点未在线，等待节点上线后再设置' : '');
-    setDialogVisible(true);
-  };
-
-  // 删除节点
-  const handleDelete = (node: Node) => {
-    setNodeToDelete(node);
-    setDeleteModalOpen(true);
-  };
-
   const confirmDelete = async () => {
     if (!nodeToDelete) return;
     
@@ -465,36 +427,6 @@ export default function NodePage() {
       toast.error('网络错误，请重试');
     } finally {
       setDeleteLoading(false);
-    }
-  };
-
-  // 复制安装命令
-  const handleCopyInstallCommand = async (node: Node) => {
-    setNodeList(prev => prev.map(n => 
-      n.id === node.id ? { ...n, copyLoading: true } : n
-    ));
-    
-    try {
-      const res = await getNodeInstallCommand(node.id);
-      if (res.code === 0 && res.data) {
-        try {
-          await navigator.clipboard.writeText(res.data);
-          toast.success('安装命令已复制到剪贴板');
-        } catch (copyError) {
-          // 复制失败，显示安装命令模态框
-          setInstallCommand(res.data);
-          setCurrentNodeName(node.name);
-          setInstallCommandModal(true);
-        }
-      } else {
-        toast.error(res.msg || '获取安装命令失败');
-      }
-    } catch (error) {
-      toast.error('获取安装命令失败');
-    } finally {
-      setNodeList(prev => prev.map(n => 
-        n.id === node.id ? { ...n, copyLoading: false } : n
-      ));
     }
   };
 
@@ -572,40 +504,15 @@ export default function NodePage() {
     }
   };
 
-  // 重置表单
-  const resetForm = () => {
-    setForm({
-      id: null,
-      name: '',
-      ipString: '',
-      serverIp: '',
-      portSta: 1000,
-      portEnd: 65535,
-      http: 0,
-      tls: 0,
-      socks: 0
-    });
-    setErrors({});
-  };
-
   return (
     
       <div className="px-3 lg:px-6 py-8">
-        {/* 页面头部 */}
         <div className="flex items-center justify-between mb-6">
-        <div className="flex-1">
-        </div>
-
-        <Button
-              size="sm"
-              variant="flat"
-              color="primary"
-              onPress={handleAdd}
-             
-            >
-              新增
-            </Button>
-     
+          <div>
+            <h1 className="text-base font-semibold text-foreground">节点监控</h1>
+            <p className="mt-1 text-xs text-default-500">查看节点在线状态、资源使用率与实时流量。</p>
+          </div>
+          <Button size="sm" variant="bordered" onPress={loadNodes} isLoading={loading}>刷新</Button>
         </div>
 
         {/* 节点列表 */}
@@ -626,7 +533,7 @@ export default function NodePage() {
                   </svg>
                 </div>
                 <div>
-                  <h3 className="text-lg font-semibold text-foreground">暂无节点配置</h3>
+                  <h3 className="text-lg font-semibold text-foreground">暂无数据</h3>
                   <p className="text-default-500 text-sm mt-1">还没有创建任何节点配置，点击上方按钮开始创建</p>
                 </div>
               </div>
@@ -785,39 +692,6 @@ export default function NodePage() {
                     </div>
                   </div>
 
-                  {/* 操作按钮 */}
-                  <div className="space-y-1.5">
-                    <div className="flex gap-1.5">
-                      <Button
-                        size="sm"
-                        variant="flat"
-                        color="success"
-                        onPress={() => handleCopyInstallCommand(node)}
-                        isLoading={node.copyLoading}
-                        className="flex-1 min-h-8"
-                      >
-                        安装
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="flat"
-                        color="primary"
-                        onPress={() => handleEdit(node)}
-                        className="flex-1 min-h-8"
-                      >
-                        编辑
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="flat"
-                        color="danger"
-                        onPress={() => handleDelete(node)}
-                        className="flex-1 min-h-8"
-                      >
-                        删除
-                      </Button>
-                    </div>
-                  </div>
                 </CardBody>
               </Card>
             ))}
@@ -837,7 +711,7 @@ export default function NodePage() {
             <ModalHeader>{dialogTitle}</ModalHeader>
             <ModalBody>
               <div className="space-y-4">
-                <Input
+                <Input autoComplete="off"
                   label="节点名称"
                   placeholder="请输入节点名称"
                   value={form.name}
@@ -847,7 +721,7 @@ export default function NodePage() {
                   variant="bordered"
                 />
 
-                <Input
+                <Input autoComplete="off"
                   label="服务器IP"
                   placeholder="请输入服务器IP地址，如: 192.168.1.100 或 example.com"
                   value={form.serverIp}
@@ -857,7 +731,7 @@ export default function NodePage() {
                   variant="bordered"
                 />
 
-                <Textarea
+                <Textarea autoComplete="off"
                   label="入口IP"
                   placeholder="一行一个IP地址或域名，例如:&#10;192.168.1.100&#10;example.com"
                   value={form.ipString}
@@ -871,7 +745,7 @@ export default function NodePage() {
                 />
 
                 <div className="grid grid-cols-2 gap-4">
-                  <Input
+                  <Input autoComplete="off"
                     label="起始端口"
                     type="number"
                     placeholder="1000"
@@ -884,7 +758,7 @@ export default function NodePage() {
                     max={65535}
                   />
 
-                  <Input
+                  <Input autoComplete="off"
                     label="结束端口"
                     type="number"
                     placeholder="65535"
@@ -1055,7 +929,7 @@ export default function NodePage() {
                   请复制以下安装命令到服务器上执行：
                 </p>
                 <div className="relative">
-                  <Textarea
+                  <Textarea autoComplete="off"
                     value={installCommand}
                     readOnly
                     variant="bordered"
@@ -1077,7 +951,7 @@ export default function NodePage() {
                   </Button>
                 </div>
                 <div className="text-xs text-default-500">
-                  💡 提示：如果复制按钮失效，请手动选择上方文本进行复制
+                  提示：如果复制按钮失效，请手动选择上方文本进行复制
                 </div>
               </div>
             </ModalBody>

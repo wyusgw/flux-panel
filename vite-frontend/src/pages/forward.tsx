@@ -11,6 +11,8 @@ import { Switch } from "@heroui/switch";
 import { Alert } from "@heroui/alert";
 import { Accordion, AccordionItem } from "@heroui/accordion";
 import toast from 'react-hot-toast';
+import { EmptyState } from "@/components/empty-state";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import {
   DndContext,
   closestCenter,
@@ -32,17 +34,22 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 
 
-import { 
-  createForward, 
-  getForwardList, 
-  updateForward, 
+import {
+  createForward,
+  getForwardList,
+  updateForward,
   deleteForward,
   forceDeleteForward,
-  userTunnel, 
+  userTunnel,
   pauseForwardService,
   resumeForwardService,
   diagnoseForward,
-  updateForwardOrder
+  updateForwardOrder,
+  getForwardGroupList,
+  createForwardGroup,
+  updateForwardGroup,
+  deleteForwardGroup,
+  getDeviceGroupList
 } from "@/api";
 import { JwtUtil } from "@/utils/jwt";
 
@@ -64,6 +71,14 @@ interface Forward {
   userName?: string;
   userId?: number;
   inx?: number;
+  groupId?: number | null;
+  acceptProxyProtocol?: number;
+  sendProxyProtocol?: number;
+  ipLimit?: number;
+  connLimit?: number;
+  speedLimit?: number;
+  inDeviceGroupId?: number | null;
+  outDeviceGroupId?: number | null;
 }
 
 interface Tunnel {
@@ -82,6 +97,27 @@ interface ForwardForm {
   remoteAddr: string;
   interfaceName?: string;
   strategy: string;
+  groupId?: number | null;
+  acceptProxyProtocol: number;
+  sendProxyProtocol: number;
+  ipLimit: number;
+  connLimit: number;
+  speedLimit: number;
+  inDeviceGroupId?: number | null;
+  outDeviceGroupId?: number | null;
+}
+
+interface ForwardGroup {
+  id: number;
+  name: string;
+  ruleCount: number;
+}
+
+interface DeviceGroupOption {
+  id: number;
+  name: string;
+  nodeName: string;
+  direction?: 'inbound' | 'outbound' | 'monitor' | 'both';
 }
 
 interface AddressItem {
@@ -191,16 +227,106 @@ export default function ForwardPage() {
     inPort: null,
     remoteAddr: '',
     interfaceName: '',
-    strategy: 'fifo'
+    strategy: 'fifo',
+    groupId: null,
+    acceptProxyProtocol: 0,
+    sendProxyProtocol: 0,
+    ipLimit: 0,
+    connLimit: 0,
+    speedLimit: 0
   });
-  
+
   // 表单验证错误
   const [errors, setErrors] = useState<{[key: string]: string}>({});
   const [selectedTunnel, setSelectedTunnel] = useState<Tunnel | null>(null);
 
+  // 入口/出口设备组模式（对齐 demo：转发规则直接选设备组，不需要预先建隧道）
+  const [entryMode, setEntryMode] = useState<'device' | 'tunnel'>('device');
+  const [deviceGroups, setDeviceGroups] = useState<DeviceGroupOption[]>([]);
+
+  const loadDeviceGroups = async () => {
+    try {
+      const res = await getDeviceGroupList();
+      if (res.code === 0) {
+        setDeviceGroups(res.data || []);
+      }
+    } catch (error) {
+      console.error('获取设备组列表失败:', error);
+    }
+  };
+
+  // 分组相关状态
+  const [forwardGroups, setForwardGroups] = useState<ForwardGroup[]>([]);
+  const [activeGroupFilter, setActiveGroupFilter] = useState<number | null>(null); // null=全部, -1=未分组
+  const [groupManageModalOpen, setGroupManageModalOpen] = useState(false);
+  const [groupNameInput, setGroupNameInput] = useState('');
+  const [groupEditingId, setGroupEditingId] = useState<number | null>(null);
+  const [groupSubmitLoading, setGroupSubmitLoading] = useState(false);
+
   useEffect(() => {
     loadData();
+    loadForwardGroups();
+    loadDeviceGroups();
   }, []);
+
+  const loadForwardGroups = async () => {
+    try {
+      const res = await getForwardGroupList();
+      if (res.code === 0) {
+        setForwardGroups(res.data || []);
+      }
+    } catch (error) {
+      console.error('获取分组列表失败:', error);
+    }
+  };
+
+  const handleCreateGroup = async () => {
+    if (!groupNameInput.trim()) {
+      toast.error('请输入分组名称');
+      return;
+    }
+    setGroupSubmitLoading(true);
+    try {
+      const res = groupEditingId
+        ? await updateForwardGroup({ id: groupEditingId, name: groupNameInput })
+        : await createForwardGroup({ name: groupNameInput });
+      if (res.code === 0) {
+        toast.success(groupEditingId ? '修改成功' : '创建成功');
+        setGroupNameInput('');
+        setGroupEditingId(null);
+        loadForwardGroups();
+      } else {
+        toast.error(res.msg || '操作失败');
+      }
+    } catch (error) {
+      toast.error('操作失败');
+    } finally {
+      setGroupSubmitLoading(false);
+    }
+  };
+
+  const handleEditGroupStart = (group: ForwardGroup) => {
+    setGroupEditingId(group.id);
+    setGroupNameInput(group.name);
+  };
+
+  const handleDeleteGroup = async (group: ForwardGroup) => {
+    try {
+      const res = await deleteForwardGroup(group.id);
+      if (res.code === 0) {
+        toast.success('删除成功');
+        if (activeGroupFilter === group.id) {
+          setActiveGroupFilter(null);
+        }
+        loadForwardGroups();
+        loadData(false);
+      } else {
+        toast.error(res.msg || '删除失败');
+      }
+    } catch (error) {
+      toast.error('删除失败');
+    }
+  };
 
   // 切换显示模式并保存到localStorage
   const handleViewModeChange = () => {
@@ -399,10 +525,16 @@ export default function ForwardPage() {
       newErrors.name = '转发名称长度应在2-50个字符之间';
     }
     
-    if (!form.tunnelId) {
-      newErrors.tunnelId = '请选择关联隧道';
+    if (entryMode === 'tunnel') {
+      if (!form.tunnelId) {
+        newErrors.tunnelId = '请选择关联隧道';
+      }
+    } else {
+      if (!form.inDeviceGroupId) {
+        newErrors.inDeviceGroupId = '请选择入口设备组';
+      }
     }
-    
+
     if (!form.remoteAddr.trim()) {
       newErrors.remoteAddr = '请输入远程地址';
     } else {
@@ -444,9 +576,18 @@ export default function ForwardPage() {
       inPort: null,
       remoteAddr: '',
       interfaceName: '',
-      strategy: 'fifo'
+      strategy: 'fifo',
+      groupId: activeGroupFilter && activeGroupFilter > 0 ? activeGroupFilter : null,
+      acceptProxyProtocol: 0,
+      sendProxyProtocol: 0,
+      ipLimit: 0,
+      connLimit: 0,
+      speedLimit: 0,
+      inDeviceGroupId: null,
+      outDeviceGroupId: null
     });
     setSelectedTunnel(null);
+    setEntryMode('device');
     setErrors({});
     setModalOpen(true);
   };
@@ -462,10 +603,21 @@ export default function ForwardPage() {
       inPort: forward.inPort,
       remoteAddr: forward.remoteAddr.split(',').join('\n'),
       interfaceName: forward.interfaceName || '',
-      strategy: forward.strategy || 'fifo'
+      strategy: forward.strategy || 'fifo',
+      groupId: forward.groupId ?? null,
+      // 接受端只区分关闭与开启；兼容历史上保存的 v1/v2 值。
+      acceptProxyProtocol: forward.acceptProxyProtocol ? 1 : 0,
+      sendProxyProtocol: forward.sendProxyProtocol ?? 0,
+      ipLimit: forward.ipLimit ?? 0,
+      connLimit: forward.connLimit ?? 0,
+      speedLimit: forward.speedLimit ?? 0,
+      inDeviceGroupId: forward.inDeviceGroupId ?? null,
+      outDeviceGroupId: forward.outDeviceGroupId ?? null
     });
     const tunnel = tunnels.find(t => t.id === forward.tunnelId);
     setSelectedTunnel(tunnel || null);
+    // 该规则最初通过设备组创建时沿用设备组模式，否则沿用旧版隧道模式
+    setEntryMode(forward.inDeviceGroupId ? 'device' : 'tunnel');
     setErrors({});
     setModalOpen(true);
   };
@@ -489,7 +641,7 @@ export default function ForwardPage() {
         loadData();
       } else {
         // 删除失败，询问是否强制删除
-        const confirmed = window.confirm(`常规删除失败：${res.msg || '删除失败'}\n\n是否需要强制删除？\n\n⚠️ 注意：强制删除不会去验证节点端是否已经删除对应的转发服务。`);
+        const confirmed = window.confirm(`常规删除失败：${res.msg || '删除失败'}\n\n是否需要强制删除？\n\n注意：强制删除不会去验证节点端是否已经删除对应的转发服务。`);
         if (confirmed) {
           const forceRes = await forceDeleteForward(forwardToDelete.id);
           if (forceRes.code === 0) {
@@ -530,6 +682,11 @@ export default function ForwardPage() {
 
       const addressCount = processedRemoteAddr.split(',').length;
       
+      // 根据入口模式，二选一填入 tunnelId 或 入口/出口设备组ID
+      const entryFields = entryMode === 'tunnel'
+        ? { tunnelId: form.tunnelId, inDeviceGroupId: null, outDeviceGroupId: null }
+        : { tunnelId: null, inDeviceGroupId: form.inDeviceGroupId, outDeviceGroupId: form.outDeviceGroupId };
+
       let res;
       if (isEdit) {
         // 更新时确保包含必要字段
@@ -537,22 +694,34 @@ export default function ForwardPage() {
           id: form.id,
           userId: form.userId,
           name: form.name,
-          tunnelId: form.tunnelId,
+          ...entryFields,
           inPort: form.inPort,
           remoteAddr: processedRemoteAddr,
           interfaceName: form.interfaceName,
-          strategy: addressCount > 1 ? form.strategy : 'fifo'
+          strategy: addressCount > 1 ? form.strategy : 'fifo',
+          groupId: form.groupId,
+          acceptProxyProtocol: form.acceptProxyProtocol,
+          sendProxyProtocol: form.sendProxyProtocol,
+          ipLimit: form.ipLimit,
+          connLimit: form.connLimit,
+          speedLimit: form.speedLimit
         };
         res = await updateForward(updateData);
       } else {
         // 创建时不需要id和userId（后端会自动设置）
         const createData = {
           name: form.name,
-          tunnelId: form.tunnelId,
+          ...entryFields,
           inPort: form.inPort,
           remoteAddr: processedRemoteAddr,
           interfaceName: form.interfaceName,
-          strategy: addressCount > 1 ? form.strategy : 'fifo'
+          strategy: addressCount > 1 ? form.strategy : 'fifo',
+          groupId: form.groupId,
+          acceptProxyProtocol: form.acceptProxyProtocol,
+          sendProxyProtocol: form.sendProxyProtocol,
+          ipLimit: form.ipLimit,
+          connLimit: form.connLimit,
+          speedLimit: form.speedLimit
         };
         res = await createForward(createData);
       }
@@ -675,12 +844,12 @@ export default function ForwardPage() {
   const getQualityDisplay = (averageTime?: number, packetLoss?: number) => {
     if (averageTime === undefined || packetLoss === undefined) return null;
     
-    if (averageTime < 30 && packetLoss === 0) return { text: '🚀 优秀', color: 'success' };
-    if (averageTime < 50 && packetLoss === 0) return { text: '✨ 很好', color: 'success' };
-    if (averageTime < 100 && packetLoss < 1) return { text: '👍 良好', color: 'primary' };
-    if (averageTime < 150 && packetLoss < 2) return { text: '😐 一般', color: 'warning' };
-    if (averageTime < 200 && packetLoss < 5) return { text: '😟 较差', color: 'warning' };
-    return { text: '😵 很差', color: 'danger' };
+    if (averageTime < 30 && packetLoss === 0) return { text: '优秀', color: 'success' };
+    if (averageTime < 50 && packetLoss === 0) return { text: '很好', color: 'success' };
+    if (averageTime < 100 && packetLoss < 1) return { text: '良好', color: 'primary' };
+    if (averageTime < 150 && packetLoss < 2) return { text: '一般', color: 'warning' };
+    if (averageTime < 200 && packetLoss < 5) return { text: '较差', color: 'warning' };
+    return { text: '很差', color: 'danger' };
   };
 
   // 格式化流量
@@ -1105,7 +1274,14 @@ export default function ForwardPage() {
         filteredForwards = forwards.filter(forward => forward.userId === currentUserId);
       }
     }
-    
+
+    // 按分组过滤：null=全部，-1=未分组，否则按分组ID过滤
+    if (activeGroupFilter === -1) {
+      filteredForwards = filteredForwards.filter(forward => !forward.groupId);
+    } else if (activeGroupFilter !== null) {
+      filteredForwards = filteredForwards.filter(forward => forward.groupId === activeGroupFilter);
+    }
+
     // 确保过滤后的转发列表有效
     if (!filteredForwards || filteredForwards.length === 0) {
       return [];
@@ -1407,13 +1583,54 @@ export default function ForwardPage() {
               variant="flat"
               color="primary"
               onPress={handleAdd}
-             
+
             >
               新增
             </Button>
-            
-        
+
+            <Button
+              size="sm"
+              variant="flat"
+              color="default"
+              onPress={() => setGroupManageModalOpen(true)}
+            >
+              管理分组
+            </Button>
           </div>
+        </div>
+
+        {/* 分组筛选 */}
+        <div className="flex flex-wrap items-center gap-2 mb-4">
+          <Chip
+            size="sm"
+            variant={activeGroupFilter === null ? 'solid' : 'flat'}
+            color={activeGroupFilter === null ? 'primary' : 'default'}
+            className="cursor-pointer"
+            onClick={() => setActiveGroupFilter(null)}
+          >
+            全部
+          </Chip>
+          <Chip
+            size="sm"
+            variant={activeGroupFilter === -1 ? 'solid' : 'flat'}
+            color={activeGroupFilter === -1 ? 'primary' : 'default'}
+            className="cursor-pointer"
+            onClick={() => setActiveGroupFilter(-1)}
+          >
+            未分组 ({forwards.filter(f => !f.groupId).length})
+          </Chip>
+          {forwardGroups.map(group => (
+            <Chip
+              key={group.id}
+              size="sm"
+              variant={activeGroupFilter === group.id ? 'solid' : 'flat'}
+              color={activeGroupFilter === group.id ? 'primary' : 'default'}
+              className="cursor-pointer"
+              onClick={() => setActiveGroupFilter(group.id)}
+            >
+              {group.name} ({group.ruleCount})
+            </Chip>
+          ))}
         </div>
 
 
@@ -1486,18 +1703,8 @@ export default function ForwardPage() {
           ) : (
             /* 空状态 */
             <Card className="shadow-sm border border-gray-200 dark:border-gray-700">
-              <CardBody className="text-center py-16">
-                <div className="flex flex-col items-center gap-4">
-                  <div className="w-16 h-16 bg-default-100 rounded-full flex items-center justify-center">
-                    <svg className="w-8 h-8 text-default-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 9l4-4 4 4m0 6l-4 4-4-4" />
-                    </svg>
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-semibold text-foreground">暂无转发配置</h3>
-                    <p className="text-default-500 text-sm mt-1">还没有创建任何转发配置，点击上方按钮开始创建</p>
-                  </div>
-                </div>
+              <CardBody>
+                <EmptyState />
               </CardBody>
             </Card>
           )
@@ -1526,18 +1733,8 @@ export default function ForwardPage() {
           ) : (
             /* 空状态 */
             <Card className="shadow-sm border border-gray-200 dark:border-gray-700">
-              <CardBody className="text-center py-16">
-                <div className="flex flex-col items-center gap-4">
-                  <div className="w-16 h-16 bg-default-100 rounded-full flex items-center justify-center">
-                    <svg className="w-8 h-8 text-default-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 9l4-4 4 4m0 6l-4 4-4-4" />
-                    </svg>
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-semibold text-foreground">暂无转发配置</h3>
-                    <p className="text-default-500 text-sm mt-1">还没有创建任何转发配置，点击上方按钮开始创建</p>
-                  </div>
-                </div>
+              <CardBody>
+                <EmptyState />
               </CardBody>
             </Card>
           )
@@ -1565,7 +1762,7 @@ export default function ForwardPage() {
                 </ModalHeader>
                 <ModalBody>
                   <div className="space-y-4 pb-4">
-                    <Input
+                    <Input autoComplete="off"
                       label="转发名称"
                       placeholder="请输入转发名称"
                       value={form.name}
@@ -1575,28 +1772,96 @@ export default function ForwardPage() {
                       variant="bordered"
                     />
                     
-                    <Select
-                      label="选择隧道"
-                      placeholder="请选择关联的隧道"
-                      selectedKeys={form.tunnelId ? [form.tunnelId.toString()] : []}
-                      onSelectionChange={(keys) => {
-                        const selectedKey = Array.from(keys)[0] as string;
-                        if (selectedKey) {
-                          handleTunnelChange(selectedKey);
-                        }
-                      }}
-                      isInvalid={!!errors.tunnelId}
-                      errorMessage={errors.tunnelId}
-                      variant="bordered"
-                    >
-                      {tunnels.map((tunnel) => (
-                        <SelectItem key={tunnel.id} >
-                          {tunnel.name}
-                        </SelectItem>
-                      ))}
-                    </Select>
-                    
-                    <Input
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        variant={entryMode === 'device' ? 'solid' : 'flat'}
+                        color={entryMode === 'device' ? 'primary' : 'default'}
+                        onPress={() => setEntryMode('device')}
+                        className="flex-1"
+                      >
+                        入口/出口设备组
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant={entryMode === 'tunnel' ? 'solid' : 'flat'}
+                        color={entryMode === 'tunnel' ? 'primary' : 'default'}
+                        onPress={() => setEntryMode('tunnel')}
+                        className="flex-1"
+                      >
+                        选择隧道（旧版）
+                      </Button>
+                    </div>
+
+                    {entryMode === 'device' ? (
+                      <>
+                        <Select
+                          label="入口"
+                          placeholder="请选择入口设备组"
+                          selectedKeys={form.inDeviceGroupId ? [form.inDeviceGroupId.toString()] : []}
+                          onSelectionChange={(keys) => {
+                            const selectedKey = Array.from(keys)[0] as string;
+                            setForm(prev => ({ ...prev, inDeviceGroupId: selectedKey ? parseInt(selectedKey) : null }));
+                          }}
+                          isInvalid={!!errors.inDeviceGroupId}
+                          errorMessage={errors.inDeviceGroupId}
+                          variant="bordered"
+                        >
+                          {deviceGroups.filter((group) => {
+                            const direction = group.direction || 'inbound';
+                            return direction === 'inbound' || direction === 'both';
+                          }).map((group) => (
+                            <SelectItem key={group.id.toString()} description={group.nodeName}>
+                              {group.name}
+                            </SelectItem>
+                          ))}
+                        </Select>
+
+                        <Select
+                          label="出口"
+                          placeholder="留空则为直接端口转发"
+                          selectedKeys={form.outDeviceGroupId ? [form.outDeviceGroupId.toString()] : []}
+                          onSelectionChange={(keys) => {
+                            const selectedKey = Array.from(keys)[0] as string;
+                            setForm(prev => ({ ...prev, outDeviceGroupId: selectedKey ? parseInt(selectedKey) : null }));
+                          }}
+                          variant="bordered"
+                          description="不选择出口时，流量将直接从入口转发至目标地址"
+                        >
+                          {deviceGroups.filter((group) => {
+                            const direction = group.direction || 'inbound';
+                            return direction === 'outbound' || direction === 'both';
+                          }).map((group) => (
+                            <SelectItem key={group.id.toString()} description={group.nodeName}>
+                              {group.name}
+                            </SelectItem>
+                          ))}
+                        </Select>
+                      </>
+                    ) : (
+                      <Select
+                        label="选择隧道"
+                        placeholder="请选择关联的隧道"
+                        selectedKeys={form.tunnelId ? [form.tunnelId.toString()] : []}
+                        onSelectionChange={(keys) => {
+                          const selectedKey = Array.from(keys)[0] as string;
+                          if (selectedKey) {
+                            handleTunnelChange(selectedKey);
+                          }
+                        }}
+                        isInvalid={!!errors.tunnelId}
+                        errorMessage={errors.tunnelId}
+                        variant="bordered"
+                      >
+                        {tunnels.map((tunnel) => (
+                          <SelectItem key={tunnel.id} >
+                            {tunnel.name}
+                          </SelectItem>
+                        ))}
+                      </Select>
+                    )}
+
+                    <Input autoComplete="off"
                       label="入口端口"
                       placeholder="留空自动分配"
                       type="number"
@@ -1615,7 +1880,7 @@ export default function ForwardPage() {
                       }
                     />
                     
-                    <Textarea
+                    <Textarea autoComplete="off"
                       label="远程地址"
                       placeholder="请输入远程地址，多个地址用换行分隔&#10;例如:&#10;192.168.1.100:8080&#10;example.com:3000"
                       value={form.remoteAddr}
@@ -1628,7 +1893,7 @@ export default function ForwardPage() {
                       maxRows={6}
                     />
                     
-                    <Input
+                    <Input autoComplete="off"
                       label="出口网卡名或IP"
                       placeholder="请输入出口网卡名或IP"
                       value={form.interfaceName}
@@ -1657,6 +1922,85 @@ export default function ForwardPage() {
                         <SelectItem key="hash" >哈希模式 - IP哈希</SelectItem>
                       </Select>
                     )}
+
+                    <Select
+                      label="所属分组"
+                      placeholder="未分组"
+                      selectedKeys={form.groupId ? [form.groupId.toString()] : []}
+                      onSelectionChange={(keys) => {
+                        const selectedKey = Array.from(keys)[0] as string;
+                        setForm(prev => ({ ...prev, groupId: selectedKey ? parseInt(selectedKey) : null }));
+                      }}
+                      variant="bordered"
+                    >
+                      {forwardGroups.map(group => (
+                        <SelectItem key={group.id.toString()}>{group.name}</SelectItem>
+                      ))}
+                    </Select>
+
+                    <Accordion variant="bordered">
+                      <AccordionItem key="advanced" title="高级选项">
+                        <div className="space-y-4 pb-2">
+                          <Select
+                            label="接受 Proxy Protocol"
+                            selectedKeys={[String(form.acceptProxyProtocol)]}
+                            onSelectionChange={(keys) => {
+                              const selectedKey = Array.from(keys)[0] as string;
+                              setForm(prev => ({ ...prev, acceptProxyProtocol: parseInt(selectedKey) }));
+                            }}
+                            variant="bordered"
+                            description="如果打开，用户在连接时必须发送 Proxy 头，否则连接将失败。"
+                          >
+                            <SelectItem key="0">关闭</SelectItem>
+                            <SelectItem key="1">开启 (TCP)</SelectItem>
+                          </Select>
+
+                          <Select
+                            label="发送 Proxy Protocol"
+                            selectedKeys={[String(form.sendProxyProtocol)]}
+                            onSelectionChange={(keys) => {
+                              const selectedKey = Array.from(keys)[0] as string;
+                              setForm(prev => ({ ...prev, sendProxyProtocol: parseInt(selectedKey) }));
+                            }}
+                            variant="bordered"
+                            description="如果打开，转发目标必须支持读取 Proxy 头，否则连接将失败。"
+                          >
+                            <SelectItem key="0">关闭</SelectItem>
+                            <SelectItem key="1">v1 (TCP)</SelectItem>
+                            <SelectItem key="3">v2 (TCP+UDP)</SelectItem>
+                            <SelectItem key="2">v2 (TCP)</SelectItem>
+                          </Select>
+
+                          <Input autoComplete="off"
+                            label="IP 限制"
+                            type="number"
+                            value={form.ipLimit.toString()}
+                            onChange={(e) => setForm(prev => ({ ...prev, ipLimit: parseInt(e.target.value) || 0 }))}
+                            variant="bordered"
+                            description="单个 IP 的最大并发连接数，0 为不限制"
+                          />
+
+                          <Input autoComplete="off"
+                            label="连接数限制"
+                            type="number"
+                            value={form.connLimit.toString()}
+                            onChange={(e) => setForm(prev => ({ ...prev, connLimit: parseInt(e.target.value) || 0 }))}
+                            variant="bordered"
+                            description="该规则的总并发连接数，0 为不限制"
+                          />
+
+                          <Input autoComplete="off"
+                            label="规则限速"
+                            type="number"
+                            value={form.speedLimit.toString()}
+                            onChange={(e) => setForm(prev => ({ ...prev, speedLimit: parseInt(e.target.value) || 0 }))}
+                            variant="bordered"
+                            description="该规则的最大速率，0 为不限速（与套餐/用户限速取较严格值，不同规则的限速可叠加）"
+                            endContent={<span className="text-default-400 text-small">Mbps</span>}
+                          />
+                        </div>
+                      </AccordionItem>
+                    </Accordion>
                   </div>
                 </ModalBody>
                 <ModalFooter>
@@ -1677,44 +2021,16 @@ export default function ForwardPage() {
         </Modal>
 
         {/* 删除确认模态框 */}
-        <Modal 
+        <ConfirmDialog
           isOpen={deleteModalOpen}
           onOpenChange={setDeleteModalOpen}
-          size="2xl"
-        scrollBehavior="outside"
-        backdrop="blur"
-        placement="center"
-        >
-          <ModalContent>
-            {(onClose) => (
-              <>
-                <ModalHeader className="flex flex-col gap-1">
-                  <h2 className="text-lg font-bold text-danger">确认删除</h2>
-                </ModalHeader>
-                <ModalBody>
-                  <p className="text-default-600">
-                    确定要删除转发 <span className="font-semibold text-foreground">"{forwardToDelete?.name}"</span> 吗？
-                  </p>
-                  <p className="text-small text-default-500 mt-2">
-                    此操作无法撤销，删除后该转发将永久消失。
-                  </p>
-                </ModalBody>
-                <ModalFooter>
-                  <Button variant="light" onPress={onClose}>
-                    取消
-                  </Button>
-                  <Button 
-                    color="danger" 
-                    onPress={confirmDelete}
-                    isLoading={deleteLoading}
-                  >
-                    确认删除
-                  </Button>
-                </ModalFooter>
-              </>
-            )}
-          </ModalContent>
-        </Modal>
+          title="确认删除"
+          message={<>你确定要删除转发 {forwardToDelete?.name} 吗？此操作无法撤销，删除后该转发将永久消失。</>}
+          confirmText="确定"
+          confirmColor="danger"
+          onConfirm={confirmDelete}
+          loading={deleteLoading}
+        />
 
         {/* 地址列表弹窗 */}
         <Modal isOpen={addressModalOpen} onClose={() => setAddressModalOpen(false)} size="lg" scrollBehavior="outside">
@@ -1846,7 +2162,7 @@ export default function ForwardPage() {
                 {/* 导出数据显示 */}
                 {exportData && (
                   <div className="relative">
-                    <Textarea
+                    <Textarea autoComplete="off"
                       value={exportData}
                       readOnly
                       variant="bordered"
@@ -1918,7 +2234,7 @@ export default function ForwardPage() {
 
                 {/* 输入区域 */}
                 <div>
-                  <Textarea
+                  <Textarea autoComplete="off"
                     label="导入数据"
                     placeholder="请输入要导入的转发数据，格式：目标地址|转发名称|入口端口"
                     value={importData}
@@ -2127,14 +2443,7 @@ export default function ForwardPage() {
                       })}
                     </div>
                   ) : (
-                    <div className="text-center py-16">
-                      <div className="w-16 h-16 bg-default-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <svg className="w-8 h-8 text-default-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.75 9.75l4.5 4.5m0-4.5l-4.5 4.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                      </div>
-                      <h3 className="text-lg font-semibold text-foreground">暂无诊断数据</h3>
-                    </div>
+                    <EmptyState />
                   )}
                 </ModalBody>
                 <ModalFooter>
@@ -2155,7 +2464,71 @@ export default function ForwardPage() {
             )}
           </ModalContent>
         </Modal>
+
+        {/* 管理分组模态框 */}
+        <Modal
+          isOpen={groupManageModalOpen}
+          onOpenChange={(open) => {
+            setGroupManageModalOpen(open);
+            if (!open) {
+              setGroupNameInput('');
+              setGroupEditingId(null);
+            }
+          }}
+          size="lg"
+          scrollBehavior="outside"
+          backdrop="blur"
+          placement="center"
+        >
+          <ModalContent>
+            {() => (
+              <>
+                <ModalHeader className="flex flex-col gap-1">
+                  <h2 className="text-xl font-bold">管理分组</h2>
+                </ModalHeader>
+                <ModalBody>
+                  <div className="flex gap-2">
+                    <Input autoComplete="off"
+                      placeholder="分组名称"
+                      value={groupNameInput}
+                      onChange={(e) => setGroupNameInput(e.target.value)}
+                      variant="bordered"
+                      className="flex-1"
+                    />
+                    <Button color="primary" onPress={handleCreateGroup} isLoading={groupSubmitLoading}>
+                      {groupEditingId ? '保存' : '添加'}
+                    </Button>
+                    {groupEditingId && (
+                      <Button variant="light" onPress={() => { setGroupEditingId(null); setGroupNameInput(''); }}>
+                        取消
+                      </Button>
+                    )}
+                  </div>
+                  <div className="space-y-2 mt-2 max-h-64 overflow-y-auto">
+                    {forwardGroups.length === 0 && (
+                      <p className="text-small text-default-500">暂无分组</p>
+                    )}
+                    {forwardGroups.map(group => (
+                      <div key={group.id} className="flex items-center justify-between p-2 rounded-lg bg-default-100">
+                        <span className="text-small text-foreground">{group.name}（{group.ruleCount} 条规则）</span>
+                        <div className="flex gap-2">
+                          <Button size="sm" variant="light" onPress={() => handleEditGroupStart(group)}>编辑</Button>
+                          <Button size="sm" variant="light" color="danger" onPress={() => handleDeleteGroup(group)}>删除</Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </ModalBody>
+                <ModalFooter>
+                  <Button variant="light" onPress={() => setGroupManageModalOpen(false)}>
+                    关闭
+                  </Button>
+                </ModalFooter>
+              </>
+            )}
+          </ModalContent>
+        </Modal>
       </div>
-    
+
   );
 } 

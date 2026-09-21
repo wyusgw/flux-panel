@@ -31,6 +31,9 @@ public class WebSocketServer extends TextWebSocketHandler {
     @Resource
     NodeService nodeService;
 
+    @Resource
+    NotificationUtil notificationUtil;
+
     // 存储所有活跃的 WebSocket 连接（
     private static final CopyOnWriteArraySet<WebSocketSession> activeSessions = new CopyOnWriteArraySet<>();
     
@@ -155,7 +158,7 @@ public class WebSocketServer extends TextWebSocketHandler {
                 // 获取或创建加密器
                 AESCrypto crypto = getOrCreateCrypto(nodeSecret);
                 if (crypto == null) {
-                    log.info("⚠️ 收到加密消息但无法创建解密器，使用原始数据");
+                    log.info("收到加密消息但无法创建解密器，使用原始数据");
                     return payload;
                 }
                 
@@ -193,7 +196,7 @@ public class WebSocketServer extends TextWebSocketHandler {
                 return encryptedMessage.toJSONString();
             }
         } catch (Exception e) {
-            log.info("⚠️ WebSocket消息加密失败，发送原始数据: {}", e.getMessage());
+            log.info("WebSocket消息加密失败，发送原始数据: {}", e.getMessage());
         }
 
         return message;
@@ -280,6 +283,7 @@ public class WebSocketServer extends TextWebSocketHandler {
                         res.put("type", "status");
                         res.put("data", 1);
                         broadcastMessage(res.toJSONString());
+                        notificationUtil.notifyDeviceStatus(node, true);
                     } else {
                         log.info("节点 {} 状态更新失败", nodeId);
                     }
@@ -351,6 +355,7 @@ public class WebSocketServer extends TextWebSocketHandler {
                             res.put("type", "status");
                             res.put("data", 0);
                             broadcastMessage(res.toJSONString());
+                            notificationUtil.notifyDeviceStatus(node, false);
                         } else {
                             log.info("节点 {} 状态更新为离线失败", nodeId);
                         }

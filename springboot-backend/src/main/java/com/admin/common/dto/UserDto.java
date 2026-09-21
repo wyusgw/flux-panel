@@ -5,6 +5,7 @@ import lombok.Data;
 import javax.validation.constraints.NotBlank;
 import javax.validation.constraints.NotNull;
 import javax.validation.constraints.Min;
+import java.math.BigDecimal;
 
 @Data
 public class UserDto {
@@ -30,4 +31,24 @@ public class UserDto {
     private Long flowResetTime;
 
     private Integer status;
+
+    /**
+     * 用户组ID
+     */
+    private Long groupId;
+
+    /**
+     * 套餐ID
+     */
+    private Long packageId;
+
+    /**
+     * 钱包余额（元）
+     */
+    private BigDecimal walletBalance;
+
+    /**
+     * 自动续费（0-关闭，1-开启）
+     */
+    private Integer autoRenew;
 } 

@@ -5,6 +5,8 @@ interface ThemeProviderProps {
   children: React.ReactNode;
 }
 
+const MANUAL_PREFERENCE_KEY = 'heroui-theme-manual';
+
 export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
   const { theme, setTheme } = useTheme();
 
@@ -20,25 +22,43 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
       }
     };
 
-    // 始终跟随系统主题
-    const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-    if (systemTheme !== theme) {
-      setTheme(systemTheme);
+    updateThemeClass(theme);
+  }, [theme]);
+
+  useEffect(() => {
+    // 用户通过主题切换按钮手动选择过主题后，不再自动跟随系统主题
+    let hasManualPreference = false;
+    try {
+      hasManualPreference = localStorage.getItem(MANUAL_PREFERENCE_KEY) === 'true';
+    } catch (error) {
+      // 忽略无法访问 localStorage 的情况
     }
 
-    // 监听主题变化
-    updateThemeClass(theme);
+    if (!hasManualPreference) {
+      const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      if (systemTheme !== theme) {
+        setTheme(systemTheme);
+      }
+    }
 
-    // 监听系统主题变化
+    // 未手动选择时，继续跟随系统主题变化
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
     const handleThemeChange = (e: MediaQueryListEvent) => {
-      const newTheme = e.matches ? 'dark' : 'light';
-      setTheme(newTheme);
+      let manual = false;
+      try {
+        manual = localStorage.getItem(MANUAL_PREFERENCE_KEY) === 'true';
+      } catch (error) {
+        // 忽略
+      }
+      if (!manual) {
+        setTheme(e.matches ? 'dark' : 'light');
+      }
     };
 
     mediaQuery.addEventListener('change', handleThemeChange);
     return () => mediaQuery.removeEventListener('change', handleThemeChange);
-  }, [theme, setTheme]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return <>{children}</>;
-}; 
+};

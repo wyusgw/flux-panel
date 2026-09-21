@@ -113,7 +113,7 @@ public class FlowController extends BaseController {
             GostConfigDto gostConfigDto = JSON.parseObject(decryptedData, GostConfigDto.class);
             checkGostConfigAsync.cleanNodeConfigs(node.getId().toString(), gostConfigDto);
 
-            log.info("🔓 节点 {} 配置数据接收成功{}", node.getId(), isEncryptedMessage(rawData) ? "（已解密）" : "");
+            log.info("节点 {} 配置数据接收成功{}", node.getId(), isEncryptedMessage(rawData) ? "（已解密）" : "");
 
         } catch (Exception e) {
             log.error("处理节点 {} 配置数据失败: {}", node.getId(), e.getMessage());
@@ -186,7 +186,7 @@ public class FlowController extends BaseController {
                 // 获取或创建加密器
                 AESCrypto crypto = getOrCreateCrypto(secret);
                 if (crypto == null) {
-                    log.info("⚠️ 收到加密消息但无法创建解密器，使用原始数据");
+                    log.info("收到加密消息但无法创建解密器，使用原始数据");
                     return rawData;
                 }
 
@@ -214,6 +214,12 @@ public class FlowController extends BaseController {
      */
     private String processFlowData(FlowDto flowDataList) {
         String[] serviceIds = parseServiceName(flowDataList.getN());
+        if (serviceIds.length < 3) {
+            // 节点上可能还存在非转发业务的服务（如内置/临时监听），其上报的服务名不符合
+            // "forwardId_userId_userTunnelId" 约定，忽略即可，避免整个上报请求异常
+            log.info("流量上报服务名称格式异常，已忽略: {}", flowDataList.getN());
+            return SUCCESS_RESPONSE;
+        }
         String forwardId = serviceIds[0];
         String userId = serviceIds[1];
         String userTunnelId = serviceIds[2];

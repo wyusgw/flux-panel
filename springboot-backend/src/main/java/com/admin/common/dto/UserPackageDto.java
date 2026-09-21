@@ -3,6 +3,7 @@ package com.admin.common.dto;
 import com.admin.entity.StatisticsFlow;
 import lombok.Data;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 /**
@@ -48,6 +49,16 @@ public class UserPackageDto {
         private Long flowResetTime;  // 流量重置时间
         private Long createdTime;
         private Long updatedTime;
+        private Long groupId;        // 用户组ID
+        private String groupName;    // 用户组名称
+        private Long packageId;      // 套餐ID
+        private String packageName;  // 套餐名称
+        private BigDecimal walletBalance; // 钱包余额
+        private Integer autoRenew;   // 自动续费
+        private Boolean telegramBound;      // 是否已绑定Telegram
+        private Integer notifyPaymentMode;  // 收款信息推送模式（0-不接收，1-接收）
+        private Integer notifyDeviceMode;   // 设备离线与恢复推送模式（0-不接收，1-白名单，2-黑名单）
+        private List<Long> notifyDeviceGroupIds; // 设备离线推送范围（设备组ID）
     }
     
     /**

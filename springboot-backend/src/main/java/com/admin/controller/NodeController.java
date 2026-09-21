@@ -62,4 +62,12 @@ public class NodeController extends BaseController {
         return nodeService.getInstallCommand(id);
     }
 
+    @LogAnnotation
+    @RequireRole
+    @PostMapping("/reset-secret")
+    public R resetSecret(@RequestBody Map<String, Object> params) {
+        Long id = Long.valueOf(params.get("id").toString());
+        return nodeService.resetSecret(id);
+    }
+
 }

@@ -89,4 +89,20 @@ public class ForwardWithTunnelDto {
     private Integer inx;
 
     private String interfaceName;
+
+    private Long groupId;
+
+    private Integer acceptProxyProtocol;
+
+    private Integer sendProxyProtocol;
+
+    private Integer ipLimit;
+
+    private Integer connLimit;
+
+    private Long inDeviceGroupId;
+
+    private Long outDeviceGroupId;
+
+    private Integer speedLimit;
 }

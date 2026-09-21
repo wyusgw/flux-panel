@@ -8,9 +8,9 @@ export LC_ALL=C
 
 
 # 全局下载地址配置
-DOCKER_COMPOSEV4_URL="https://github.com/bqlpfy/flux-panel/releases/download/1.4.3/docker-compose-v4.yml"
-DOCKER_COMPOSEV6_URL="https://github.com/bqlpfy/flux-panel/releases/download/1.4.3/docker-compose-v6.yml"
-GOST_SQL_URL="https://github.com/bqlpfy/flux-panel/releases/download/1.4.3/gost.sql"
+DOCKER_COMPOSEV4_URL="https://github.com/wyusgw/flux-panel/releases/latest/download/docker-compose-v4.yml"
+DOCKER_COMPOSEV6_URL="https://github.com/wyusgw/flux-panel/releases/latest/download/docker-compose-v6.yml"
+GOST_SQL_URL="https://github.com/wyusgw/flux-panel/releases/latest/download/gost.sql"
 
 COUNTRY=$(curl -s https://ipinfo.io/country)
 if [ "$COUNTRY" = "CN" ]; then
@@ -51,17 +51,17 @@ check_docker() {
 
 # 检测系统是否支持 IPv6
 check_ipv6_support() {
-  echo "🔍 检测 IPv6 支持..."
+  echo "检测 IPv6 支持..."
 
   # 检查是否有 IPv6 地址（排除 link-local 地址）
   if ip -6 addr show | grep -v "scope link" | grep -q "inet6"; then
-    echo "✅ 检测到系统支持 IPv6"
+    echo "检测到系统支持 IPv6"
     return 0
   elif ifconfig 2>/dev/null | grep -v "fe80:" | grep -q "inet6"; then
-    echo "✅ 检测到系统支持 IPv6"
+    echo "检测到系统支持 IPv6"
     return 0
   else
-    echo "⚠️ 未检测到 IPv6 支持"
+    echo "未检测到 IPv6 支持"
     return 1
   fi
 }
@@ -70,14 +70,14 @@ check_ipv6_support() {
 
 # 配置 Docker 启用 IPv6
 configure_docker_ipv6() {
-  echo "🔧 配置 Docker IPv6 支持..."
+  echo "配置 Docker IPv6 支持..."
 
   # 检查操作系统类型
   OS_TYPE=$(uname -s)
 
   if [[ "$OS_TYPE" == "Darwin" ]]; then
     # macOS 上 Docker Desktop 已默认支持 IPv6
-    echo "✅ macOS Docker Desktop 默认支持 IPv6"
+    echo "macOS Docker Desktop 默认支持 IPv6"
     return 0
   fi
 
@@ -95,9 +95,9 @@ configure_docker_ipv6() {
   if [ -f "$DOCKER_CONFIG" ]; then
     # 检查是否已经配置了 IPv6
     if grep -q '"ipv6"' "$DOCKER_CONFIG"; then
-      echo "✅ Docker 已配置 IPv6 支持"
+      echo "Docker 已配置 IPv6 支持"
     else
-      echo "📝 更新 Docker 配置以启用 IPv6..."
+      echo "更新 Docker 配置以启用 IPv6..."
       # 备份原配置
       $SUDO_CMD cp "$DOCKER_CONFIG" "${DOCKER_CONFIG}.backup"
 
@@ -109,32 +109,32 @@ configure_docker_ipv6() {
         $SUDO_CMD sed -i 's/^{$/{\n  "ipv6": true,\n  "fixed-cidr-v6": "fd00::\/80",/' "$DOCKER_CONFIG"
       fi
 
-      echo "🔄 重启 Docker 服务..."
+      echo "重启 Docker 服务..."
       if command -v systemctl &> /dev/null; then
         $SUDO_CMD systemctl restart docker
       elif command -v service &> /dev/null; then
         $SUDO_CMD service docker restart
       else
-        echo "⚠️ 请手动重启 Docker 服务"
+        echo "请手动重启 Docker 服务"
       fi
       sleep 5
     fi
   else
     # 创建新的配置文件
-    echo "📝 创建 Docker 配置文件..."
+    echo "创建 Docker 配置文件..."
     $SUDO_CMD mkdir -p /etc/docker
     echo '{
   "ipv6": true,
   "fixed-cidr-v6": "fd00::/80"
 }' | $SUDO_CMD tee "$DOCKER_CONFIG" > /dev/null
 
-    echo "🔄 重启 Docker 服务..."
+    echo "重启 Docker 服务..."
     if command -v systemctl &> /dev/null; then
       $SUDO_CMD systemctl restart docker
     elif command -v service &> /dev/null; then
       $SUDO_CMD service docker restart
     else
-      echo "⚠️ 请手动重启 Docker 服务"
+      echo "请手动重启 Docker 服务"
     fi
     sleep 5
   fi
@@ -161,17 +161,17 @@ generate_random() {
 # 删除脚本自身
 delete_self() {
   echo ""
-  echo "🗑️ 操作已完成，正在清理脚本文件..."
+  echo "操作已完成，正在清理脚本文件..."
   SCRIPT_PATH="$(readlink -f "$0" 2>/dev/null || realpath "$0" 2>/dev/null || echo "$0")"
   sleep 1
-  rm -f "$SCRIPT_PATH" && echo "✅ 脚本文件已删除" || echo "❌ 删除脚本文件失败"
+  rm -f "$SCRIPT_PATH" && echo "脚本文件已删除" || echo "删除脚本文件失败"
 }
 
 
 
 # 获取用户输入的配置参数
 get_config_params() {
-  echo "🔧 请输入配置参数："
+  echo "请输入配置参数："
 
 
 
@@ -189,27 +189,27 @@ get_config_params() {
 
 # 安装功能
 install_panel() {
-  echo "🚀 开始安装面板..."
+  echo "开始安装面板..."
   check_docker
   get_config_params
 
-  echo "🔽 下载必要文件..."
+  echo "下载必要文件..."
   DOCKER_COMPOSE_URL=$(get_docker_compose_url)
-  echo "📡 选择配置文件：$(basename "$DOCKER_COMPOSE_URL")"
+  echo "选择配置文件：$(basename "$DOCKER_COMPOSE_URL")"
   curl -L -o docker-compose.yml "$DOCKER_COMPOSE_URL"
 
   # 检查 gost.sql 是否已存在
   if [[ -f "gost.sql" ]]; then
-    echo "⏭️ 跳过下载: gost.sql (使用当前位置的文件)"
+    echo "跳过下载: gost.sql (使用当前位置的文件)"
   else
-    echo "📡 下载数据库初始化文件..."
+    echo "下载数据库初始化文件..."
     curl -L -o gost.sql "$GOST_SQL_URL"
   fi
-  echo "✅ 文件准备完成"
+  echo "文件准备完成"
 
   # 自动检测并配置 IPv6 支持
   if check_ipv6_support; then
-    echo "🚀 系统支持 IPv6，自动启用 IPv6 配置..."
+    echo "系统支持 IPv6，自动启用 IPv6 配置..."
     configure_docker_ipv6
   fi
 
@@ -222,123 +222,123 @@ FRONTEND_PORT=$FRONTEND_PORT
 BACKEND_PORT=$BACKEND_PORT
 EOF
 
-  echo "🚀 启动 docker 服务..."
+  echo "启动 docker 服务..."
   $DOCKER_CMD up -d
 
-  echo "🎉 部署完成"
-  echo "🌐 访问地址: http://服务器IP:$FRONTEND_PORT"
-  echo "📖 部署完成后请阅读下使用文档，求求了啊，不要上去就是一顿操作"
-  echo "📚 文档地址: https://tes.cc/guide.html"
-  echo "💡 默认管理员账号: admin_user / admin_user"
-  echo "⚠️  登录后请立即修改默认密码！"
+  echo "部署完成"
+  echo "访问地址: http://服务器IP:$FRONTEND_PORT"
+  echo "部署完成后请阅读下使用文档，求求了啊，不要上去就是一顿操作"
+  echo "文档地址: https://tes.cc/guide.html"
+  echo "默认管理员账号: admin_user / admin_user"
+  echo "登录后请立即修改默认密码！"
 
 
 }
 
 # 更新功能
 update_panel() {
-  echo "🔄 开始更新面板..."
+  echo "开始更新面板..."
   check_docker
 
-  echo "🔽 下载最新配置文件..."
+  echo "下载最新配置文件..."
   DOCKER_COMPOSE_URL=$(get_docker_compose_url)
-  echo "📡 选择配置文件：$(basename "$DOCKER_COMPOSE_URL")"
+  echo "选择配置文件：$(basename "$DOCKER_COMPOSE_URL")"
   curl -L -o docker-compose.yml "$DOCKER_COMPOSE_URL"
-  echo "✅ 下载完成"
+  echo "下载完成"
 
   # 自动检测并配置 IPv6 支持
   if check_ipv6_support; then
-    echo "🚀 系统支持 IPv6，自动启用 IPv6 配置..."
+    echo "系统支持 IPv6，自动启用 IPv6 配置..."
     configure_docker_ipv6
   fi
 
-  echo "🛑 停止当前服务..."
+  echo "停止当前服务..."
   $DOCKER_CMD down
 
-  echo "⬇️ 拉取最新镜像..."
+  echo "拉取最新镜像..."
   $DOCKER_CMD pull
 
-  echo "🚀 启动更新后的服务..."
+  echo "启动更新后的服务..."
   $DOCKER_CMD up -d
 
   # 等待服务启动
-  echo "⏳ 等待服务启动..."
+  echo "等待服务启动..."
 
   # 检查后端容器健康状态
-  echo "🔍 检查后端服务状态..."
+  echo "检查后端服务状态..."
   for i in {1..90}; do
     if docker ps --format "{{.Names}}" | grep -q "^springboot-backend$"; then
       BACKEND_HEALTH=$(docker inspect -f '{{.State.Health.Status}}' springboot-backend 2>/dev/null || echo "unknown")
       if [[ "$BACKEND_HEALTH" == "healthy" ]]; then
-        echo "✅ 后端服务健康检查通过"
+        echo "后端服务健康检查通过"
         break
       elif [[ "$BACKEND_HEALTH" == "starting" ]]; then
         # 继续等待
         :
       elif [[ "$BACKEND_HEALTH" == "unhealthy" ]]; then
-        echo "⚠️ 后端健康状态：$BACKEND_HEALTH"
+        echo "后端健康状态：$BACKEND_HEALTH"
       fi
     else
-      echo "⚠️ 后端容器未找到或未运行"
+      echo "后端容器未找到或未运行"
       BACKEND_HEALTH="not_running"
     fi
     if [ $i -eq 90 ]; then
-      echo "❌ 后端服务启动超时（90秒）"
-      echo "🔍 当前状态：$(docker inspect -f '{{.State.Health.Status}}' springboot-backend 2>/dev/null || echo '容器不存在')"
-      echo "🛑 更新终止"
+      echo "后端服务启动超时（90秒）"
+      echo "当前状态：$(docker inspect -f '{{.State.Health.Status}}' springboot-backend 2>/dev/null || echo '容器不存在')"
+      echo "更新终止"
       return 1
     fi
     # 每15秒显示一次进度
     if [ $((i % 15)) -eq 1 ]; then
-      echo "⏳ 等待后端服务启动... ($i/90) 状态：${BACKEND_HEALTH:-unknown}"
+      echo "等待后端服务启动... ($i/90) 状态：${BACKEND_HEALTH:-unknown}"
     fi
     sleep 1
   done
 
   # 检查数据库容器健康状态
-  echo "🔍 检查数据库服务状态..."
+  echo "检查数据库服务状态..."
   for i in {1..60}; do
     if docker ps --format "{{.Names}}" | grep -q "^gost-mysql$"; then
       DB_HEALTH=$(docker inspect -f '{{.State.Health.Status}}' gost-mysql 2>/dev/null || echo "unknown")
       if [[ "$DB_HEALTH" == "healthy" ]]; then
-        echo "✅ 数据库服务健康检查通过"
+        echo "数据库服务健康检查通过"
         break
       elif [[ "$DB_HEALTH" == "starting" ]]; then
         # 继续等待
         :
       elif [[ "$DB_HEALTH" == "unhealthy" ]]; then
-        echo "⚠️ 数据库健康状态：$DB_HEALTH"
+        echo "数据库健康状态：$DB_HEALTH"
       fi
     else
-      echo "⚠️ 数据库容器未找到或未运行"
+      echo "数据库容器未找到或未运行"
       DB_HEALTH="not_running"
     fi
     if [ $i -eq 60 ]; then
-      echo "❌ 数据库服务启动超时（60秒）"
-      echo "🔍 当前状态：$(docker inspect -f '{{.State.Health.Status}}' gost-mysql 2>/dev/null || echo '容器不存在')"
-      echo "🛑 更新终止"
+      echo "数据库服务启动超时（60秒）"
+      echo "当前状态：$(docker inspect -f '{{.State.Health.Status}}' gost-mysql 2>/dev/null || echo '容器不存在')"
+      echo "更新终止"
       return 1
     fi
     # 每10秒显示一次进度
     if [ $((i % 10)) -eq 1 ]; then
-      echo "⏳ 等待数据库服务启动... ($i/60) 状态：${DB_HEALTH:-unknown}"
+      echo "等待数据库服务启动... ($i/60) 状态：${DB_HEALTH:-unknown}"
     fi
     sleep 1
   done
 
   # 从容器环境变量获取数据库信息
-  echo "🔍 获取数据库配置信息..."
+  echo "获取数据库配置信息..."
 
   # 等待一下让服务完全就绪
-  echo "⏳ 等待服务完全就绪..."
+  echo "等待服务完全就绪..."
   sleep 5
 
   # 先检查后端容器是否在运行
   if ! docker ps --format "{{.Names}}" | grep -q "^springboot-backend$"; then
-    echo "❌ 后端容器未运行，无法获取数据库配置"
-    echo "🔍 当前运行的容器："
+    echo "后端容器未运行，无法获取数据库配置"
+    echo "当前运行的容器："
     docker ps --format "table {{.Names}}\t{{.Status}}"
-    echo "🛑 更新终止"
+    echo "更新终止"
     return 1
   fi
 
@@ -350,49 +350,49 @@ update_panel() {
     DB_USER=$(echo "$DB_INFO" | grep "^DB_USER=" | cut -d'=' -f2)
     DB_HOST=$(echo "$DB_INFO" | grep "^DB_HOST=" | cut -d'=' -f2)
 
-    echo "📋 数据库配置："
+    echo "数据库配置："
     echo "   数据库名: $DB_NAME"
     echo "   用户名: $DB_USER"
     echo "   主机: $DB_HOST"
   else
-    echo "❌ 无法获取数据库配置信息"
-    echo "🔍 尝试诊断问题："
+    echo "无法获取数据库配置信息"
+    echo "尝试诊断问题："
     echo "   容器状态: $(docker inspect -f '{{.State.Status}}' springboot-backend 2>/dev/null || echo '容器不存在')"
     echo "   健康状态: $(docker inspect -f '{{.State.Health.Status}}' springboot-backend 2>/dev/null || echo '无健康检查')"
 
     # 尝试从 .env 文件读取配置
     if [[ -f ".env" ]]; then
-      echo "🔄 尝试从 .env 文件读取配置..."
+      echo "尝试从 .env 文件读取配置..."
       DB_NAME=$(grep "^DB_NAME=" .env | cut -d'=' -f2 2>/dev/null)
       DB_PASSWORD=$(grep "^DB_PASSWORD=" .env | cut -d'=' -f2 2>/dev/null)
       DB_USER=$(grep "^DB_USER=" .env | cut -d'=' -f2 2>/dev/null)
 
       if [[ -n "$DB_NAME" && -n "$DB_PASSWORD" && -n "$DB_USER" ]]; then
-        echo "✅ 从 .env 文件成功读取数据库配置"
-        echo "📋 数据库配置："
+        echo "从 .env 文件成功读取数据库配置"
+        echo "数据库配置："
         echo "   数据库名: $DB_NAME"
         echo "   用户名: $DB_USER"
       else
-        echo "❌ .env 文件中的数据库配置不完整"
-        echo "🛑 更新终止"
+        echo ".env 文件中的数据库配置不完整"
+        echo "更新终止"
         return 1
       fi
     else
-      echo "❌ 未找到 .env 文件"
-      echo "🛑 更新终止"
+      echo "未找到 .env 文件"
+      echo "更新终止"
       return 1
     fi
   fi
 
   # 检查必要的数据库配置
   if [[ -z "$DB_PASSWORD" || -z "$DB_USER" || -z "$DB_NAME" ]]; then
-    echo "❌ 数据库配置不完整（缺少必要参数）"
-    echo "🛑 更新终止"
+    echo "数据库配置不完整（缺少必要参数）"
+    echo "更新终止"
     return 1
   fi
 
   # 执行数据库字段变更
-  echo "🔄 执行数据库结构更新..."
+  echo "执行数据库结构更新..."
 
   # 创建临时迁移文件（现在有了数据库信息）
   cat > temp_migration.sql <<EOF
@@ -904,30 +904,354 @@ UPDATE \`statistics_flow\`
 SET \`created_time\` = UNIX_TIMESTAMP() * 1000
 WHERE \`created_time\` = 0 OR \`created_time\` IS NULL;
 
+-- 创建 user_group 表（如果不存在）
+CREATE TABLE IF NOT EXISTS \`user_group\` (
+  \`id\` int(10) NOT NULL AUTO_INCREMENT,
+  \`name\` varchar(200) DEFAULT NULL,
+  \`sort\` int(10) NOT NULL DEFAULT 0,
+  \`created_time\` bigint(20) NOT NULL,
+  \`updated_time\` bigint(20) DEFAULT NULL,
+  \`status\` int(10) NOT NULL DEFAULT 1,
+  PRIMARY KEY (\`id\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 创建 package_plan 表（如果不存在）
+CREATE TABLE IF NOT EXISTS \`package_plan\` (
+  \`id\` int(10) NOT NULL AUTO_INCREMENT,
+  \`name\` varchar(200) NOT NULL,
+  \`type\` varchar(50) NOT NULL DEFAULT 'normal',
+  \`group_id\` bigint(20) NOT NULL,
+  \`traffic\` bigint(20) NOT NULL DEFAULT 0,
+  \`max_rules\` int(10) NOT NULL DEFAULT 0,
+  \`price\` decimal(10,2) NOT NULL DEFAULT 0.00,
+  \`hidden\` int(10) NOT NULL DEFAULT 0,
+  \`sort\` int(10) NOT NULL DEFAULT 0,
+  \`created_time\` bigint(20) NOT NULL,
+  \`updated_time\` bigint(20) DEFAULT NULL,
+  \`status\` int(10) NOT NULL DEFAULT 1,
+  PRIMARY KEY (\`id\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- user 表：添加 group_id 字段（如果不存在）
+SET @sql = (
+  SELECT IF(
+    NOT EXISTS (
+      SELECT 1
+      FROM information_schema.COLUMNS
+      WHERE table_schema = DATABASE()
+        AND table_name = 'user'
+        AND column_name = 'group_id'
+    ),
+    'ALTER TABLE \`user\` ADD COLUMN \`group_id\` BIGINT(20) DEFAULT NULL;',
+    'SELECT "Column \`group_id\` already exists in \`user\`";'
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- user 表：添加 package_id 字段（如果不存在）
+SET @sql = (
+  SELECT IF(
+    NOT EXISTS (
+      SELECT 1
+      FROM information_schema.COLUMNS
+      WHERE table_schema = DATABASE()
+        AND table_name = 'user'
+        AND column_name = 'package_id'
+    ),
+    'ALTER TABLE \`user\` ADD COLUMN \`package_id\` BIGINT(20) DEFAULT NULL;',
+    'SELECT "Column \`package_id\` already exists in \`user\`";'
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- user 表：添加 wallet_balance 字段（如果不存在）
+SET @sql = (
+  SELECT IF(
+    NOT EXISTS (
+      SELECT 1
+      FROM information_schema.COLUMNS
+      WHERE table_schema = DATABASE()
+        AND table_name = 'user'
+        AND column_name = 'wallet_balance'
+    ),
+    'ALTER TABLE \`user\` ADD COLUMN \`wallet_balance\` DECIMAL(10,2) NOT NULL DEFAULT 0.00 COMMENT "钱包余额";',
+    'SELECT "Column \`wallet_balance\` already exists in \`user\`";'
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- user 表：添加 auto_renew 字段（如果不存在）
+SET @sql = (
+  SELECT IF(
+    NOT EXISTS (
+      SELECT 1
+      FROM information_schema.COLUMNS
+      WHERE table_schema = DATABASE()
+        AND table_name = 'user'
+        AND column_name = 'auto_renew'
+    ),
+    'ALTER TABLE \`user\` ADD COLUMN \`auto_renew\` INT(10) NOT NULL DEFAULT 0 COMMENT "自动续费";',
+    'SELECT "Column \`auto_renew\` already exists in \`user\`";'
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- 创建 forward_group 表（如果不存在）
+CREATE TABLE IF NOT EXISTS \`forward_group\` (
+  \`id\` int(10) NOT NULL AUTO_INCREMENT,
+  \`user_id\` int(10) DEFAULT NULL,
+  \`name\` varchar(200) NOT NULL,
+  \`sort\` int(10) NOT NULL DEFAULT 0,
+  \`created_time\` bigint(20) NOT NULL,
+  \`updated_time\` bigint(20) DEFAULT NULL,
+  \`status\` int(10) NOT NULL DEFAULT 1,
+  PRIMARY KEY (\`id\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- forward 表：添加 group_id 字段（如果不存在）
+SET @sql = (
+  SELECT IF(
+    NOT EXISTS (
+      SELECT 1
+      FROM information_schema.COLUMNS
+      WHERE table_schema = DATABASE()
+        AND table_name = 'forward'
+        AND column_name = 'group_id'
+    ),
+    'ALTER TABLE \`forward\` ADD COLUMN \`group_id\` BIGINT(20) DEFAULT NULL;',
+    'SELECT "Column \`group_id\` already exists in \`forward\`";'
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- forward 表：添加 accept_proxy_protocol 字段（如果不存在）
+SET @sql = (
+  SELECT IF(
+    NOT EXISTS (
+      SELECT 1
+      FROM information_schema.COLUMNS
+      WHERE table_schema = DATABASE()
+        AND table_name = 'forward'
+        AND column_name = 'accept_proxy_protocol'
+    ),
+    'ALTER TABLE \`forward\` ADD COLUMN \`accept_proxy_protocol\` INT(10) NOT NULL DEFAULT 0 COMMENT "接受Proxy Protocol";',
+    'SELECT "Column \`accept_proxy_protocol\` already exists in \`forward\`";'
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- forward 表：添加 send_proxy_protocol 字段（如果不存在）
+SET @sql = (
+  SELECT IF(
+    NOT EXISTS (
+      SELECT 1
+      FROM information_schema.COLUMNS
+      WHERE table_schema = DATABASE()
+        AND table_name = 'forward'
+        AND column_name = 'send_proxy_protocol'
+    ),
+    'ALTER TABLE \`forward\` ADD COLUMN \`send_proxy_protocol\` INT(10) NOT NULL DEFAULT 0 COMMENT "发送Proxy Protocol";',
+    'SELECT "Column \`send_proxy_protocol\` already exists in \`forward\`";'
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- forward 表：添加 ip_limit 字段（如果不存在）
+SET @sql = (
+  SELECT IF(
+    NOT EXISTS (
+      SELECT 1
+      FROM information_schema.COLUMNS
+      WHERE table_schema = DATABASE()
+        AND table_name = 'forward'
+        AND column_name = 'ip_limit'
+    ),
+    'ALTER TABLE \`forward\` ADD COLUMN \`ip_limit\` INT(10) NOT NULL DEFAULT 0 COMMENT "单IP连接数限制";',
+    'SELECT "Column \`ip_limit\` already exists in \`forward\`";'
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- forward 表：添加 conn_limit 字段（如果不存在）
+SET @sql = (
+  SELECT IF(
+    NOT EXISTS (
+      SELECT 1
+      FROM information_schema.COLUMNS
+      WHERE table_schema = DATABASE()
+        AND table_name = 'forward'
+        AND column_name = 'conn_limit'
+    ),
+    'ALTER TABLE \`forward\` ADD COLUMN \`conn_limit\` INT(10) NOT NULL DEFAULT 0 COMMENT "总连接数限制";',
+    'SELECT "Column \`conn_limit\` already exists in \`forward\`";'
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- package_plan 表：添加 duration_days 字段（如果不存在）
+SET @sql = (
+  SELECT IF(
+    NOT EXISTS (
+      SELECT 1
+      FROM information_schema.COLUMNS
+      WHERE table_schema = DATABASE()
+        AND table_name = 'package_plan'
+        AND column_name = 'duration_days'
+    ),
+    'ALTER TABLE \`package_plan\` ADD COLUMN \`duration_days\` INT(10) NOT NULL DEFAULT 0 COMMENT "有效天数，0为永久";',
+    'SELECT "Column \`duration_days\` already exists in \`package_plan\`";'
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- 创建 device_group 表（如果不存在）
+CREATE TABLE IF NOT EXISTS \`device_group\` (
+  \`id\` int(10) NOT NULL AUTO_INCREMENT,
+  \`name\` varchar(200) NOT NULL,
+  \`node_id\` bigint(20) NOT NULL,
+  \`user_group_id\` bigint(20) DEFAULT NULL,
+  \`ratio\` decimal(10,2) NOT NULL DEFAULT 1.00,
+  \`hide_in_probe\` int(10) NOT NULL DEFAULT 0,
+  \`remark\` varchar(500) DEFAULT NULL,
+  \`sort\` int(10) NOT NULL DEFAULT 0,
+  \`created_time\` bigint(20) NOT NULL,
+  \`updated_time\` bigint(20) DEFAULT NULL,
+  \`status\` int(10) NOT NULL DEFAULT 1,
+  PRIMARY KEY (\`id\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- forward 表：添加 in_device_group_id 字段（如果不存在）
+SET @sql = (
+  SELECT IF(
+    NOT EXISTS (
+      SELECT 1
+      FROM information_schema.COLUMNS
+      WHERE table_schema = DATABASE()
+        AND table_name = 'forward'
+        AND column_name = 'in_device_group_id'
+    ),
+    'ALTER TABLE \`forward\` ADD COLUMN \`in_device_group_id\` BIGINT(20) DEFAULT NULL;',
+    'SELECT "Column \`in_device_group_id\` already exists in \`forward\`";'
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- forward 表：添加 out_device_group_id 字段（如果不存在）
+SET @sql = (
+  SELECT IF(
+    NOT EXISTS (
+      SELECT 1
+      FROM information_schema.COLUMNS
+      WHERE table_schema = DATABASE()
+        AND table_name = 'forward'
+        AND column_name = 'out_device_group_id'
+    ),
+    'ALTER TABLE \`forward\` ADD COLUMN \`out_device_group_id\` BIGINT(20) DEFAULT NULL;',
+    'SELECT "Column \`out_device_group_id\` already exists in \`forward\`";'
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- 创建 orders 表（如果不存在）
+CREATE TABLE IF NOT EXISTS \`orders\` (
+  \`id\` int(10) NOT NULL AUTO_INCREMENT,
+  \`order_no\` varchar(64) NOT NULL,
+  \`user_id\` int(10) NOT NULL,
+  \`user_name\` varchar(100) DEFAULT NULL,
+  \`type\` varchar(50) NOT NULL DEFAULT 'package',
+  \`package_id\` bigint(20) DEFAULT NULL,
+  \`redeem_code\` varchar(100) DEFAULT NULL,
+  \`info\` varchar(500) DEFAULT NULL,
+  \`amount\` decimal(10,2) NOT NULL DEFAULT 0.00,
+  \`order_status\` int(10) NOT NULL DEFAULT 1,
+  \`paid_time\` bigint(20) DEFAULT NULL,
+  \`created_time\` bigint(20) NOT NULL,
+  \`updated_time\` bigint(20) DEFAULT NULL,
+  \`status\` int(10) NOT NULL DEFAULT 1,
+  PRIMARY KEY (\`id\`),
+  UNIQUE KEY \`unique_order_no\` (\`order_no\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- orders 表：添加 redeem_code 字段（如果不存在，兼容已创建过 orders 表但缺少该字段的情况）
+SET @sql = (
+  SELECT IF(
+    NOT EXISTS (
+      SELECT 1
+      FROM information_schema.COLUMNS
+      WHERE table_schema = DATABASE()
+        AND table_name = 'orders'
+        AND column_name = 'redeem_code'
+    ),
+    'ALTER TABLE \`orders\` ADD COLUMN \`redeem_code\` VARCHAR(100) DEFAULT NULL;',
+    'SELECT "Column \`redeem_code\` already exists in \`orders\`";'
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- 创建 redeem_code 表（如果不存在）
+CREATE TABLE IF NOT EXISTS \`redeem_code\` (
+  \`id\` int(10) NOT NULL AUTO_INCREMENT,
+  \`code\` varchar(100) NOT NULL,
+  \`package_id\` bigint(20) NOT NULL,
+  \`discount_ratio\` int(10) NOT NULL DEFAULT 100,
+  \`uses_remaining\` int(10) NOT NULL DEFAULT 1,
+  \`created_time\` bigint(20) NOT NULL,
+  \`updated_time\` bigint(20) DEFAULT NULL,
+  \`status\` int(10) NOT NULL DEFAULT 1,
+  PRIMARY KEY (\`id\`),
+  UNIQUE KEY \`unique_redeem_code\` (\`code\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 EOF
 
   # 检查数据库容器
   if ! docker ps --format "{{.Names}}" | grep -q "^gost-mysql$"; then
-    echo "❌ 数据库容器 gost-mysql 未运行"
-    echo "🔍 当前运行的容器："
+    echo "数据库容器 gost-mysql 未运行"
+    echo "当前运行的容器："
     docker ps --format "table {{.Names}}\t{{.Image}}\t{{.Status}}"
-    echo "❌ 数据库结构更新失败，请手动执行 temp_migration.sql"
-    echo "📁 迁移文件已保存为 temp_migration.sql"
+    echo "数据库结构更新失败，请手动执行 temp_migration.sql"
+    echo "迁移文件已保存为 temp_migration.sql"
     return 1
   fi
 
   # 执行数据库迁移
   if docker exec -i gost-mysql mysql -u "$DB_USER" -p"$DB_PASSWORD" < temp_migration.sql 2>/dev/null; then
-    echo "✅ 数据库结构更新完成"
+    echo "数据库结构更新完成"
   else
-    echo "⚠️ 使用用户密码失败，尝试root密码..."
+    echo "使用用户密码失败，尝试root密码..."
     if docker exec -i gost-mysql mysql -u root -p"$DB_PASSWORD" < temp_migration.sql 2>/dev/null; then
-      echo "✅ 数据库结构更新完成"
+      echo "数据库结构更新完成"
     else
-      echo "❌ 数据库结构更新失败，请手动执行 temp_migration.sql"
-      echo "📁 迁移文件已保存为 temp_migration.sql"
-      echo "🔍 数据库容器状态: $(docker inspect -f '{{.State.Status}}' gost-mysql 2>/dev/null || echo '容器不存在')"
-      echo "🛑 更新终止"
+      echo "数据库结构更新失败，请手动执行 temp_migration.sql"
+      echo "迁移文件已保存为 temp_migration.sql"
+      echo "数据库容器状态: $(docker inspect -f '{{.State.Status}}' gost-mysql 2>/dev/null || echo '容器不存在')"
+      echo "更新终止"
       return 1
     fi
   fi
@@ -935,19 +1259,19 @@ EOF
   # 清理临时文件
   rm -f temp_migration.sql
 
-  echo "✅ 更新完成"
+  echo "更新完成"
 }
 
 # 导出数据库备份
 export_migration_sql() {
-  echo "📄 开始导出数据库备份..."
+  echo "开始导出数据库备份..."
 
   # 获取数据库配置信息
-  echo "🔍 获取数据库配置信息..."
+  echo "获取数据库配置信息..."
 
   # 先检查后端容器是否在运行
   if ! docker ps --format "{{.Names}}" | grep -q "^springboot-backend$"; then
-    echo "❌ 后端容器未运行，尝试从 .env 文件读取配置..."
+    echo "后端容器未运行，尝试从 .env 文件读取配置..."
 
     # 从 .env 文件读取配置
     if [[ -f ".env" ]]; then
@@ -956,13 +1280,13 @@ export_migration_sql() {
       DB_USER=$(grep "^DB_USER=" .env | cut -d'=' -f2 2>/dev/null)
 
       if [[ -n "$DB_NAME" && -n "$DB_PASSWORD" && -n "$DB_USER" ]]; then
-        echo "✅ 从 .env 文件读取数据库配置成功"
+        echo "从 .env 文件读取数据库配置成功"
       else
-        echo "❌ .env 文件中的数据库配置不完整"
+        echo ".env 文件中的数据库配置不完整"
         return 1
       fi
     else
-      echo "❌ 未找到 .env 文件"
+      echo "未找到 .env 文件"
       return 1
     fi
   else
@@ -974,9 +1298,9 @@ export_migration_sql() {
       DB_PASSWORD=$(echo "$DB_INFO" | grep "^DB_PASSWORD=" | cut -d'=' -f2)
       DB_USER=$(echo "$DB_INFO" | grep "^DB_USER=" | cut -d'=' -f2)
 
-      echo "✅ 从容器环境变量读取数据库配置成功"
+      echo "从容器环境变量读取数据库配置成功"
     else
-      echo "❌ 无法从容器获取数据库配置，尝试从 .env 文件读取..."
+      echo "无法从容器获取数据库配置，尝试从 .env 文件读取..."
 
       if [[ -f ".env" ]]; then
         DB_NAME=$(grep "^DB_NAME=" .env | cut -d'=' -f2 2>/dev/null)
@@ -984,13 +1308,13 @@ export_migration_sql() {
         DB_USER=$(grep "^DB_USER=" .env | cut -d'=' -f2 2>/dev/null)
 
         if [[ -n "$DB_NAME" && -n "$DB_PASSWORD" && -n "$DB_USER" ]]; then
-          echo "✅ 从 .env 文件读取数据库配置成功"
+          echo "从 .env 文件读取数据库配置成功"
         else
-          echo "❌ .env 文件中的数据库配置不完整"
+          echo ".env 文件中的数据库配置不完整"
           return 1
         fi
       else
-        echo "❌ 未找到 .env 文件"
+        echo "未找到 .env 文件"
         return 1
       fi
     fi
@@ -998,36 +1322,36 @@ export_migration_sql() {
 
   # 检查必要的数据库配置
   if [[ -z "$DB_PASSWORD" || -z "$DB_USER" || -z "$DB_NAME" ]]; then
-    echo "❌ 数据库配置不完整（缺少必要参数）"
+    echo "数据库配置不完整（缺少必要参数）"
     return 1
   fi
 
-  echo "📋 数据库配置："
+  echo "数据库配置："
   echo "   数据库名: $DB_NAME"
   echo "   用户名: $DB_USER"
 
   # 检查数据库容器是否运行
   if ! docker ps --format "{{.Names}}" | grep -q "^gost-mysql$"; then
-    echo "❌ 数据库容器未运行，无法导出数据"
-    echo "🔍 当前运行的容器："
+    echo "数据库容器未运行，无法导出数据"
+    echo "当前运行的容器："
     docker ps --format "table {{.Names}}\t{{.Image}}\t{{.Status}}"
     return 1
   fi
 
   # 生成数据库备份文件
   SQL_FILE="database_backup_$(date +%Y%m%d_%H%M%S).sql"
-  echo "📝 导出数据库备份: $SQL_FILE"
+  echo "导出数据库备份: $SQL_FILE"
 
   # 使用 mysqldump 导出数据库
-  echo "⏳ 正在导出数据库..."
+  echo "正在导出数据库..."
   if docker exec gost-mysql mysqldump -u "$DB_USER" -p"$DB_PASSWORD" --single-transaction --routines --triggers "$DB_NAME" > "$SQL_FILE" 2>/dev/null; then
-    echo "✅ 数据库导出成功"
+    echo "数据库导出成功"
   else
-    echo "⚠️ 使用用户密码失败，尝试root密码..."
+    echo "使用用户密码失败，尝试root密码..."
     if docker exec gost-mysql mysqldump -u root -p"$DB_PASSWORD" --single-transaction --routines --triggers "$DB_NAME" > "$SQL_FILE" 2>/dev/null; then
-      echo "✅ 数据库导出成功"
+      echo "数据库导出成功"
     else
-      echo "❌ 数据库导出失败"
+      echo "数据库导出失败"
       rm -f "$SQL_FILE"
       return 1
     fi
@@ -1036,10 +1360,10 @@ export_migration_sql() {
   # 检查文件大小
   if [[ -f "$SQL_FILE" ]] && [[ -s "$SQL_FILE" ]]; then
     FILE_SIZE=$(du -h "$SQL_FILE" | cut -f1)
-    echo "📁 文件位置: $(pwd)/$SQL_FILE"
-    echo "📊 文件大小: $FILE_SIZE"
+    echo "文件位置: $(pwd)/$SQL_FILE"
+    echo "文件大小: $FILE_SIZE"
   else
-    echo "❌ 导出的文件为空或不存在"
+    echo "导出的文件为空或不存在"
     rm -f "$SQL_FILE"
     return 1
   fi
@@ -1048,28 +1372,28 @@ export_migration_sql() {
 
 # 卸载功能
 uninstall_panel() {
-  echo "🗑️ 开始卸载面板..."
+  echo "开始卸载面板..."
   check_docker
 
   if [[ ! -f "docker-compose.yml" ]]; then
-    echo "⚠️ 未找到 docker-compose.yml 文件，正在下载以完成卸载..."
+    echo "未找到 docker-compose.yml 文件，正在下载以完成卸载..."
     DOCKER_COMPOSE_URL=$(get_docker_compose_url)
-    echo "📡 选择配置文件：$(basename "$DOCKER_COMPOSE_URL")"
+    echo "选择配置文件：$(basename "$DOCKER_COMPOSE_URL")"
     curl -L -o docker-compose.yml "$DOCKER_COMPOSE_URL"
-    echo "✅ docker-compose.yml 下载完成"
+    echo "docker-compose.yml 下载完成"
   fi
 
   read -p "确认卸载面板吗？此操作将停止并删除所有容器和数据 (y/N): " confirm
   if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
-    echo "❌ 取消卸载"
+    echo "取消卸载"
     return 0
   fi
 
-  echo "🛑 停止并删除容器、镜像、卷..."
+  echo "停止并删除容器、镜像、卷..."
   $DOCKER_CMD down --rmi all --volumes --remove-orphans
-  echo "🧹 删除配置文件..."
+  echo "删除配置文件..."
   rm -f docker-compose.yml gost.sql .env
-  echo "✅ 卸载完成"
+  echo "卸载完成"
 }
 
 # 主逻辑
@@ -1102,12 +1426,12 @@ main() {
         exit 0
         ;;
       5)
-        echo "👋 退出脚本"
+        echo "退出脚本"
         delete_self
         exit 0
         ;;
       *)
-        echo "❌ 无效选项，请输入 1-5"
+        echo "无效选项，请输入 1-5"
         echo ""
         ;;
     esac

@@ -17,6 +17,8 @@ public interface UserService extends IService<User> {
 
     R login(LoginDto loginDto);
 
+    R register(RegisterDto registerDto);
+
     R createUser(UserDto userDto);
 
     R getAllUsers();
@@ -30,4 +32,16 @@ public interface UserService extends IService<User> {
     R updatePassword(ChangePasswordDto changePasswordDto);
 
     R reset(ResetFlowDto resetFlowDto);
+
+    R updateAutoRenew(Boolean autoRenew);
+
+    R resetPassword(ResetPasswordDto resetPasswordDto);
+
+    R updateNotifySettings(NotifySettingsDto notifySettingsDto);
+
+    R getTelegramBindCode();
+
+    R unbindTelegram();
+
+    R sendTelegramTestMessage();
 }

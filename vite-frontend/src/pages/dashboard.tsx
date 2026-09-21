@@ -2,11 +2,12 @@ import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Button } from "@heroui/button";
 import { Modal, ModalContent, ModalHeader, ModalBody } from "@heroui/modal";
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import toast from 'react-hot-toast';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 
-import { getUserPackageInfo } from "@/api";
+import { getUserPackageInfo, getConfigByName } from "@/api";
 
 interface UserInfo {
   flow: number;
@@ -58,6 +59,7 @@ interface StatisticsFlow {
 }
 
 export default function DashboardPage() {
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [userInfo, setUserInfo] = useState<UserInfo>({} as UserInfo);
   const [userTunnels, setUserTunnels] = useState<UserTunnel[]>([]);
@@ -68,6 +70,7 @@ export default function DashboardPage() {
   const [addressModalOpen, setAddressModalOpen] = useState(false);
   const [addressModalTitle, setAddressModalTitle] = useState('');
   const [addressList, setAddressList] = useState<AddressItem[]>([]);
+  const [announcement, setAnnouncement] = useState('');
 
   // 检查有效期通知
   const checkExpirationNotifications = (userInfo: UserInfo, tunnels: UserTunnel[]) => {
@@ -94,13 +97,13 @@ export default function DashboardPage() {
           hasNotification = true;
           if (diffDays === 1) {
             toast('账户将于明天过期，请及时续费', { 
-              icon: '⚠️',
+              icon: '',
               duration: 6000,
               style: { background: '#f59e0b', color: '#fff' }
             });
           } else {
             toast(`账户将于${diffDays}天后过期，请及时续费`, { 
-              icon: '⚠️',
+              icon: '',
               duration: 6000,
               style: { background: '#f59e0b', color: '#fff' }
             });
@@ -108,7 +111,7 @@ export default function DashboardPage() {
         } else if (diffDays <= 0) {
           hasNotification = true;
           toast('账户已过期，请立即续费', { 
-            icon: '⚠️',
+            icon: '',
             duration: 8000,
             style: { background: '#ef4444', color: '#fff' }
           });
@@ -130,13 +133,13 @@ export default function DashboardPage() {
             hasNotification = true;
             if (diffDays === 1) {
               toast(`隧道"${tunnel.tunnelName}"将于明天过期`, { 
-                icon: '⚠️',
+                icon: '',
                 duration: 5000,
                 style: { background: '#f59e0b', color: '#fff' }
               });
             } else {
               toast(`隧道"${tunnel.tunnelName}"将于${diffDays}天后过期`, { 
-                icon: '⚠️',
+                icon: '',
                 duration: 5000,
                 style: { background: '#f59e0b', color: '#fff' }
               });
@@ -144,7 +147,7 @@ export default function DashboardPage() {
           } else if (diffDays <= 0) {
             hasNotification = true;
             toast(`隧道"${tunnel.tunnelName}"已过期`, { 
-              icon: '⚠️',
+              icon: '',
               duration: 6000,
               style: { background: '#ef4444', color: '#fff' }
             });
@@ -172,8 +175,20 @@ export default function DashboardPage() {
     setIsAdmin(adminStatus === 'true');
     
     loadPackageData();
-    localStorage.setItem('e', '/dashboard');
+    loadAnnouncement();
+    localStorage.setItem('e', '/admin/dashboard');
   }, []);
+
+  const loadAnnouncement = async () => {
+    try {
+      const res = await getConfigByName('site_announcement');
+      if (res.code === 0 && res.data?.value) {
+        setAnnouncement(res.data.value);
+      }
+    } catch (error) {
+      console.error('获取站点公告失败:', error);
+    }
+  };
 
   const loadPackageData = async () => {
     setLoading(true);
@@ -588,12 +603,41 @@ export default function DashboardPage() {
     }
 
       return (
-      
-        <div className="px-3 lg:px-6 py-2 lg:py-4">
+
+        <div className="dashboard-home px-4 lg:px-6 py-5 lg:py-6 max-w-[1600px] mx-auto">
+          <div className="flex flex-col gap-4 mb-5 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="text-xs font-medium tracking-[0.16em] text-blue-400 uppercase">Console</p>
+              <h1 className="mt-1 text-xl font-semibold tracking-tight text-foreground">仪表盘</h1>
+              <p className="mt-1 text-sm text-default-500">查看账户资源、流量使用情况与转发状态。</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button size="sm" variant="bordered" className="dashboard-action" onPress={loadPackageData} isLoading={loading}>
+                刷新数据
+              </Button>
+              <Button size="sm" color="primary" className="font-medium" onPress={() => navigate('/forward')}>
+                管理转发
+              </Button>
+            </div>
+          </div>
+
+          {/* 站点公告 */}
+          {announcement && (
+            <Card className="dashboard-panel mb-5">
+              <CardBody className="p-3 lg:p-4">
+                <div className="flex items-start gap-2">
+                  <svg className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                  </svg>
+                  <p className="text-sm text-foreground whitespace-pre-wrap">{announcement}</p>
+                </div>
+              </CardBody>
+            </Card>
+          )}
 
                           {/* 响应式统计卡片 */}
          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4 mb-6 lg:mb-8">
-           <Card className="border border-gray-200 dark:border-default-200 shadow-md hover:shadow-lg transition-shadow">
+           <Card className="dashboard-panel dashboard-stat">
              <CardBody className="p-3 lg:p-4">
                <div className="flex flex-col space-y-2">
                  <div className="flex items-center justify-between">
@@ -609,7 +653,7 @@ export default function DashboardPage() {
              </CardBody>
            </Card>
 
-           <Card className="border border-gray-200 dark:border-default-200 shadow-md hover:shadow-lg transition-shadow">
+           <Card className="dashboard-panel dashboard-stat">
              <CardBody className="p-3 lg:p-4">
                <div className="flex flex-col space-y-2">
                  <div className="flex items-center justify-between">
@@ -641,7 +685,7 @@ export default function DashboardPage() {
              </CardBody>
            </Card>
 
-           <Card className="border border-gray-200 dark:border-default-200 shadow-md hover:shadow-lg transition-shadow">
+           <Card className="dashboard-panel dashboard-stat">
              <CardBody className="p-3 lg:p-4">
                <div className="flex flex-col space-y-2">
                  <div className="flex items-center justify-between">
@@ -657,7 +701,7 @@ export default function DashboardPage() {
              </CardBody>
            </Card>
 
-           <Card className="border border-gray-200 dark:border-default-200 shadow-md hover:shadow-lg transition-shadow">
+           <Card className="dashboard-panel dashboard-stat">
              <CardBody className="p-3 lg:p-4">
                <div className="flex flex-col space-y-2">
                  <div className="flex items-center justify-between">
@@ -681,8 +725,8 @@ export default function DashboardPage() {
          </div>
 
          {/* 24小时流量统计图表 */}
-         <Card className="mb-6 lg:mb-8 border border-gray-200 dark:border-default-200 shadow-md">
-           <CardHeader className="pb-3">
+         <Card className="dashboard-panel mb-5 lg:mb-6">
+           <CardHeader className="pb-3 border-b border-default-100">
              <div className="flex items-center gap-2">
                <svg className="w-5 h-5 text-primary" fill="currentColor" viewBox="0 0 20 20">
                  <path d="M2 10a8 8 0 018-8v8h8a8 8 0 11-16 0z" />
@@ -697,7 +741,7 @@ export default function DashboardPage() {
                  <svg className="w-12 h-12 text-default-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                  </svg>
-                 <p className="text-default-500">暂无流量统计数据</p>
+                 <p className="text-default-500">暂无数据</p>
                </div>
              ) : (
                <div className="space-y-4">
@@ -758,8 +802,8 @@ export default function DashboardPage() {
 
                  {/* 隧道权限 - 管理员不显示 */}
          {!isAdmin && (
-          <Card className="mb-6 lg:mb-8 border border-gray-200 dark:border-default-200 shadow-md">
-           <CardHeader className="pb-3">
+          <Card className="dashboard-panel mb-5 lg:mb-6">
+           <CardHeader className="pb-3 border-b border-default-100">
              <div className="flex items-center gap-2">
                <svg className="w-5 h-5 text-primary" fill="currentColor" viewBox="0 0 20 20">
                  <path fillRule="evenodd" d="M12.586 4.586a2 2 0 112.828 2.828l-3 3a2 2 0 01-2.828 0 1 1 0 00-1.414 1.414 4 4 0 005.656 0l3-3a4 4 0 00-5.656-5.656l-1.5 1.5a1 1 0 101.414 1.414l1.5-1.5zm-5 5a2 2 0 012.828 0 1 1 0 101.414-1.414 4 4 0 00-5.656 0l-3 3a4 4 0 105.656 5.656l1.5-1.5a1 1 0 10-1.414-1.414l-1.5 1.5a2 2 0 11-2.828-2.828l3-3z" clipRule="evenodd" />
@@ -776,7 +820,7 @@ export default function DashboardPage() {
                 <svg className="w-12 h-12 text-default-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
                 </svg>
-                <p className="text-default-500">暂无隧道权限</p>
+                <p className="text-default-500">暂无数据</p>
               </div>
             ) : (
                              <div className="space-y-3">
@@ -837,8 +881,8 @@ export default function DashboardPage() {
          )}
 
                  {/* 转发配置 */}
-         <Card className="border border-gray-200 dark:border-default-200 shadow-md">
-           <CardHeader className="pb-3">
+         <Card className="dashboard-panel">
+           <CardHeader className="pb-3 border-b border-default-100">
              <div className="flex items-center gap-2">
                <svg className="w-5 h-5 text-primary" fill="currentColor" viewBox="0 0 20 20">
                  <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
@@ -855,7 +899,7 @@ export default function DashboardPage() {
                 <svg className="w-12 h-12 text-default-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 9l4-4 4 4m0 6l-4 4-4-4" />
                 </svg>
-                <p className="text-default-500">暂无转发配置</p>
+                <p className="text-default-500">暂无数据</p>
               </div>
             ) : (
                              <div className="space-y-4">

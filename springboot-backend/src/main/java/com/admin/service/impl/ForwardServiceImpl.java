@@ -4,6 +4,7 @@ import com.admin.common.dto.ForwardDto;
 import com.admin.common.dto.ForwardUpdateDto;
 import com.admin.common.dto.ForwardWithTunnelDto;
 import com.admin.common.dto.GostDto;
+import com.admin.common.dto.TunnelDto;
 import com.admin.common.lang.R;
 import com.admin.common.utils.GostUtil;
 import com.admin.common.utils.JwtUtil;
@@ -22,6 +23,8 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -63,11 +66,30 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
     @Resource
     NodeService nodeService;
 
+    @Resource
+    @Lazy
+    private DeviceGroupService deviceGroupService;
+
+    @Resource
+    @Lazy
+    private PackagePlanService packagePlanService;
+
+    @Resource
+    @Lazy
+    private SpeedLimitService speedLimitService;
+
 
     @Override
     public R createForward(ForwardDto forwardDto) {
         // 1. 获取当前用户信息
         UserInfo currentUser = getCurrentUserInfo();
+
+        // 1.1 若未直接指定隧道，而是提供了入口/出口设备组，则自动解析或创建隧道
+        R resolveResult = resolveTunnelFromDeviceGroups(forwardDto.getTunnelId(), forwardDto.getInDeviceGroupId(),
+                forwardDto.getOutDeviceGroupId(), currentUser, forwardDto::setTunnelId);
+        if (resolveResult.getCode() != 0) {
+            return resolveResult;
+        }
 
         // 2. 检查隧道是否存在和可用
         Tunnel tunnel = validateTunnel(forwardDto.getTunnelId());
@@ -138,6 +160,12 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             if (user.getStatus() == 0) return R.err("用户已到期或被禁用");
         }
 
+        // 1.1 若未直接指定隧道，而是提供了入口/出口设备组，则自动解析或创建隧道
+        R resolveResult = resolveTunnelFromDeviceGroups(forwardUpdateDto.getTunnelId(), forwardUpdateDto.getInDeviceGroupId(),
+                forwardUpdateDto.getOutDeviceGroupId(), currentUser, forwardUpdateDto::setTunnelId);
+        if (resolveResult.getCode() != 0) {
+            return resolveResult;
+        }
 
         // 2. 检查转发是否存在
         Forward existForward = validateForwardExists(forwardUpdateDto.getId(), currentUser);
@@ -777,6 +805,142 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
     }
 
     /**
+     * 若未直接指定隧道，而是提供了入口/出口设备组，则自动解析或创建对应隧道，
+     * 并为普通用户自动开通该隧道的使用权限（额度取自账号自身的流量/规则数/到期时间）。
+     * 解析成功后通过 tunnelIdSetter 回填隧道ID。
+     */
+    private R resolveTunnelFromDeviceGroups(Integer explicitTunnelId, Long inDeviceGroupId, Long outDeviceGroupId,
+                                             UserInfo currentUser, java.util.function.Consumer<Integer> tunnelIdSetter) {
+        if (explicitTunnelId != null) {
+            return R.ok();
+        }
+        if (inDeviceGroupId == null) {
+            return R.err("请指定隧道或入口设备组");
+        }
+
+        DeviceGroup inGroup = deviceGroupService.getById(inDeviceGroupId);
+        if (inGroup == null) {
+            return R.err("入口设备组不存在");
+        }
+
+        DeviceGroup outGroup = null;
+        if (outDeviceGroupId != null) {
+            outGroup = deviceGroupService.getById(outDeviceGroupId);
+            if (outGroup == null) {
+                return R.err("出口设备组不存在");
+            }
+        }
+
+        if (currentUser.getRoleId() != ADMIN_ROLE_ID) {
+            R visibilityCheck = checkDeviceGroupVisibility(inGroup, currentUser.getUserId());
+            if (visibilityCheck.getCode() != 0) {
+                return visibilityCheck;
+            }
+            if (outGroup != null) {
+                visibilityCheck = checkDeviceGroupVisibility(outGroup, currentUser.getUserId());
+                if (visibilityCheck.getCode() != 0) {
+                    return visibilityCheck;
+                }
+            }
+        }
+
+        R tunnelResult = resolveOrCreateAutoTunnel(inGroup.getNodeId(), outGroup != null ? outGroup.getNodeId() : null, inGroup.getRatio());
+        if (tunnelResult.getCode() != 0) {
+            return tunnelResult;
+        }
+        Tunnel tunnel = (Tunnel) tunnelResult.getData();
+
+        if (currentUser.getRoleId() != ADMIN_ROLE_ID) {
+            R grantResult = ensureUserTunnelGrant(currentUser.getUserId(), tunnel.getId());
+            if (grantResult.getCode() != 0) {
+                return grantResult;
+            }
+        }
+
+        tunnelIdSetter.accept(tunnel.getId().intValue());
+        return R.ok();
+    }
+
+    /**
+     * 校验普通用户是否有权限使用该设备组（未绑定用户组则所有人可用）
+     */
+    private R checkDeviceGroupVisibility(DeviceGroup group, Integer userId) {
+        if (group.getUserGroupId() == null) {
+            return R.ok();
+        }
+        User user = userService.getById(userId);
+        if (user == null || user.getGroupId() == null || !user.getGroupId().equals(group.getUserGroupId())) {
+            return R.err("无权限使用设备组：" + group.getName());
+        }
+        return R.ok();
+    }
+
+    /**
+     * 根据入口/出口节点查找或自动创建隧道（自动创建的隧道以固定命名规则复用，避免重复创建）
+     */
+    private R resolveOrCreateAutoTunnel(Long inNodeId, Long outNodeId, java.math.BigDecimal ratio) {
+        String autoName = "auto_" + inNodeId + "_" + (outNodeId != null ? outNodeId : "direct");
+        Tunnel existing = tunnelService.getOne(new QueryWrapper<Tunnel>().eq("name", autoName));
+        if (existing != null) {
+            return R.ok(existing);
+        }
+
+        TunnelDto dto = new TunnelDto();
+        dto.setName(autoName);
+        dto.setInNodeId(inNodeId);
+        dto.setOutNodeId(outNodeId);
+        dto.setType(outNodeId != null ? TUNNEL_TYPE_TUNNEL_FORWARD : TUNNEL_TYPE_PORT_FORWARD);
+        dto.setFlow(2);
+        dto.setProtocol("tls");
+        dto.setTcpListenAddr("0.0.0.0");
+        dto.setUdpListenAddr("0.0.0.0");
+        dto.setTrafficRatio(ratio != null ? ratio : java.math.BigDecimal.ONE);
+
+        R createResult = tunnelService.createTunnel(dto);
+        if (createResult.getCode() != 0) {
+            return R.err("自动创建隧道失败：" + createResult.getMsg());
+        }
+
+        Tunnel created = tunnelService.getOne(new QueryWrapper<Tunnel>().eq("name", autoName));
+        if (created == null) {
+            return R.err("自动创建隧道失败");
+        }
+        return R.ok(created);
+    }
+
+    /**
+     * 确保用户拥有该（自动创建）隧道的使用权限，若不存在则以账号自身的配额自动开通
+     */
+    private R ensureUserTunnelGrant(Integer userId, Long tunnelId) {
+        UserTunnel existing = userTunnelService.getOne(new QueryWrapper<UserTunnel>()
+                .eq("user_id", userId)
+                .eq("tunnel_id", tunnelId));
+        if (existing != null) {
+            return R.ok();
+        }
+
+        User user = userService.getById(userId);
+        if (user == null) {
+            return R.err("用户不存在");
+        }
+
+        UserTunnel grant = new UserTunnel();
+        grant.setUserId(userId);
+        grant.setTunnelId(tunnelId.intValue());
+        grant.setFlow(user.getFlow() != null ? user.getFlow() : 0L);
+        grant.setInFlow(0L);
+        grant.setOutFlow(0L);
+        grant.setNum(user.getNum() != null ? user.getNum() : 0);
+        grant.setExpTime(user.getExpTime());
+        grant.setFlowResetTime(0L);
+        grant.setSpeedId(null);
+        grant.setStatus(1);
+
+        boolean result = userTunnelService.save(grant);
+        return result ? R.ok() : R.err("自动开通隧道权限失败");
+    }
+
+    /**
      * 检查用户权限和限制
      */
     private UserPermissionResult checkUserPermissions(UserInfo currentUser, Tunnel tunnel, Long excludeForwardId) {
@@ -1094,6 +1258,9 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             if (!isGostOperationSuccess(serviceResult)) {
                 log.info("删除主服务失败: {}", serviceResult.getMsg());
             }
+            if (resolveCLimiterId(forward) != null) {
+                GostUtil.DeleteCLimiters(oldNodeInfo.getInNode().getId(), forward.getId());
+            }
         }
 
         // 如果原隧道是隧道转发类型，需要删除链和远程服务
@@ -1138,6 +1305,14 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             return R.err(serviceResult.getMsg());
         }
 
+        // 清理连接数/IP限制器（如果存在，忽略不存在的错误）
+        if (resolveCLimiterId(forward) != null) {
+            GostUtil.DeleteCLimiters(nodeInfo.getInNode().getId(), forward.getId());
+        }
+
+        // 清理规则限速派生出的限速器（如果存在，忽略不存在的错误）
+        GostUtil.DeleteLimiters(nodeInfo.getInNode().getId(), "fwd_" + forward.getId());
+
         // 隧道转发需要删除链和远程服务
         if (tunnel.getType() == TUNNEL_TYPE_TUNNEL_FORWARD) {
             GostDto chainResult = GostUtil.DeleteChains(nodeInfo.getInNode().getId(), serviceName);
@@ -1180,8 +1355,81 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
      * 创建主服务
      */
     private R createMainService(Node inNode, String serviceName, Forward forward, Integer limiter, Integer tunnelType, Tunnel tunnel, String strategy, String interfaceName) {
-        GostDto result = GostUtil.AddService(inNode.getId(), serviceName, forward.getInPort(), limiter, forward.getRemoteAddr(), tunnelType, tunnel, strategy, interfaceName);
+        Long climiter = resolveCLimiterId(forward);
+        if (climiter != null) {
+            GostDto climiterResult = GostUtil.AddCLimiters(inNode.getId(), climiter, forward.getConnLimit(), forward.getIpLimit());
+            if (!isGostOperationSuccess(climiterResult)) {
+                return R.err(climiterResult.getMsg());
+            }
+        }
+        String effectiveLimiter = resolveEffectiveLimiterName(inNode, forward, limiter);
+        GostDto result = GostUtil.AddService(inNode.getId(), serviceName, forward.getInPort(), effectiveLimiter, forward.getRemoteAddr(), tunnelType, tunnel, strategy, interfaceName, climiter, forward.getAcceptProxyProtocol(), forward.getSendProxyProtocol());
         return isGostOperationSuccess(result) ? R.ok() : R.err(result.getMsg());
+    }
+
+    /**
+     * 根据规则的连接数/IP限制配置，决定是否需要连接限制器（复用转发规则自身ID作为限制器名称）
+     */
+    private Long resolveCLimiterId(Forward forward) {
+        boolean hasConnLimit = forward.getConnLimit() != null && forward.getConnLimit() > 0;
+        boolean hasIpLimit = forward.getIpLimit() != null && forward.getIpLimit() > 0;
+        return (hasConnLimit || hasIpLimit) ? forward.getId() : null;
+    }
+
+    /**
+     * 综合规则限速、套餐用户限速、管理员指派的限速（legacySpeedLimitId 对应的 SpeedLimit）三个来源，
+     * 取非零最小值作为该转发规则的最终限速；三者均未设置（或均为0）时不下发限速器。
+     * 派生限速器统一命名为 "fwd_{forwardId}"，与 SpeedLimit 的纯数字ID命名空间区分，避免冲突。
+     */
+    private String resolveEffectiveLimiterName(Node inNode, Forward forward, Integer legacySpeedLimitId) {
+        List<Integer> candidates = new ArrayList<>();
+
+        if (forward.getSpeedLimit() != null && forward.getSpeedLimit() > 0) {
+            candidates.add(forward.getSpeedLimit());
+        }
+
+        if (forward.getUserId() != null) {
+            User user = userService.getById(forward.getUserId());
+            if (user != null && user.getPackageId() != null) {
+                PackagePlan plan = packagePlanService.getById(user.getPackageId());
+                if (plan != null && plan.getUserSpeedLimit() != null && plan.getUserSpeedLimit() > 0) {
+                    candidates.add(plan.getUserSpeedLimit());
+                }
+            }
+        }
+
+        if (legacySpeedLimitId != null) {
+            SpeedLimit legacy = speedLimitService.getById(legacySpeedLimitId);
+            if (legacy != null && legacy.getSpeed() != null && legacy.getSpeed() > 0) {
+                candidates.add(legacy.getSpeed());
+            }
+        }
+
+        String limiterName = "fwd_" + forward.getId();
+
+        if (candidates.isEmpty()) {
+            // 无限速来源：清理可能存在的旧派生限速器（忽略不存在的错误）
+            GostUtil.DeleteLimiters(inNode.getId(), limiterName);
+            return null;
+        }
+
+        int effectiveMbps = Collections.min(candidates);
+        String speedMBps = convertMbpsToMBps(effectiveMbps);
+
+        GostDto result = GostUtil.UpdateLimiters(inNode.getId(), limiterName, speedMBps);
+        if (result == null || (result.getMsg() != null && result.getMsg().contains(GOST_NOT_FOUND_MSG))) {
+            GostUtil.AddLimiters(inNode.getId(), limiterName, speedMBps);
+        }
+        return limiterName;
+    }
+
+    /**
+     * Mbps 转 MB/s（除以8，保留1位小数），与 SpeedLimitServiceImpl.convertBitsToMBps 保持一致
+     */
+    private String convertMbpsToMBps(Integer speedMbps) {
+        double mbs = speedMbps / 8.0;
+        BigDecimal bd = new BigDecimal(mbs).setScale(1, RoundingMode.HALF_UP);
+        return bd.doubleValue() + "";
     }
 
     /**
@@ -1216,10 +1464,25 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
      * 更新主服务
      */
     private R updateMainService(Node inNode, String serviceName, Forward forward, Integer limiter, Integer tunnelType, Tunnel tunnel, String strategy, String interfaceName) {
-        GostDto result = GostUtil.UpdateService(inNode.getId(), serviceName, forward.getInPort(), limiter, forward.getRemoteAddr(), tunnelType, tunnel, strategy, interfaceName);
+        Long climiter = resolveCLimiterId(forward);
+        if (climiter != null) {
+            GostDto climiterResult = GostUtil.UpdateCLimiters(inNode.getId(), climiter, forward.getConnLimit(), forward.getIpLimit());
+            if (climiterResult.getMsg() != null && climiterResult.getMsg().contains(GOST_NOT_FOUND_MSG)) {
+                climiterResult = GostUtil.AddCLimiters(inNode.getId(), climiter, forward.getConnLimit(), forward.getIpLimit());
+            }
+            if (!isGostOperationSuccess(climiterResult)) {
+                return R.err(climiterResult.getMsg());
+            }
+        } else {
+            // 限制已关闭，尝试清理可能存在的旧限制器（忽略不存在的错误）
+            GostUtil.DeleteCLimiters(inNode.getId(), forward.getId());
+        }
+
+        String effectiveLimiter = resolveEffectiveLimiterName(inNode, forward, limiter);
+        GostDto result = GostUtil.UpdateService(inNode.getId(), serviceName, forward.getInPort(), effectiveLimiter, forward.getRemoteAddr(), tunnelType, tunnel, strategy, interfaceName, climiter, forward.getAcceptProxyProtocol(), forward.getSendProxyProtocol());
 
         if (result.getMsg().contains(GOST_NOT_FOUND_MSG)) {
-            result = GostUtil.AddService(inNode.getId(), serviceName, forward.getInPort(), limiter, forward.getRemoteAddr(), tunnelType, tunnel, strategy, interfaceName);
+            result = GostUtil.AddService(inNode.getId(), serviceName, forward.getInPort(), effectiveLimiter, forward.getRemoteAddr(), tunnelType, tunnel, strategy, interfaceName, climiter, forward.getAcceptProxyProtocol(), forward.getSendProxyProtocol());
         }
 
         return isGostOperationSuccess(result) ? R.ok() : R.err(result.getMsg());

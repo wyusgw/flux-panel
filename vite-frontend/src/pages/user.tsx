@@ -23,7 +23,6 @@ import { Select, SelectItem } from "@heroui/select";
 import { RadioGroup, Radio } from "@heroui/radio";
 import { DatePicker } from "@heroui/date-picker";
 import { Spinner } from "@heroui/spinner";
-import { Progress } from "@heroui/progress";
 
 import toast from 'react-hot-toast';
 import { 
@@ -46,9 +45,13 @@ import {
   removeUserTunnel,
   updateUserTunnel,
   getSpeedLimitList,
-  resetUserFlow
+  resetUserFlow,
+  getUserGroupList,
+  getPackagePlanList
 } from '@/api';
 import { SearchIcon, EditIcon, DeleteIcon, UserIcon, SettingsIcon } from '@/components/icons';
+import { EmptyState } from '@/components/empty-state';
+import { ConfirmDialog } from '@/components/confirm-dialog';
 import { parseDate } from "@internationalized/date";
 
 
@@ -123,9 +126,16 @@ export default function UserPage() {
     flow: 100,
     num: 10,
     expTime: null,
-    flowResetTime: 0
+    flowResetTime: 0,
+    groupId: null,
+    packageId: null,
+    walletBalance: 0
   });
   const [userFormLoading, setUserFormLoading] = useState(false);
+
+  // 用户组 / 套餐
+  const [userGroups, setUserGroups] = useState<{ id: number; name: string }[]>([]);
+  const [packagePlans, setPackagePlans] = useState<{ id: number; name: string }[]>([]);
 
   // 隧道权限管理相关状态
   const { isOpen: isTunnelModalOpen, onOpen: onTunnelModalOpen, onClose: onTunnelModalClose } = useDisclosure();
@@ -176,6 +186,8 @@ export default function UserPage() {
     loadUsers();
     loadTunnels();
     loadSpeedLimits();
+    loadUserGroups();
+    loadPackagePlans();
   }, [pagination.current, pagination.size, searchKeyword]);
 
   // 数据加载函数
@@ -223,6 +235,28 @@ export default function UserPage() {
     }
   };
 
+  const loadUserGroups = async () => {
+    try {
+      const response = await getUserGroupList();
+      if (response.code === 0) {
+        setUserGroups(response.data || []);
+      }
+    } catch (error) {
+      console.error('获取用户组列表失败:', error);
+    }
+  };
+
+  const loadPackagePlans = async () => {
+    try {
+      const response = await getPackagePlanList();
+      if (response.code === 0) {
+        setPackagePlans(response.data || []);
+      }
+    } catch (error) {
+      console.error('获取套餐列表失败:', error);
+    }
+  };
+
   const loadUserTunnels = async (userId: number) => {
     setTunnelListLoading(true);
     try {
@@ -254,7 +288,10 @@ export default function UserPage() {
       flow: 100,
       num: 10,
       expTime: null,
-      flowResetTime: 0
+      flowResetTime: 0,
+      groupId: null,
+      packageId: null,
+      walletBalance: 0
     });
     onUserModalOpen();
   };
@@ -270,7 +307,10 @@ export default function UserPage() {
       flow: user.flow,
       num: user.num,
       expTime: user.expTime ? new Date(user.expTime) : null,
-      flowResetTime: user.flowResetTime ?? 0
+      flowResetTime: user.flowResetTime ?? 0,
+      groupId: user.groupId ?? null,
+      packageId: user.packageId ?? null,
+      walletBalance: user.walletBalance ?? 0
     });
     onUserModalOpen();
   };
@@ -526,219 +566,125 @@ export default function UserPage() {
     speedLimit => speedLimit.tunnelId === editTunnelForm?.tunnelId
   );
 
+  const groupNameOf = (groupId?: number | null) => {
+    if (!groupId) return '未分组';
+    return userGroups.find(g => g.id === groupId)?.name || `#${groupId}`;
+  };
+
+  const packageNameOf = (packageId?: number | null) => {
+    if (!packageId) return null;
+    return packagePlans.find(p => p.id === packageId)?.name || `#${packageId}`;
+  };
+
   return (
     
-      <div className="px-3 lg:px-6 py-8">
-      {/* 页面头部 */}
-      <div className="flex flex-col gap-4 mb-6">
-        <div className="flex items-center gap-3">
-        </div>
-        
-        <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
-          <div className="flex items-center gap-3 flex-1 max-w-md">
-            <Input
-              value={searchKeyword}
-              onChange={(e) => setSearchKeyword(e.target.value)}
-              placeholder="搜索用户名"
-              startContent={<SearchIcon className="w-4 h-4 text-default-400" />}
-              onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-              className="flex-1"
-              classNames={{
-                base: "bg-default-100",
-                input: "bg-transparent",
-                inputWrapper: "bg-default-100 border-2 border-default-200 hover:border-default-300 focus-within:border-primary data-[hover=true]:border-default-300"
-              }}
-            />
-            <Button
-              onClick={handleSearch}
-              variant="solid"
-              color="primary"
-              isIconOnly
-              className="min-h-10 w-10"
-            >
-              <SearchIcon className="w-4 h-4" />
-            </Button>
-          </div>
-          
-          <Button
-              variant="flat"
-              color="primary"
-              onPress={handleAdd}
-             
-            >
-              新增
-            </Button>
-        </div>
-      </div>
-
-      {/* 用户列表 */}
-      {loading ? (
-        <div className="flex items-center justify-center h-64">
-          <div className="flex items-center gap-3">
-            <Spinner size="sm" />
-            <span className="text-default-600">正在加载...</span>
-          </div>
-        </div>
-      ) : users.length === 0 ? (
-        <Card className="shadow-sm border border-gray-200 dark:border-gray-700">
-          <CardBody className="text-center py-16">
-            <div className="flex flex-col items-center gap-4">
-              <div className="w-16 h-16 bg-default-100 rounded-full flex items-center justify-center">
-                <UserIcon className="w-8 h-8 text-default-400" />
-              </div>
+      <div className="management-page px-4 lg:px-6 py-5 lg:py-6">
+        <Card className="management-table-card max-w-[1600px] mx-auto">
+          <CardHeader className="flex-col items-stretch gap-4 p-4 border-b border-default-100">
+            <div className="flex items-center justify-between gap-3">
               <div>
-                <h3 className="text-lg font-semibold text-foreground">暂无用户数据</h3>
-                <p className="text-default-500 text-sm mt-1">还没有创建任何用户，点击上方按钮开始创建</p>
+                <h1 className="text-base font-semibold text-foreground">用户管理</h1>
+                <p className="mt-1 text-xs text-default-500">管理用户账户、配额与隧道权限</p>
               </div>
+              <span className="text-xs text-default-500">共 {users.length} 位用户</span>
             </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button size="sm" color="primary" onPress={handleAdd} startContent={<UserIcon className="w-4 h-4" />}>
+                添加用户
+              </Button>
+              <Input autoComplete="off"
+                size="sm"
+                value={searchKeyword}
+                onChange={(e) => setSearchKeyword(e.target.value)}
+                placeholder="搜索用户名"
+                startContent={<SearchIcon className="w-4 h-4 text-default-400" />}
+                onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                className="w-full sm:w-56"
+                classNames={{ inputWrapper: "management-search" }}
+              />
+              <Button size="sm" variant="bordered" onPress={handleSearch}>搜索</Button>
+              <Button size="sm" variant="bordered" onPress={loadUsers} isLoading={loading}>刷新</Button>
+            </div>
+          </CardHeader>
+          <CardBody className="p-0">
+            <Table
+              aria-label="用户列表"
+              removeWrapper
+              classNames={{ th: "management-table-heading", td: "management-table-cell" }}
+            >
+              <TableHeader>
+                <TableColumn>UID</TableColumn>
+                <TableColumn>用户名</TableColumn>
+                <TableColumn>状态</TableColumn>
+                <TableColumn>过期时间</TableColumn>
+                <TableColumn>流量</TableColumn>
+                <TableColumn>用户组</TableColumn>
+                <TableColumn>套餐</TableColumn>
+                <TableColumn>最大规则数</TableColumn>
+                <TableColumn>钱包余额</TableColumn>
+                <TableColumn>操作</TableColumn>
+              </TableHeader>
+              <TableBody
+                isLoading={loading}
+                loadingContent={<Spinner size="sm" label="正在加载..." />}
+                emptyContent={<EmptyState />}
+              >
+                {users.map((user) => {
+                  const userStatus = getUserStatus(user);
+                  const expStatus = user.expTime ? getExpireStatus(user.expTime) : null;
+                  return (
+                    <TableRow key={user.id}>
+                      <TableCell>#{user.id}</TableCell>
+                      <TableCell>
+                        <div className="min-w-24">
+                          <p className="font-medium text-foreground">{user.name || user.user}</p>
+                          {user.name && <p className="mt-0.5 text-xs text-default-500">@{user.user}</p>}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Chip color={userStatus.color} variant="flat" size="sm">{userStatus.text}</Chip>
+                      </TableCell>
+                      <TableCell>
+                        {user.expTime ? (
+                          <div className="min-w-30">
+                            <p className="text-sm whitespace-nowrap">{formatDate(user.expTime)}</p>
+                            {expStatus && expStatus.color !== 'success' && <p className="mt-0.5 text-xs text-danger">{expStatus.text}</p>}
+                          </div>
+                        ) : <span className="text-default-500">永久</span>}
+                      </TableCell>
+                      <TableCell>
+                        <div className="min-w-32">
+                          <p className="whitespace-nowrap">{formatFlow(calculateUserTotalUsedFlow(user))} / {formatFlow(user.flow, 'gb')}</p>
+                          <p className="mt-0.5 text-xs text-default-500">{user.flowResetTime ? `每月 ${user.flowResetTime} 日重置` : '不重置'}</p>
+                        </div>
+                      </TableCell>
+                      <TableCell>{groupNameOf(user.groupId)}</TableCell>
+                      <TableCell>{packageNameOf(user.packageId) || <span className="text-default-500">—</span>}</TableCell>
+                      <TableCell>{user.num}</TableCell>
+                      <TableCell className="whitespace-nowrap">{(user.walletBalance ?? 0).toFixed(2)} 元</TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1">
+                          <Button isIconOnly size="sm" variant="flat" onPress={() => handleManageTunnels(user)} title="隧道权限">
+                            <SettingsIcon className="w-4 h-4" />
+                          </Button>
+                          <Button isIconOnly size="sm" variant="flat" onPress={() => handleEdit(user)} isDisabled={user.roleId === 0} title="编辑">
+                            <EditIcon className="w-4 h-4" />
+                          </Button>
+                          <Button isIconOnly size="sm" variant="flat" color="warning" onPress={() => handleResetFlow(user)} title="重置流量">
+                            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1z" clipRule="evenodd" /></svg>
+                          </Button>
+                          <Button isIconOnly size="sm" variant="flat" color="danger" onPress={() => handleDelete(user)} isDisabled={user.roleId === 0} title="删除">
+                            <DeleteIcon className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
           </CardBody>
         </Card>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
-          {users.map((user) => {
-            const userStatus = getUserStatus(user);
-            const expStatus = user.expTime ? getExpireStatus(user.expTime) : null;
-            const usedFlow = calculateUserTotalUsedFlow(user);
-            const flowPercent = user.flow > 0 ? Math.min((usedFlow / (user.flow * 1024 * 1024 * 1024)) * 100, 100) : 0;
-            
-            return (
-              <Card 
-                key={user.id} 
-                className="shadow-sm border border-divider hover:shadow-md transition-shadow duration-200"
-              >
-                <CardHeader className="pb-2">
-                  <div className="flex justify-between items-start w-full">
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-semibold text-foreground truncate text-sm">
-                        {user.name || user.user}
-                      </h3>
-                      <p className="text-xs text-default-500 truncate">@{user.user}</p>
-                    </div>
-                    <div className="flex items-center gap-1.5 ml-2">
-                      <Chip 
-                        color={userStatus.color} 
-                        variant="flat" 
-                        size="sm"
-                        className="text-xs"
-                      >
-                        {userStatus.text}
-                      </Chip>
-                    </div>
-                  </div>
-                </CardHeader>
-
-                <CardBody className="pt-0 pb-3">
-                  <div className="space-y-2">
-                    {/* 流量信息 */}
-                    <div className="space-y-1.5">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-default-600">流量限制</span>
-                        <span className="font-medium text-xs">{formatFlow(user.flow, 'gb')}</span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-default-600">已使用</span>
-                        <span className="font-medium text-xs text-danger">{formatFlow(usedFlow)}</span>
-                      </div>
-                      <Progress 
-                        size="sm" 
-                        value={flowPercent}
-                        color={flowPercent > 90 ? 'danger' : flowPercent > 70 ? 'warning' : 'success'}
-                        className="mt-1"
-                        aria-label={`流量使用 ${flowPercent.toFixed(1)}%`}
-                      />
-                    </div>
-
-                    {/* 其他信息 */}
-                    <div className="space-y-1.5 pt-2 border-t border-divider">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-default-600">转发数量</span>
-                        <span className="font-medium text-xs">{user.num}</span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-default-600">重置日期</span>
-                        <span className="text-xs">{user.flowResetTime === 0 ? '不重置' : `每月${user.flowResetTime}号`}</span>
-                      </div>
-                      {user.expTime && (
-                        <div className="flex justify-between text-sm">
-                          <span className="text-default-600">过期时间</span>
-                          <div className="text-right">
-                            {expStatus && expStatus.color === 'success' ? (
-                              <div className="text-xs">{formatDate(user.expTime)}</div>
-                            ) : (
-                              <Chip 
-                                color={expStatus?.color || 'default'} 
-                                variant="flat" 
-                                size="sm"
-                                className="text-xs"
-                              >
-                                {expStatus?.text || '未知状态'}
-                              </Chip>
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-1.5 mt-3">
-                    {/* 第一行：编辑和重置 */}
-                    <div className="flex gap-1.5">
-                      <Button
-                        size="sm"
-                        variant="flat"
-                        color="primary"
-                        onPress={() => handleEdit(user)}
-                        className="flex-1 min-h-8"
-                        startContent={<EditIcon className="w-3 h-3" />}
-                      >
-                        编辑
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="flat"
-                        color="warning"
-                        onPress={() => handleResetFlow(user)}
-                        className="flex-1 min-h-8"
-                        startContent={
-                          <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
-                          </svg>
-                        }
-                      >
-                        重置
-                      </Button>
-                    </div>
-                    
-                    {/* 第二行：权限和删除 */}
-                    <div className="flex gap-1.5">
-                      <Button
-                        size="sm"
-                        variant="flat"
-                        color="success"
-                        onPress={() => handleManageTunnels(user)}
-                        className="flex-1 min-h-8"
-                        startContent={<SettingsIcon className="w-3 h-3" />}
-                      >
-                        权限
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="flat"
-                        color="danger"
-                        onPress={() => handleDelete(user)}
-                        className="flex-1 min-h-8"
-                        startContent={<DeleteIcon className="w-3 h-3" />}
-                      >
-                        删除
-                      </Button>
-                    </div>
-                  </div>
-                </CardBody>
-              </Card>
-            );
-          })}
-        </div>
-      )}
 
 
       {/* 用户表单模态框 */}
@@ -756,13 +702,13 @@ export default function UserPage() {
           </ModalHeader>
           <ModalBody>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Input
+              <Input autoComplete="off"
                 label="用户名"
                 value={userForm.user}
                 onChange={(e) => setUserForm(prev => ({ ...prev, user: e.target.value }))}
                 isRequired
               />
-              <Input
+              <Input autoComplete="off"
                 label="密码"
                 type="password"
                 value={userForm.pwd}
@@ -770,7 +716,7 @@ export default function UserPage() {
                 placeholder={isEdit ? '留空则不修改密码' : '请输入密码'}
                 isRequired={!isEdit}
               />
-              <Input
+              <Input autoComplete="off"
                 label="流量限制(GB)"
                 type="number"
                 value={userForm.flow.toString()}
@@ -782,7 +728,7 @@ export default function UserPage() {
                 max="99999"
                 isRequired
               />
-              <Input
+              <Input autoComplete="off"
                 label="转发数量"
                 type="number"
                 value={userForm.num.toString()}
@@ -828,8 +774,45 @@ export default function UserPage() {
                 showMonthAndYearPickers
                 className="cursor-pointer"
               />
+              <Select
+                label="用户组"
+                placeholder="未分组"
+                selectedKeys={userForm.groupId ? [userForm.groupId.toString()] : []}
+                onSelectionChange={(keys) => {
+                  const value = Array.from(keys)[0] as string;
+                  setUserForm(prev => ({ ...prev, groupId: value ? Number(value) : null }));
+                }}
+              >
+                {userGroups.map(group => (
+                  <SelectItem key={group.id.toString()} textValue={group.name || `#${group.id}`}>
+                    {group.name || `#${group.id}`}
+                  </SelectItem>
+                ))}
+              </Select>
+              <Select
+                label="套餐"
+                placeholder="无套餐"
+                selectedKeys={userForm.packageId ? [userForm.packageId.toString()] : []}
+                onSelectionChange={(keys) => {
+                  const value = Array.from(keys)[0] as string;
+                  setUserForm(prev => ({ ...prev, packageId: value ? Number(value) : null }));
+                }}
+              >
+                {packagePlans.map(plan => (
+                  <SelectItem key={plan.id.toString()} textValue={plan.name}>
+                    {plan.name}
+                  </SelectItem>
+                ))}
+              </Select>
+              <Input autoComplete="off"
+                label="钱包余额"
+                type="number"
+                value={(userForm.walletBalance ?? 0).toString()}
+                onChange={(e) => setUserForm(prev => ({ ...prev, walletBalance: parseFloat(e.target.value) || 0 }))}
+                endContent={<span className="text-default-400 text-small">元</span>}
+              />
             </div>
-            
+
             <RadioGroup
               label="状态"
               value={userForm.status.toString()}
@@ -913,7 +896,7 @@ export default function UserPage() {
                       ]}
                     </Select>
                     
-                    <Input
+                    <Input autoComplete="off"
                       label="流量限制(GB)"
                       type="number"
                       value={tunnelForm.flow.toString()}
@@ -925,7 +908,7 @@ export default function UserPage() {
                       max="99999"
                     />
                     
-                    <Input
+                    <Input autoComplete="off"
                       label="转发数量"
                       type="number"
                       value={tunnelForm.num.toString()}
@@ -1007,7 +990,7 @@ export default function UserPage() {
                     items={userTunnels}
                     isLoading={tunnelListLoading}
                     loadingContent={<Spinner />}
-                    emptyContent="暂无隧道权限"
+                    emptyContent={<EmptyState className="py-8" />}
                   >
                     {(userTunnel) => (
                       <TableRow key={userTunnel.id}>
@@ -1114,7 +1097,7 @@ export default function UserPage() {
             {editTunnelForm && (
               <>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Input
+                  <Input autoComplete="off"
                     label="流量限制(GB)"
                     type="number"
                     value={editTunnelForm.flow.toString()}
@@ -1126,7 +1109,7 @@ export default function UserPage() {
                     max="99999"
                   />
                   
-                  <Input
+                  <Input autoComplete="off"
                     label="转发数量"
                     type="number"
                     value={editTunnelForm.num.toString()}
@@ -1221,232 +1204,74 @@ export default function UserPage() {
       </Modal>
 
       {/* 删除确认对话框 */}
-      <Modal
+      <ConfirmDialog
         isOpen={isDeleteModalOpen}
-        onClose={onDeleteModalClose}
-        size="2xl"
-      scrollBehavior="outside"
-      backdrop="blur"
-      placement="center"
-      >
-        <ModalContent>
-          <ModalHeader className="flex flex-col gap-1">
-            确认删除用户
-          </ModalHeader>
-          <ModalBody>
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-danger-100 rounded-full flex items-center justify-center">
-                <DeleteIcon className="w-6 h-6 text-danger" />
-              </div>
-              <div className="flex-1">
-                <p className="text-foreground">
-                  确定要删除用户 <span className="font-semibold text-danger">"{userToDelete?.user}"</span> 吗？
-                </p>
-                <p className="text-small text-default-500 mt-1">
-                  此操作不可撤销，用户的所有数据将被永久删除。
-                </p>
-              </div>
-            </div>
-          </ModalBody>
-          <ModalFooter>
-            <Button 
-              variant="light" 
-              onPress={onDeleteModalClose}
-            >
-              取消
-            </Button>
-            <Button 
-              color="danger" 
-              onPress={handleConfirmDelete}
-            >
-              确认删除
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
+        onOpenChange={(open) => !open && onDeleteModalClose()}
+        title="确认删除用户"
+        message={<>你确定要删除用户 {userToDelete?.user} 吗？此操作不可撤销，用户的所有数据将被永久删除。</>}
+        confirmText="确定"
+        confirmColor="danger"
+        onConfirm={handleConfirmDelete}
+      />
 
       {/* 删除隧道权限确认对话框 */}
-      <Modal
+      <ConfirmDialog
         isOpen={isDeleteTunnelModalOpen}
-        onClose={onDeleteTunnelModalClose}
-        size="2xl"
-      scrollBehavior="outside"
-      backdrop="blur"
-      placement="center"
-      >
-        <ModalContent>
-          <ModalHeader className="flex flex-col gap-1">
-            确认删除隧道权限
-          </ModalHeader>
-          <ModalBody>
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-danger-100 rounded-full flex items-center justify-center">
-                <DeleteIcon className="w-6 h-6 text-danger" />
-              </div>
-              <div className="flex-1">
-                <p className="text-foreground">
-                  确定要删除用户 <span className="font-semibold">{currentUser?.user}</span> 对隧道 <span className="font-semibold text-danger">"{tunnelToDelete?.tunnelName}"</span> 的权限吗？
-                </p>
-                <p className="text-small text-default-500 mt-1">
-                  删除后该用户将无法使用此隧道创建转发，此操作不可撤销。
-                </p>
-              </div>
-            </div>
-          </ModalBody>
-          <ModalFooter>
-            <Button 
-              variant="light" 
-              onPress={onDeleteTunnelModalClose}
-            >
-              取消
-            </Button>
-            <Button 
-              color="danger" 
-              onPress={handleConfirmRemoveTunnel}
-            >
-              确认删除
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
+        onOpenChange={(open) => !open && onDeleteTunnelModalClose()}
+        title="确认删除隧道权限"
+        message={<>你确定要删除用户 {currentUser?.user} 对隧道 {tunnelToDelete?.tunnelName} 的权限吗？删除后该用户将无法使用此隧道创建转发，此操作不可撤销。</>}
+        confirmText="确定"
+        confirmColor="danger"
+        onConfirm={handleConfirmRemoveTunnel}
+      />
 
       {/* 重置流量确认对话框 */}
-      <Modal
+      <ConfirmDialog
         isOpen={isResetFlowModalOpen}
-        onClose={onResetFlowModalClose}
-        size="2xl"
-      scrollBehavior="outside"
-      backdrop="blur"
-      placement="center"
-      >
-        <ModalContent>
-          <ModalHeader className="flex flex-col gap-1">
-            确认重置流量
-          </ModalHeader>
-          <ModalBody>
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-warning-100 rounded-full flex items-center justify-center">
-                <svg className="w-6 h-6 text-warning" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
-                </svg>
-              </div>
-              <div className="flex-1">
-                <p className="text-foreground">
-                  确定要重置用户 <span className="font-semibold text-warning">"{userToReset?.user}"</span> 的流量吗？
-                </p>
-                <p className="text-small text-default-500 mt-1">
-                  该操作只会重置账号流量不会重置隧道权限流量，重置后该用户的上下行流量将归零，此操作不可撤销。
-                </p>
-                <div className="mt-2 p-2 bg-warning-50 dark:bg-warning-100/10 rounded text-xs">
-                  <div className="text-warning-700 dark:text-warning-300">
-                    当前流量使用情况：
-                  </div>
-                  <div className="mt-1 space-y-1">
-                    <div className="flex justify-between">
-                      <span>上行流量：</span>
-                      <span className="font-mono">{userToReset ? formatFlow(userToReset.inFlow || 0) : '-'}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>下行流量：</span>
-                      <span className="font-mono">{userToReset ? formatFlow(userToReset.outFlow || 0) : '-'}</span>
-                    </div>
-                    <div className="flex justify-between font-medium">
-                      <span>总计：</span>
-                      <span className="font-mono text-warning-700 dark:text-warning-300">
-                        {userToReset ? formatFlow(calculateUserTotalUsedFlow(userToReset)) : '-'}
-                      </span>
-                    </div>
-                  </div>
-                </div>
+        onOpenChange={(open) => !open && onResetFlowModalClose()}
+        title="确认重置流量"
+        confirmText="确定"
+        confirmColor="warning"
+        onConfirm={handleConfirmResetFlow}
+        loading={resetFlowLoading}
+        message={
+          <>
+            <p>你确定要重置用户 {userToReset?.user} 的流量吗？该操作只会重置账号流量不会重置隧道权限流量，重置后该用户的上下行流量将归零，此操作不可撤销。</p>
+            <div className="mt-2 p-2 bg-warning-50 dark:bg-warning-100/10 rounded text-xs">
+              <div className="text-warning-700 dark:text-warning-300">当前流量使用情况：</div>
+              <div className="mt-1 space-y-1">
+                <div className="flex justify-between"><span>上行流量：</span><span className="font-mono">{userToReset ? formatFlow(userToReset.inFlow || 0) : '-'}</span></div>
+                <div className="flex justify-between"><span>下行流量：</span><span className="font-mono">{userToReset ? formatFlow(userToReset.outFlow || 0) : '-'}</span></div>
+                <div className="flex justify-between font-medium"><span>总计：</span><span className="font-mono text-warning-700 dark:text-warning-300">{userToReset ? formatFlow(calculateUserTotalUsedFlow(userToReset)) : '-'}</span></div>
               </div>
             </div>
-          </ModalBody>
-          <ModalFooter>
-            <Button 
-              variant="light" 
-              onPress={onResetFlowModalClose}
-            >
-              取消
-            </Button>
-            <Button 
-              color="warning" 
-              onPress={handleConfirmResetFlow}
-              isLoading={resetFlowLoading}
-            >
-              确认重置
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
+          </>
+        }
+      />
 
       {/* 重置隧道流量确认对话框 */}
-      <Modal
+      <ConfirmDialog
         isOpen={isResetTunnelFlowModalOpen}
-        onClose={onResetTunnelFlowModalClose}
-        size="2xl"
-      scrollBehavior="outside"
-      backdrop="blur"
-      placement="center"
-      >
-        <ModalContent>
-          <ModalHeader className="flex flex-col gap-1">
-            确认重置隧道流量
-          </ModalHeader>
-          <ModalBody>
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-warning-100 rounded-full flex items-center justify-center">
-                <svg className="w-6 h-6 text-warning" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
-                </svg>
-              </div>
-              <div className="flex-1">
-                <p className="text-foreground">
-                  确定要重置用户 <span className="font-semibold">{currentUser?.user}</span> 对隧道 <span className="font-semibold text-warning">"{tunnelToReset?.tunnelName}"</span> 的流量吗？
-                </p>
-                <p className="text-small text-default-500 mt-1">
-                  该操作只会重置隧道权限流量不会重置账号流量，重置后该隧道权限的上下行流量将归零，此操作不可撤销。
-                </p>
-                <div className="mt-2 p-2 bg-warning-50 dark:bg-warning-100/10 rounded text-xs">
-                  <div className="text-warning-700 dark:text-warning-300">
-                    当前流量使用情况：
-                  </div>
-                  <div className="mt-1 space-y-1">
-                    <div className="flex justify-between">
-                      <span>上行流量：</span>
-                      <span className="font-mono">{tunnelToReset ? formatFlow(tunnelToReset.inFlow || 0) : '-'}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>下行流量：</span>
-                      <span className="font-mono">{tunnelToReset ? formatFlow(tunnelToReset.outFlow || 0) : '-'}</span>
-                    </div>
-                    <div className="flex justify-between font-medium">
-                      <span>总计：</span>
-                      <span className="font-mono text-warning-700 dark:text-warning-300">
-                        {tunnelToReset ? formatFlow(calculateTunnelUsedFlow(tunnelToReset)) : '-'}
-                      </span>
-                    </div>
-                  </div>
-                </div>
+        onOpenChange={(open) => !open && onResetTunnelFlowModalClose()}
+        title="确认重置隧道流量"
+        confirmText="确定"
+        confirmColor="warning"
+        onConfirm={handleConfirmResetTunnelFlow}
+        loading={resetTunnelFlowLoading}
+        message={
+          <>
+            <p>你确定要重置用户 {currentUser?.user} 对隧道 {tunnelToReset?.tunnelName} 的流量吗？该操作只会重置隧道权限流量不会重置账号流量，重置后该隧道权限的上下行流量将归零，此操作不可撤销。</p>
+            <div className="mt-2 p-2 bg-warning-50 dark:bg-warning-100/10 rounded text-xs">
+              <div className="text-warning-700 dark:text-warning-300">当前流量使用情况：</div>
+              <div className="mt-1 space-y-1">
+                <div className="flex justify-between"><span>上行流量：</span><span className="font-mono">{tunnelToReset ? formatFlow(tunnelToReset.inFlow || 0) : '-'}</span></div>
+                <div className="flex justify-between"><span>下行流量：</span><span className="font-mono">{tunnelToReset ? formatFlow(tunnelToReset.outFlow || 0) : '-'}</span></div>
+                <div className="flex justify-between font-medium"><span>总计：</span><span className="font-mono text-warning-700 dark:text-warning-300">{tunnelToReset ? formatFlow(calculateTunnelUsedFlow(tunnelToReset)) : '-'}</span></div>
               </div>
             </div>
-          </ModalBody>
-          <ModalFooter>
-            <Button 
-              variant="light" 
-              onPress={onResetTunnelFlowModalClose}
-            >
-              取消
-            </Button>
-            <Button 
-              color="warning" 
-              onPress={handleConfirmResetTunnelFlow}
-              isLoading={resetTunnelFlowLoading}
-            >
-              确认重置
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
+          </>
+        }
+      />
       </div>
     
   );

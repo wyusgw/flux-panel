@@ -60,7 +60,7 @@ export const primaryNavItems: NavItem[] = [
     )
   },
   {
-    path: '/node/probe',
+    path: '/node',
     label: '节点状态',
     icon: (
       <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">

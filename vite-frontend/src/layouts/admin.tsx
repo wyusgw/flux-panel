@@ -238,10 +238,6 @@ export default function AdminLayout({
 
   // 菜单点击处理
   const handleMenuClick = (path: string) => {
-    if (path === '/node') {
-      window.open('/node/probe', '_blank', 'noopener');
-      return;
-    }
     navigate(path);
     if (isMobile) {
       hideMobileMenu();

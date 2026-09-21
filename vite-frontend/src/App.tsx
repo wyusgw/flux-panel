@@ -8,7 +8,6 @@ import AdminDashboardPage from "@/pages/admin-dashboard";
 import HomePage from "@/pages/home";
 import ForwardPage from "@/pages/forward";
 import TunnelPage from "@/pages/tunnel";
-import NodePage from "@/pages/node";
 import NodeProbePage from "@/pages/node-probe";
 import UserPage from "@/pages/user";
 import ShopPage from "@/pages/shop";
@@ -198,17 +197,9 @@ function App() {
           </ProtectedRoute>
         } 
       />
-      <Route 
-        path="/node" 
-        element={
-          <ProtectedRoute>
-            <NodePage />
-          </ProtectedRoute>
-        } 
-      />
-      <Route path="/node/probe" element={<ProtectedRoute skipLayout={true}><NodeProbePage /></ProtectedRoute>} />
-      <Route 
-        path="/user" 
+      <Route path="/node" element={<ProtectedRoute skipLayout={true}><NodeProbePage /></ProtectedRoute>} />
+      <Route
+        path="/user"
         element={
           <ProtectedRoute useSimpleLayout={true}>
             <UserPage />

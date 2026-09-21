@@ -37,9 +37,10 @@ public class PackagePlanController extends BaseController {
     }
 
     @LogAnnotation
-    @RequireRole
     @PostMapping("/list")
     public R list() {
+        // 未加 @RequireRole：套餐列表需要向所有登录用户开放（商城购买页面依赖此接口），
+        // 权限差异由 getAllPackagePlans() 内部按角色过滤（管理员看全部，普通用户仅看未隐藏的）
         return packagePlanService.getAllPackagePlans();
     }
 

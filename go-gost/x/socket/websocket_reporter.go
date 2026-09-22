@@ -18,6 +18,7 @@ import (
 	"github.com/go-gost/x/service"
 	"github.com/gorilla/websocket"
 	"github.com/shirou/gopsutil/v3/cpu"
+	"github.com/shirou/gopsutil/v3/disk"
 	"github.com/shirou/gopsutil/v3/host"
 	"github.com/shirou/gopsutil/v3/mem"
 	psnet "github.com/shirou/gopsutil/v3/net"
@@ -30,7 +31,15 @@ type SystemInfo struct {
 	BytesReceived    uint64  `json:"bytes_received"`    // 接收字节数
 	BytesTransmitted uint64  `json:"bytes_transmitted"` // 发送字节数
 	CPUUsage         float64 `json:"cpu_usage"`         // CPU使用率（百分比）
+	CPUModel         string  `json:"cpu_model"`         // CPU型号
 	MemoryUsage      float64 `json:"memory_usage"`      // 内存使用率（百分比）
+	MemoryTotal      uint64  `json:"memory_total"`      // 内存总量（字节）
+	MemoryUsed       uint64  `json:"memory_used"`       // 内存已用（字节）
+	MemoryAvailable  uint64  `json:"memory_available"`  // 内存可用（字节）
+	StorageUsage     float64 `json:"storage_usage"`     // 根文件系统使用率（百分比）
+	StorageTotal     uint64  `json:"storage_total"`     // 存储总量（字节）
+	StorageUsed      uint64  `json:"storage_used"`      // 存储已用（字节）
+	StorageFree      uint64  `json:"storage_free"`      // 存储剩余（字节）
 }
 
 // NetworkStats 网络统计信息
@@ -42,11 +51,23 @@ type NetworkStats struct {
 // CPUInfo CPU信息
 type CPUInfo struct {
 	Usage float64 `json:"usage"` // CPU使用率（百分比）
+	Model string  `json:"model"` // CPU型号
 }
 
 // MemoryInfo 内存信息
 type MemoryInfo struct {
-	Usage float64 `json:"usage"` // 内存使用率（百分比）
+	Usage     float64 `json:"usage"`     // 内存使用率（百分比）
+	Total     uint64  `json:"total"`     // 内存总量（字节）
+	Used      uint64  `json:"used"`      // 内存已用（字节）
+	Available uint64  `json:"available"` // 内存可用（字节）
+}
+
+// StorageInfo 存储信息
+type StorageInfo struct {
+	Usage float64 `json:"usage"` // 根文件系统使用率（百分比）
+	Total uint64  `json:"total"` // 存储总量（字节）
+	Used  uint64  `json:"used"`  // 存储已用（字节）
+	Free  uint64  `json:"free"`  // 存储剩余（字节）
 }
 
 // CommandMessage 命令消息结构体
@@ -299,13 +320,22 @@ func (w *WebSocketReporter) collectSystemInfo() SystemInfo {
 	networkStats := getNetworkStats()
 	cpuInfo := getCPUInfo()
 	memoryInfo := getMemoryInfo()
+	storageInfo := getStorageInfo()
 
 	return SystemInfo{
 		Uptime:           getUptime(),
 		BytesReceived:    networkStats.BytesReceived,
 		BytesTransmitted: networkStats.BytesTransmitted,
 		CPUUsage:         cpuInfo.Usage,
+		CPUModel:         cpuInfo.Model,
 		MemoryUsage:      memoryInfo.Usage,
+		MemoryTotal:      memoryInfo.Total,
+		MemoryUsed:       memoryInfo.Used,
+		MemoryAvailable:  memoryInfo.Available,
+		StorageUsage:     storageInfo.Usage,
+		StorageTotal:     storageInfo.Total,
+		StorageUsed:      storageInfo.Used,
+		StorageFree:      storageInfo.Free,
 	}
 }
 
@@ -1091,6 +1121,10 @@ func getCPUInfo() CPUInfo {
 		cpuInfo.Usage = percentages[0]
 	}
 
+	if info, err := cpu.Info(); err == nil && len(info) > 0 {
+		cpuInfo.Model = info[0].ModelName
+	}
+
 	return cpuInfo
 }
 
@@ -1104,8 +1138,27 @@ func getMemoryInfo() MemoryInfo {
 	}
 
 	memInfo.Usage = vmStat.UsedPercent
+	memInfo.Total = vmStat.Total
+	memInfo.Used = vmStat.Used
+	memInfo.Available = vmStat.Available
 
 	return memInfo
+}
+
+// getStorageInfo 获取根文件系统使用率。
+func getStorageInfo() StorageInfo {
+	storageInfo := StorageInfo{}
+
+	usage, err := disk.Usage("/")
+	if err != nil {
+		return storageInfo
+	}
+
+	storageInfo.Usage = usage.UsedPercent
+	storageInfo.Total = usage.Total
+	storageInfo.Used = usage.Used
+	storageInfo.Free = usage.Free
+	return storageInfo
 }
 
 // StartWebSocketReporterWithConfig 使用配置字段启动WebSocket报告器

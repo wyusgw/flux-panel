@@ -7,6 +7,7 @@ import com.admin.common.lang.R;
 import com.admin.common.task.CheckGostConfigAsync;
 import com.admin.common.utils.AESCrypto;
 import com.admin.common.utils.GostUtil;
+import com.admin.common.utils.TunnelResolver;
 import com.admin.entity.*;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
@@ -52,6 +53,9 @@ public class FlowController extends BaseController {
     // 常量定义
     private static final String SUCCESS_RESPONSE = "ok";
     private static final String DEFAULT_USER_TUNNEL_ID = "0";
+    // 设备组模式（入口/出口设备组）普通用户转发：没有真实 UserTunnel 行可查，
+    // 但仍需按账号自身额度检查，与 "0"（管理员，完全跳过检查）语义不同
+    private static final String DEVICE_GROUP_USER_TUNNEL_ID = String.valueOf(TunnelResolver.DEVICE_GROUP_USER_TUNNEL_ID);
     private static final long BYTES_TO_GB = 1024L * 1024L * 1024L;
 
     // 用于同步相同用户和隧道的流量更新操作
@@ -64,6 +68,9 @@ public class FlowController extends BaseController {
 
     @Resource
     CheckGostConfigAsync checkGostConfigAsync;
+
+    @Resource
+    TunnelResolver tunnelResolver;
 
     /**
      * 加密消息包装器
@@ -239,7 +246,13 @@ public class FlowController extends BaseController {
 
         // 7. 检查和服务暂停操作
         String name = buildServiceName(forwardId, userId, userTunnelId);
-        if (!Objects.equals(userTunnelId, DEFAULT_USER_TUNNEL_ID)) { // 非管理员的转发需要检测流量限制
+        if (Objects.equals(userTunnelId, DEFAULT_USER_TUNNEL_ID)) {
+            // 管理员转发：完全跳过限额检查
+        } else if (Objects.equals(userTunnelId, DEVICE_GROUP_USER_TUNNEL_ID)) {
+            // 设备组模式的普通用户转发：没有真实UserTunnel行可查，仅检查账号自身额度
+            checkUserRelatedLimits(userId, name);
+        } else {
+            // 隧道模式的普通用户转发：账号额度 + 隧道权限额度都要检查
             checkUserRelatedLimits(userId, name);
             checkUserTunnelRelatedLimits(userTunnelId, name, userId);
         }
@@ -307,7 +320,7 @@ public class FlowController extends BaseController {
 
     public void pauseService(List<Forward> forwardList, String name) {
         for (Forward forward : forwardList) {
-            Tunnel tunnel = tunnelService.getById(forward.getTunnelId());
+            Tunnel tunnel = tunnelResolver.resolveTunnel(forward);
             if (tunnel != null){
                 GostUtil.PauseService(tunnel.getInNodeId(), name);
                 if (tunnel.getType() == 2){
@@ -321,7 +334,7 @@ public class FlowController extends BaseController {
 
     private FlowDto filterFlowData(FlowDto flowDto, Forward forward, int flowType) {
         if (forward != null) {
-            Tunnel tunnel = tunnelService.getById(forward.getTunnelId());
+            Tunnel tunnel = tunnelResolver.resolveTunnel(forward);
             if (tunnel != null) {
                 BigDecimal trafficRatio = tunnel.getTrafficRatio();
 
@@ -341,7 +354,7 @@ public class FlowController extends BaseController {
     private int getFlowType(Forward forward) {
         int defaultFlowType = 2;
         if (forward == null) return defaultFlowType;
-        Tunnel tunnel = tunnelService.getById(forward.getTunnelId());
+        Tunnel tunnel = tunnelResolver.resolveTunnel(forward);
         if (tunnel == null) return defaultFlowType;
         return tunnel.getFlow();
     }
@@ -372,8 +385,8 @@ public class FlowController extends BaseController {
     }
 
     private void updateUserTunnelFlow(String userTunnelId, FlowDto flowStats) {
-        if (Objects.equals(userTunnelId, DEFAULT_USER_TUNNEL_ID)) {
-            return; // 默认隧道不需要更新，返回成功
+        if (Objects.equals(userTunnelId, DEFAULT_USER_TUNNEL_ID) || Objects.equals(userTunnelId, DEVICE_GROUP_USER_TUNNEL_ID)) {
+            return; // 管理员转发、设备组模式转发均无真实UserTunnel行，不需要更新
         }
 
         // 对相同用户隧道的流量更新进行同步，避免并发覆盖

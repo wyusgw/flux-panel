@@ -32,7 +32,7 @@ CREATE TABLE `forward` (
   `user_id` int(10) NOT NULL,
   `user_name` varchar(100) NOT NULL,
   `name` varchar(100) NOT NULL,
-  `tunnel_id` int(10) NOT NULL,
+  `tunnel_id` int(10) DEFAULT NULL,
   `in_port` int(10) NOT NULL,
   `out_port` int(10) DEFAULT NULL,
   `remote_addr` longtext NOT NULL,
@@ -168,7 +168,8 @@ CREATE TABLE `tunnel` (
   `interface_name` varchar(200) DEFAULT NULL,
   `created_time` bigint(20) NOT NULL,
   `updated_time` bigint(20) NOT NULL,
-  `status` int(10) NOT NULL
+  `status` int(10) NOT NULL,
+  `is_auto` int(10) NOT NULL DEFAULT '0'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- --------------------------------------------------------

@@ -70,4 +70,10 @@ public class Tunnel extends BaseEntity {
     private String udpListenAddr;
 
     private String interfaceName;
+
+    /**
+     * 是否为转发规则（入口/出口设备组模式）自动创建的隧道（0-否，1-是）。
+     * 自动创建的隧道仅供内部复用，不在"隧道管理"列表中展示。
+     */
+    private Integer isAuto;
 }

@@ -1,12 +1,12 @@
 package com.admin.common.task;
 
 import com.admin.common.utils.GostUtil;
+import com.admin.common.utils.TunnelResolver;
 import com.admin.entity.Forward;
 import com.admin.entity.Tunnel;
 import com.admin.entity.User;
 import com.admin.entity.UserTunnel;
 import com.admin.service.ForwardService;
-import com.admin.service.TunnelService;
 import com.admin.service.UserService;
 import com.admin.service.UserTunnelService;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
@@ -36,7 +36,7 @@ public class ResetFlowAsync {
     ForwardService forwardService;
 
     @Resource
-    TunnelService tunnelService;
+    TunnelResolver tunnelResolver;
 
     /**
      * 每天0点执行流量重置任务
@@ -197,12 +197,10 @@ public class ResetFlowAsync {
             // 查询对应转发
             List<Forward> forwardList = forwardService.list(new QueryWrapper<Forward>().eq("user_id", user.getId()).eq("status", 1));
             for (Forward forward : forwardList) {
-                UserTunnel userTunnel = userTunnelService.getOne(new QueryWrapper<UserTunnel>().eq("user_id", forward.getUserId()).eq("tunnel_id", forward.getTunnelId()));
-                if (userTunnel != null) {
-                    pauseForwardService(forward, userTunnel.getId());
-                    forward.setStatus(0);
-                    forwardService.updateById(forward);
-                }
+                UserTunnel userTunnel = tunnelResolver.resolveUserTunnel(forward.getUserId(), forward);
+                pauseForwardService(forward, userTunnel != null ? userTunnel.getId() : 0);
+                forward.setStatus(0);
+                forwardService.updateById(forward);
             }
             user.setStatus(0);
             userService.updateById(user);
@@ -228,7 +226,7 @@ public class ResetFlowAsync {
 
 
     private void pauseForwardService(Forward forward, Integer userTunnelId) {
-        Tunnel tunnel = tunnelService.getById(forward.getTunnelId());
+        Tunnel tunnel = tunnelResolver.resolveTunnel(forward);
         if (tunnel == null) return;
 
         GostUtil.PauseService(tunnel.getInNodeId(), buildServiceName(forward.getId(), forward.getUserId(), userTunnelId));

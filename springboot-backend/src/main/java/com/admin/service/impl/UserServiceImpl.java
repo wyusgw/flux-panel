@@ -11,6 +11,7 @@ import com.admin.common.utils.GostUtil;
 import com.admin.common.utils.JwtUtil;
 import com.admin.common.utils.Md5Util;
 import com.admin.common.utils.NotificationUtil;
+import com.admin.common.utils.TunnelResolver;
 import com.admin.entity.*;
 import com.admin.mapper.ForwardMapper;
 import com.admin.mapper.UserMapper;
@@ -136,6 +137,10 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     @Resource
     @Lazy
     private NotificationUtil notificationUtil;
+
+    @Resource
+    @Lazy
+    private TunnelResolver tunnelResolver;
 
     // ========== 公共接口实现 ==========
 
@@ -802,14 +807,14 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
      * @param userId 用户ID
      */
     private void deleteGostServicesForForward(Forward forward, Long userId) {
-        Tunnel tunnel = tunnelService.getById(forward.getTunnelId());
+        Tunnel tunnel = tunnelResolver.resolveTunnel(forward);
         if (tunnel == null) return;
 
         Node inNode = nodeService.getNodeById(tunnel.getInNodeId());
         if (inNode == null) return;
 
         // 获取用户隧道关系
-        UserTunnel userTunnel = getUserTunnelRelation(userId, tunnel.getId());
+        UserTunnel userTunnel = tunnelResolver.resolveUserTunnel(forward.getUserId(), forward);
         if (userTunnel == null) return;
 
         String serviceName = buildServiceName(forward.getId(), userId, userTunnel.getId());
@@ -842,19 +847,6 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
             GostUtil.DeleteChains(inNode.getId(), serviceName);
             GostUtil.DeleteRemoteService(outNode.getId(), serviceName);
         }
-    }
-
-    /**
-     * 获取用户隧道关系
-     * 
-     * @param userId 用户ID
-     * @param tunnelId 隧道ID
-     * @return 用户隧道关系对象
-     */
-    private UserTunnel getUserTunnelRelation(Long userId, Long tunnelId) {
-        return userTunnelService.getOne(new QueryWrapper<UserTunnel>()
-                .eq("user_id", userId)
-                .eq("tunnel_id", tunnelId));
     }
 
     /**

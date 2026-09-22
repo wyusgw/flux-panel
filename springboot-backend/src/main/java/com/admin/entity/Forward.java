@@ -1,6 +1,8 @@
 package com.admin.entity;
 
 import java.io.Serializable;
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
+import com.baomidou.mybatisplus.annotation.TableField;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
@@ -24,6 +26,10 @@ public class Forward extends BaseEntity{
 
     private String name;
 
+    /**
+     * 隧道 ID。设备组模式不创建 Tunnel 记录，因此此字段为 null。
+     */
+    @TableField(updateStrategy = FieldStrategy.IGNORED)
     private Integer tunnelId;
 
     private Integer inPort;
@@ -68,7 +74,7 @@ public class Forward extends BaseEntity{
     private Integer connLimit;
 
     /**
-     * 入口设备组ID（与 tunnelId 二选一：指定后台自动解析/创建对应隧道）
+     * 入口设备组ID（与 tunnelId 二选一；设备组模式在内存中解析等效隧道）
      */
     private Long inDeviceGroupId;
 

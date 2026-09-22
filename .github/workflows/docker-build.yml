@@ -230,6 +230,7 @@ jobs:
           gh release upload "${TAG}" ./docker-compose-v6.yml --clobber
 
           echo "上传数据库初始化文件..."
-          gh release upload "${TAG}" ./gost.sql --clobber
+          gh release upload "${TAG}" ./database/install.sql --clobber
+          gh release upload "${TAG}" ./database/update.sql --clobber
 
           echo "所有文件已上传到 Release ${TAG}"

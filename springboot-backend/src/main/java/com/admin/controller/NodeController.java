@@ -33,7 +33,6 @@ public class NodeController extends BaseController {
 
 
     @LogAnnotation
-    @RequireRole
     @PostMapping("/list")
     public R list() {
         return nodeService.getAllNodes();

@@ -204,12 +204,28 @@ install_panel() {
   local install_sql_file="$database_dir/install.sql"
   mkdir -p "$database_dir"
 
+  # 兼容旧版本或异常中断留下的同名目录；初始化文件必须是普通文件。
+  if [[ -d "$install_sql_file" ]]; then
+    if [[ -z "$(find "$install_sql_file" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]]; then
+      rmdir "$install_sql_file"
+    else
+      echo "路径冲突：$install_sql_file 是非空目录，请先备份并移除该目录后重试。"
+      return 1
+    fi
+  fi
+
   # 检查数据库初始化文件是否已存在
   if [[ -f "$install_sql_file" ]]; then
     echo "跳过下载: $install_sql_file (使用当前位置的文件)"
   else
     echo "下载数据库初始化文件..."
-    curl -L -o "$install_sql_file" "$INSTALL_SQL_URL"
+    local install_sql_tmp="$database_dir/.install.sql.download.$$"
+    if ! curl -fL -o "$install_sql_tmp" "$INSTALL_SQL_URL"; then
+      rm -f "$install_sql_tmp"
+      echo "数据库初始化文件下载失败"
+      return 1
+    fi
+    mv "$install_sql_tmp" "$install_sql_file"
   fi
   echo "文件准备完成"
 
@@ -405,11 +421,22 @@ update_panel() {
   if [[ ! -f "$update_sql_file" ]]; then
     echo "下載資料庫更新檔..."
     mkdir -p database
-    if ! curl -fL -o "$update_sql_file" "$UPDATE_SQL_URL"; then
+    if [[ -d "$update_sql_file" ]]; then
+      if [[ -z "$(find "$update_sql_file" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]]; then
+        rmdir "$update_sql_file"
+      else
+        echo "路径冲突：$update_sql_file 是非空目录，请先备份并移除该目录后重试。"
+        return 1
+      fi
+    fi
+    local update_sql_tmp="database/.update.sql.download.$$"
+    if ! curl -fL -o "$update_sql_tmp" "$UPDATE_SQL_URL"; then
+      rm -f "$update_sql_tmp"
       echo "找不到且無法下載資料庫更新檔：$update_sql_file"
       echo "更新終止"
       return 1
     fi
+    mv "$update_sql_tmp" "$update_sql_file"
   fi
 
   # 检查数据库容器

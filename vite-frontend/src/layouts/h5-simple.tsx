@@ -6,6 +6,7 @@ import { Logo } from '@/components/icons';
 import { ThemeSwitch } from '@/components/theme-switch';
 import { siteConfig } from '@/config/site';
 import { primaryNavItems, managementNavItems } from '@/config/nav-items';
+import { safeLogout } from '@/utils/logout';
 
 export default function H5SimpleLayout({
   children,
@@ -34,6 +35,11 @@ export default function H5SimpleLayout({
   const handleMenuNavigate = (path: string) => {
     setMenuOpen(false);
     navigate(path);
+  };
+
+  const handleLogout = () => {
+    setMenuOpen(false);
+    safeLogout();
   };
 
   // 路由切换时回到顶部，避免上一页滚动位置保留；同时关闭导航菜单
@@ -135,6 +141,28 @@ export default function H5SimpleLayout({
               </>
             )}
           </nav>
+          <div className="flex-shrink-0 border-t border-gray-200 dark:border-gray-600 p-2 pb-4 space-y-1">
+            <button
+              type="button"
+              onClick={() => handleMenuNavigate('/change-password')}
+              className="w-full min-h-[48px] flex items-center gap-3 px-3 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-200 active:bg-gray-100 dark:active:bg-gray-800"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 7a3 3 0 00-6 0v3m-2 0h10a2 2 0 012 2v7a2 2 0 01-2 2H7a2 2 0 01-2-2v-7a2 2 0 012-2z" />
+              </svg>
+              修改密码
+            </button>
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="w-full min-h-[48px] flex items-center gap-3 px-3 rounded-lg text-sm font-medium text-danger active:bg-danger-50 dark:active:bg-danger-500/10"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 17l5-5m0 0l-5-5m5 5H9m4 5v1a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2h6a2 2 0 012 2v1" />
+              </svg>
+              退出登录
+            </button>
+          </div>
         </div>
       </div>
 

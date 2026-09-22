@@ -6,12 +6,17 @@ import com.admin.common.dto.GostDto;
 import com.admin.common.dto.NodeDto;
 import com.admin.common.dto.NodeUpdateDto;
 import com.admin.common.lang.R;
+import com.admin.common.utils.JwtUtil;
 import com.admin.common.utils.WebSocketServer;
+import com.admin.entity.DeviceGroup;
 import com.admin.entity.Node;
 import com.admin.entity.Tunnel;
+import com.admin.entity.User;
 import com.admin.entity.ViteConfig;
+import com.admin.mapper.DeviceGroupMapper;
 import com.admin.mapper.NodeMapper;
 import com.admin.mapper.TunnelMapper;
+import com.admin.mapper.UserMapper;
 import com.admin.service.NodeService;
 import com.admin.service.TunnelService;
 import com.admin.service.ViteConfigService;
@@ -24,8 +29,11 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Value;
 
@@ -73,6 +81,12 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
     private TunnelMapper tunnelMapper;
 
     @Resource
+    private DeviceGroupMapper deviceGroupMapper;
+
+    @Resource
+    private UserMapper userMapper;
+
+    @Resource
     @Lazy
     private TunnelService tunnelService;
 
@@ -105,7 +119,35 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
      */
     @Override
     public R getAllNodes() {
-        List<Node> nodeList = this.list();
+        Integer roleId = JwtUtil.getRoleIdFromToken();
+        boolean isAdmin = roleId != null && roleId == 0;
+
+        List<Node> nodeList;
+        if (isAdmin) {
+            nodeList = this.list();
+        } else {
+            Integer userId = JwtUtil.getUserIdFromToken();
+            User user = userId != null ? userMapper.selectById(userId) : null;
+            if (user == null) {
+                return R.ok(Collections.emptyList());
+            }
+
+            QueryWrapper<DeviceGroup> groupQuery = new QueryWrapper<DeviceGroup>()
+                    .eq("hide_in_probe", 0);
+            if (user.getGroupId() != null) {
+                groupQuery.and(w -> w.isNull("user_group_id").or().eq("user_group_id", user.getGroupId()));
+            } else {
+                groupQuery.isNull("user_group_id");
+            }
+
+            Set<Long> visibleNodeIds = deviceGroupMapper.selectList(groupQuery).stream()
+                    .map(DeviceGroup::getNodeId)
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toSet());
+            nodeList = visibleNodeIds.isEmpty()
+                    ? Collections.emptyList()
+                    : this.list(new QueryWrapper<Node>().in("id", visibleNodeIds));
+        }
         hideNodeSecrets(nodeList);
         return R.ok(nodeList);
     }

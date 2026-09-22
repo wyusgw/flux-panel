@@ -4,10 +4,10 @@ import com.admin.common.dto.ForwardDto;
 import com.admin.common.dto.ForwardUpdateDto;
 import com.admin.common.dto.ForwardWithTunnelDto;
 import com.admin.common.dto.GostDto;
-import com.admin.common.dto.TunnelDto;
 import com.admin.common.lang.R;
 import com.admin.common.utils.GostUtil;
 import com.admin.common.utils.JwtUtil;
+import com.admin.common.utils.TunnelResolver;
 import com.admin.common.utils.WebSocketServer;
 import com.admin.entity.*;
 import com.admin.mapper.ForwardMapper;
@@ -78,21 +78,25 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
     @Lazy
     private SpeedLimitService speedLimitService;
 
+    @Resource
+    @Lazy
+    private TunnelResolver tunnelResolver;
+
 
     @Override
     public R createForward(ForwardDto forwardDto) {
         // 1. 获取当前用户信息
         UserInfo currentUser = getCurrentUserInfo();
 
-        // 1.1 若未直接指定隧道，而是提供了入口/出口设备组，则自动解析或创建隧道
-        R resolveResult = resolveTunnelFromDeviceGroups(forwardDto.getTunnelId(), forwardDto.getInDeviceGroupId(),
-                forwardDto.getOutDeviceGroupId(), currentUser, forwardDto::setTunnelId);
-        if (resolveResult.getCode() != 0) {
-            return resolveResult;
+        // 1.1 校验隧道选择方式：显式隧道 或 入口/出口设备组，二选一
+        R modeCheck = validateDeviceGroupSelection(forwardDto.getTunnelId(), forwardDto.getInDeviceGroupId(),
+                forwardDto.getOutDeviceGroupId(), currentUser);
+        if (modeCheck.getCode() != 0) {
+            return modeCheck;
         }
 
-        // 2. 检查隧道是否存在和可用
-        Tunnel tunnel = validateTunnel(forwardDto.getTunnelId());
+        // 2. 解析隧道（显式指定隧道时查真实记录；设备组模式在内存中拼出等效对象，不落库）
+        Tunnel tunnel = tunnelResolver.resolveTunnel(forwardDto.getTunnelId(), forwardDto.getInDeviceGroupId(), forwardDto.getOutDeviceGroupId());
         if (tunnel == null) {
             return R.err("隧道不存在");
         }
@@ -101,7 +105,8 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         }
 
         // 3. 普通用户权限和限制检查
-        UserPermissionResult permissionResult = checkUserPermissions(currentUser, tunnel, null);
+        UserTunnel userTunnel = tunnelResolver.resolveUserTunnel(currentUser.getUserId(), forwardDto.getTunnelId(), forwardDto.getInDeviceGroupId());
+        UserPermissionResult permissionResult = checkUserPermissions(currentUser, tunnel, userTunnel, null);
         if (permissionResult.isHasError()) {
             return R.err(permissionResult.getErrorMessage());
         }
@@ -160,11 +165,11 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             if (user.getStatus() == 0) return R.err("用户已到期或被禁用");
         }
 
-        // 1.1 若未直接指定隧道，而是提供了入口/出口设备组，则自动解析或创建隧道
-        R resolveResult = resolveTunnelFromDeviceGroups(forwardUpdateDto.getTunnelId(), forwardUpdateDto.getInDeviceGroupId(),
-                forwardUpdateDto.getOutDeviceGroupId(), currentUser, forwardUpdateDto::setTunnelId);
-        if (resolveResult.getCode() != 0) {
-            return resolveResult;
+        // 1.1 校验隧道选择方式：显式隧道 或 入口/出口设备组，二选一
+        R modeCheck = validateDeviceGroupSelection(forwardUpdateDto.getTunnelId(), forwardUpdateDto.getInDeviceGroupId(),
+                forwardUpdateDto.getOutDeviceGroupId(), currentUser);
+        if (modeCheck.getCode() != 0) {
+            return modeCheck;
         }
 
         // 2. 检查转发是否存在
@@ -174,7 +179,7 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         }
 
         // 3. 检查隧道是否存在和可用
-        Tunnel tunnel = validateTunnel(forwardUpdateDto.getTunnelId());
+        Tunnel tunnel = tunnelResolver.resolveTunnel(forwardUpdateDto.getTunnelId(), forwardUpdateDto.getInDeviceGroupId(), forwardUpdateDto.getOutDeviceGroupId());
         if (tunnel == null) {
             return R.err("隧道不存在");
         }
@@ -182,7 +187,17 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             return R.err("隧道已禁用，无法更新转发");
         }
         boolean tunnelChanged = isTunnelChanged(existForward, forwardUpdateDto);
-        // 4. 检查权限和限制
+
+        // 4. 解析新隧道选择对应的UserTunnel（即使隧道未变化也需要，用于权限检查和构建服务名称）
+        UserTunnel userTunnel;
+        if (currentUser.getRoleId() == ADMIN_ROLE_ID) {
+            // 管理员用户通过forward记录获取原始的用户ID，用于构建正确的服务名称
+            userTunnel = tunnelResolver.resolveUserTunnel(existForward.getUserId(), forwardUpdateDto.getTunnelId(), forwardUpdateDto.getInDeviceGroupId());
+        } else {
+            userTunnel = tunnelResolver.resolveUserTunnel(currentUser.getUserId(), forwardUpdateDto.getTunnelId(), forwardUpdateDto.getInDeviceGroupId());
+        }
+
+        // 5. 检查权限和限制
         UserPermissionResult permissionResult = null;
         if (tunnelChanged) {
             if (currentUser.getRoleId() == ADMIN_ROLE_ID) {
@@ -198,7 +213,6 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
                     }
 
                     // 检查原用户是否有新隧道权限
-                    UserTunnel userTunnel = getUserTunnel(existForward.getUserId(), tunnel.getId().intValue());
                     if (userTunnel == null) {
                         return R.err("用户没有该隧道权限");
                     }
@@ -213,7 +227,7 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
                     }
 
                     // 检查原用户的流量和转发数量限制
-                    R quotaCheckResult = checkForwardQuota(existForward.getUserId(), tunnel.getId().intValue(), userTunnel, originalUser, forwardUpdateDto.getId());
+                    R quotaCheckResult = checkForwardQuota(existForward.getUserId(), userTunnel.getTunnelId(), userTunnel, originalUser, forwardUpdateDto.getId());
                     if (quotaCheckResult.getCode() != 0) {
                         return R.err("用户" + quotaCheckResult.getMsg());
                     }
@@ -222,24 +236,15 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
                 }
             } else {
                 // 普通用户检查自己的权限
-                permissionResult = checkUserPermissions(currentUser, tunnel, forwardUpdateDto.getId());
+                permissionResult = checkUserPermissions(currentUser, tunnel, userTunnel, forwardUpdateDto.getId());
                 if (permissionResult.isHasError()) {
                     return R.err(permissionResult.getErrorMessage());
                 }
             }
         }
 
-        // 5. 获取UserTunnel（即使隧道未变化也需要获取，用于构建服务名称）
-        UserTunnel userTunnel = null;
-        if (currentUser.getRoleId() != ADMIN_ROLE_ID) {
-            userTunnel = getUserTunnel(currentUser.getUserId(), tunnel.getId().intValue());
-            if (userTunnel == null) {
-                return R.err("你没有该隧道权限");
-            }
-        } else {
-            // 管理员用户也需要获取UserTunnel（如果存在的话），用于构建正确的服务名称
-            // 通过forward记录获取原始的用户ID
-            userTunnel = getUserTunnel(existForward.getUserId(), tunnel.getId().intValue());
+        if (currentUser.getRoleId() != ADMIN_ROLE_ID && userTunnel == null) {
+            return R.err("你没有该隧道权限");
         }
 
         // 6. 更新Forward对象
@@ -282,7 +287,7 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         }
 
         // 3. 获取隧道信息
-        Tunnel tunnel = validateTunnel(forward.getTunnelId());
+        Tunnel tunnel = tunnelResolver.resolveTunnel(forward);
         if (tunnel == null) {
             return R.err("隧道不存在");
         }
@@ -290,13 +295,13 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         // 4. 权限检查（仅普通用户需要）
         UserTunnel userTunnel = null;
         if (currentUser.getRoleId() != ADMIN_ROLE_ID) {
-            userTunnel = getUserTunnel(currentUser.getUserId(), tunnel.getId().intValue());
+            userTunnel = tunnelResolver.resolveUserTunnel(currentUser.getUserId(), forward);
             if (userTunnel == null) {
                 return R.err("你没有该隧道权限");
             }
         } else {
             // 管理员删除用户记录时，需要获取对应的UserTunnel用于构建正确的服务名称
-            userTunnel = getUserTunnel(forward.getUserId(), tunnel.getId().intValue());
+            userTunnel = tunnelResolver.resolveUserTunnel(forward.getUserId(), forward);
         }
 
         // 5. 获取所需的节点信息
@@ -371,7 +376,7 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         }
 
         // 3. 获取隧道信息
-        Tunnel tunnel = validateTunnel(forward.getTunnelId());
+        Tunnel tunnel = tunnelResolver.resolveTunnel(forward);
         if (tunnel == null) {
             return R.err("隧道不存在");
         }
@@ -385,12 +390,12 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
 
             // 普通用户需要检查流量和账户状态
             if (currentUser.getRoleId() != ADMIN_ROLE_ID) {
-                R flowCheckResult = checkUserFlowLimits(currentUser.getUserId(), tunnel);
+                R flowCheckResult = checkUserFlowLimits(currentUser.getUserId(), forward);
                 if (flowCheckResult.getCode() != 0) {
                     return flowCheckResult;
                 }
 
-                userTunnel = getUserTunnel(currentUser.getUserId(), tunnel.getId().intValue());
+                userTunnel = tunnelResolver.resolveUserTunnel(currentUser.getUserId(), forward);
                 if (userTunnel == null) {
                     return R.err("你没有该隧道权限");
                 }
@@ -403,7 +408,7 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
 
         // 5. 权限检查（仅普通用户需要）
         if (currentUser.getRoleId() != ADMIN_ROLE_ID && userTunnel == null) {
-            userTunnel = getUserTunnel(currentUser.getUserId(), tunnel.getId().intValue());
+            userTunnel = tunnelResolver.resolveUserTunnel(currentUser.getUserId(), forward);
             if (userTunnel == null) {
                 return R.err("你没有该隧道权限");
             }
@@ -412,7 +417,7 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         // 6. 确保获取UserTunnel用于构建服务名称（包括管理员用户）
         if (userTunnel == null) {
             // 通过forward记录获取原始的用户ID来查找UserTunnel
-            userTunnel = getUserTunnel(forward.getUserId(), tunnel.getId().intValue());
+            userTunnel = tunnelResolver.resolveUserTunnel(forward.getUserId(), forward);
         }
 
         // 7. 获取所需的节点信息
@@ -471,7 +476,7 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         }
 
         // 3. 获取隧道信息
-        Tunnel tunnel = validateTunnel(forward.getTunnelId());
+        Tunnel tunnel = tunnelResolver.resolveTunnel(forward);
         if (tunnel == null) {
             return R.err("隧道不存在");
         }
@@ -760,13 +765,6 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
     }
 
     /**
-     * 验证隧道是否存在
-     */
-    private Tunnel validateTunnel(Integer tunnelId) {
-        return tunnelService.getById(tunnelId);
-    }
-
-    /**
      * 验证转发是否存在且用户有权限访问
      */
     private Forward validateForwardExists(Long forwardId, UserInfo currentUser) {
@@ -805,12 +803,12 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
     }
 
     /**
-     * 若未直接指定隧道，而是提供了入口/出口设备组，则自动解析或创建对应隧道，
-     * 并为普通用户自动开通该隧道的使用权限（额度取自账号自身的流量/规则数/到期时间）。
-     * 解析成功后通过 tunnelIdSetter 回填隧道ID。
+     * 校验隧道选择方式：显式隧道 或 入口/出口设备组，二选一；设备组模式下校验设备组存在性与可见性。
+     * 不创建/复用任何 Tunnel/UserTunnel 记录——设备组模式转发始终以 {@link TunnelResolver}
+     * 在内存中拼出的等效对象驱动，不在此处落库。
      */
-    private R resolveTunnelFromDeviceGroups(Integer explicitTunnelId, Long inDeviceGroupId, Long outDeviceGroupId,
-                                             UserInfo currentUser, java.util.function.Consumer<Integer> tunnelIdSetter) {
+    private R validateDeviceGroupSelection(Integer explicitTunnelId, Long inDeviceGroupId, Long outDeviceGroupId,
+                                            UserInfo currentUser) {
         if (explicitTunnelId != null) {
             return R.ok();
         }
@@ -844,20 +842,6 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             }
         }
 
-        R tunnelResult = resolveOrCreateAutoTunnel(inGroup.getNodeId(), outGroup != null ? outGroup.getNodeId() : null, inGroup.getRatio());
-        if (tunnelResult.getCode() != 0) {
-            return tunnelResult;
-        }
-        Tunnel tunnel = (Tunnel) tunnelResult.getData();
-
-        if (currentUser.getRoleId() != ADMIN_ROLE_ID) {
-            R grantResult = ensureUserTunnelGrant(currentUser.getUserId(), tunnel.getId());
-            if (grantResult.getCode() != 0) {
-                return grantResult;
-            }
-        }
-
-        tunnelIdSetter.accept(tunnel.getId().intValue());
         return R.ok();
     }
 
@@ -876,74 +860,9 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
     }
 
     /**
-     * 根据入口/出口节点查找或自动创建隧道（自动创建的隧道以固定命名规则复用，避免重复创建）
-     */
-    private R resolveOrCreateAutoTunnel(Long inNodeId, Long outNodeId, java.math.BigDecimal ratio) {
-        String autoName = "auto_" + inNodeId + "_" + (outNodeId != null ? outNodeId : "direct");
-        Tunnel existing = tunnelService.getOne(new QueryWrapper<Tunnel>().eq("name", autoName));
-        if (existing != null) {
-            return R.ok(existing);
-        }
-
-        TunnelDto dto = new TunnelDto();
-        dto.setName(autoName);
-        dto.setInNodeId(inNodeId);
-        dto.setOutNodeId(outNodeId);
-        dto.setType(outNodeId != null ? TUNNEL_TYPE_TUNNEL_FORWARD : TUNNEL_TYPE_PORT_FORWARD);
-        dto.setFlow(2);
-        dto.setProtocol("tls");
-        dto.setTcpListenAddr("0.0.0.0");
-        dto.setUdpListenAddr("0.0.0.0");
-        dto.setTrafficRatio(ratio != null ? ratio : java.math.BigDecimal.ONE);
-
-        R createResult = tunnelService.createTunnel(dto);
-        if (createResult.getCode() != 0) {
-            return R.err("自动创建隧道失败：" + createResult.getMsg());
-        }
-
-        Tunnel created = tunnelService.getOne(new QueryWrapper<Tunnel>().eq("name", autoName));
-        if (created == null) {
-            return R.err("自动创建隧道失败");
-        }
-        return R.ok(created);
-    }
-
-    /**
-     * 确保用户拥有该（自动创建）隧道的使用权限，若不存在则以账号自身的配额自动开通
-     */
-    private R ensureUserTunnelGrant(Integer userId, Long tunnelId) {
-        UserTunnel existing = userTunnelService.getOne(new QueryWrapper<UserTunnel>()
-                .eq("user_id", userId)
-                .eq("tunnel_id", tunnelId));
-        if (existing != null) {
-            return R.ok();
-        }
-
-        User user = userService.getById(userId);
-        if (user == null) {
-            return R.err("用户不存在");
-        }
-
-        UserTunnel grant = new UserTunnel();
-        grant.setUserId(userId);
-        grant.setTunnelId(tunnelId.intValue());
-        grant.setFlow(user.getFlow() != null ? user.getFlow() : 0L);
-        grant.setInFlow(0L);
-        grant.setOutFlow(0L);
-        grant.setNum(user.getNum() != null ? user.getNum() : 0);
-        grant.setExpTime(user.getExpTime());
-        grant.setFlowResetTime(0L);
-        grant.setSpeedId(null);
-        grant.setStatus(1);
-
-        boolean result = userTunnelService.save(grant);
-        return result ? R.ok() : R.err("自动开通隧道权限失败");
-    }
-
-    /**
      * 检查用户权限和限制
      */
-    private UserPermissionResult checkUserPermissions(UserInfo currentUser, Tunnel tunnel, Long excludeForwardId) {
+    private UserPermissionResult checkUserPermissions(UserInfo currentUser, Tunnel tunnel, UserTunnel userTunnel, Long excludeForwardId) {
         if (currentUser.getRoleId() == ADMIN_ROLE_ID) {
             return UserPermissionResult.success(null, null);
         }
@@ -955,7 +874,6 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         }
 
         // 检查用户隧道权限
-        UserTunnel userTunnel = getUserTunnel(currentUser.getUserId(), tunnel.getId().intValue());
         if (userTunnel == null) {
             return UserPermissionResult.error("你没有该隧道权限");
         }
@@ -978,7 +896,7 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         }
 
         // 转发数量限制检查
-        R quotaCheckResult = checkForwardQuota(currentUser.getUserId(), tunnel.getId().intValue(), userTunnel, userInfo, excludeForwardId);
+        R quotaCheckResult = checkForwardQuota(currentUser.getUserId(), userTunnel.getTunnelId(), userTunnel, userInfo, excludeForwardId);
         if (quotaCheckResult.getCode() != 0) {
             return UserPermissionResult.error(quotaCheckResult.getMsg());
         }
@@ -1016,13 +934,13 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
     /**
      * 检查用户流量限制
      */
-    private R checkUserFlowLimits(Integer userId, Tunnel tunnel) {
+    private R checkUserFlowLimits(Integer userId, Forward forward) {
         User userInfo = userService.getById(userId);
         if (userInfo.getExpTime() != null && userInfo.getExpTime() <= System.currentTimeMillis()) {
             return R.err("当前账号已到期");
         }
 
-        UserTunnel userTunnel = getUserTunnel(userId, tunnel.getId().intValue());
+        UserTunnel userTunnel = tunnelResolver.resolveUserTunnel(userId, forward);
         if (userTunnel == null) {
             return R.err("你没有该隧道权限");
         }
@@ -1111,7 +1029,8 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         BeanUtils.copyProperties(forwardUpdateDto, forward);
 
         // 处理端口分配逻辑
-        boolean tunnelChanged = !existForward.getTunnelId().equals(forwardUpdateDto.getTunnelId());
+        boolean tunnelChanged = isTunnelSelectionChanged(existForward.getTunnelId(), existForward.getInDeviceGroupId(), existForward.getOutDeviceGroupId(),
+                forwardUpdateDto.getTunnelId(), forwardUpdateDto.getInDeviceGroupId(), forwardUpdateDto.getOutDeviceGroupId());
         boolean inPortChanged = forwardUpdateDto.getInPort() != null &&
                 !Objects.equals(forwardUpdateDto.getInPort(), existForward.getInPort());
 
@@ -1219,7 +1138,7 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
      */
     private R updateGostServicesWithTunnelChange(Forward existForward, Forward updatedForward, Tunnel newTunnel, Integer limiter, NodeInfo nodeInfo, UserTunnel userTunnel) {
         // 1. 获取原隧道信息
-        Tunnel oldTunnel = tunnelService.getById(existForward.getTunnelId());
+        Tunnel oldTunnel = tunnelResolver.resolveTunnel(existForward);
         if (oldTunnel == null) {
             return R.err("原隧道不存在，无法删除旧配置");
         }
@@ -1246,7 +1165,7 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
      */
     private R deleteOldGostServices(Forward forward, Tunnel oldTunnel) {
         // 获取原隧道的用户隧道关系
-        UserTunnel oldUserTunnel = getUserTunnel(forward.getUserId(), oldTunnel.getId().intValue());
+        UserTunnel oldUserTunnel = tunnelResolver.resolveUserTunnel(forward.getUserId(), forward);
         String serviceName = buildServiceName(forward.getId(), forward.getUserId(), oldUserTunnel);
 
         // 获取原隧道的节点信息
@@ -1497,19 +1416,18 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
     }
 
     /**
-     * 获取用户隧道关系
-     */
-    private UserTunnel getUserTunnel(Integer userId, Integer tunnelId) {
-        return userTunnelService.getOne(new QueryWrapper<UserTunnel>()
-                .eq("user_id", userId)
-                .eq("tunnel_id", tunnelId));
-    }
-
-    /**
-     * 检查隧道是否发生变化
+     * 检查隧道选择是否发生变化（隧道模式与设备组模式统一比较：显式隧道ID + 入口/出口设备组ID）
      */
     private boolean isTunnelChanged(Forward existForward, ForwardUpdateDto updateDto) {
-        return !existForward.getTunnelId().equals(updateDto.getTunnelId());
+        return isTunnelSelectionChanged(existForward.getTunnelId(), existForward.getInDeviceGroupId(), existForward.getOutDeviceGroupId(),
+                updateDto.getTunnelId(), updateDto.getInDeviceGroupId(), updateDto.getOutDeviceGroupId());
+    }
+
+    private boolean isTunnelSelectionChanged(Integer oldTunnelId, Long oldInGroupId, Long oldOutGroupId,
+                                              Integer newTunnelId, Long newInGroupId, Long newOutGroupId) {
+        return !Objects.equals(oldTunnelId, newTunnelId)
+                || !Objects.equals(oldInGroupId, newInGroupId)
+                || !Objects.equals(oldOutGroupId, newOutGroupId);
     }
 
     /**
@@ -1632,6 +1550,30 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             }
         }
 
+        // 3. 收集该节点作为入口/出口设备组时占用的端口（设备组模式转发无 Tunnel 记录，需单独查询）
+        List<DeviceGroup> groupsOnNode = deviceGroupService.list(new QueryWrapper<DeviceGroup>().eq("node_id", nodeId));
+        if (!groupsOnNode.isEmpty()) {
+            Set<Long> groupIds = groupsOnNode.stream()
+                    .map(DeviceGroup::getId)
+                    .collect(Collectors.toSet());
+
+            QueryWrapper<Forward> groupQueryWrapper = new QueryWrapper<Forward>()
+                    .and(w -> w.in("in_device_group_id", groupIds).or().in("out_device_group_id", groupIds));
+            if (excludeForwardId != null) {
+                groupQueryWrapper.ne("id", excludeForwardId);
+            }
+
+            List<Forward> groupForwards = this.list(groupQueryWrapper);
+            for (Forward forward : groupForwards) {
+                if (forward.getInDeviceGroupId() != null && groupIds.contains(forward.getInDeviceGroupId()) && forward.getInPort() != null) {
+                    usedPorts.add(forward.getInPort());
+                }
+                if (forward.getOutDeviceGroupId() != null && groupIds.contains(forward.getOutDeviceGroupId()) && forward.getOutPort() != null) {
+                    usedPorts.add(forward.getOutPort());
+                }
+            }
+        }
+
         return usedPorts;
     }
 
@@ -1646,11 +1588,11 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
 
 
     public void updateForwardA(Forward forward) {
-        Tunnel tunnel = validateTunnel(forward.getTunnelId());
+        Tunnel tunnel = tunnelResolver.resolveTunnel(forward);
         if (tunnel == null) {
             return;
         }
-        UserTunnel userTunnel = getUserTunnel(forward.getUserId(), tunnel.getId().intValue());
+        UserTunnel userTunnel = tunnelResolver.resolveUserTunnel(forward.getUserId(), forward);
         NodeInfo nodeInfo = getRequiredNodes(tunnel);
         if (nodeInfo.isHasError()) {
             return;

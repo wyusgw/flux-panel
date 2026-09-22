@@ -151,7 +151,8 @@ public class TunnelServiceImpl extends ServiceImpl<TunnelMapper, Tunnel> impleme
      */
     @Override
     public R getAllTunnels() {
-        List<Tunnel> tunnelList = this.list();
+        // 排除转发规则（入口/出口设备组模式）自动创建的隧道，"隧道管理"只展示手动创建的隧道
+        List<Tunnel> tunnelList = this.list(new QueryWrapper<Tunnel>().ne("is_auto", 1));
         return R.ok(tunnelList);
     }
 

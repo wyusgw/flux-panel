@@ -446,6 +446,24 @@ PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
 
+-- tunnel 表：添加 is_auto 字段（如果不存在）
+SET @sql = (
+  SELECT IF(
+    NOT EXISTS (
+      SELECT 1
+      FROM information_schema.COLUMNS
+      WHERE table_schema = DATABASE()
+        AND table_name = 'tunnel'
+        AND column_name = 'is_auto'
+    ),
+    'ALTER TABLE `tunnel` ADD COLUMN `is_auto` INT(10) NOT NULL DEFAULT 0;',
+    'SELECT "Column `is_auto` already exists in `tunnel`";'
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
 -- forward 表：添加 interface_name 字段（如果不存在）
 SET @sql = (
   SELECT IF(

@@ -115,6 +115,20 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
             item.put("nodeId", group.getNodeId());
             item.put("direction", group.getDirection() == null ? "inbound" : group.getDirection());
             item.put("nodeName", node != null ? node.getName() : "未知节点");
+            // 普通用户的节点列表按设备组权限过滤；同时在此返回已验证可见的节点摘要，
+            // 供节点状态页与设备组保持同一份可见性数据，避免两个接口筛选不同步。
+            if (node != null) {
+                Map<String, Object> nodeInfo = new HashMap<>();
+                nodeInfo.put("id", node.getId());
+                nodeInfo.put("name", node.getName());
+                nodeInfo.put("ip", node.getIp());
+                nodeInfo.put("serverIp", node.getServerIp());
+                nodeInfo.put("version", node.getVersion());
+                nodeInfo.put("portSta", node.getPortSta());
+                nodeInfo.put("portEnd", node.getPortEnd());
+                nodeInfo.put("status", node.getStatus());
+                item.put("node", nodeInfo);
+            }
             item.put("userGroupId", group.getUserGroupId());
             item.put("ratio", group.getRatio());
             item.put("hideInProbe", group.getHideInProbe());

@@ -39,12 +39,39 @@ public class SystemInfoDto {
      */
     @JsonProperty("cpu_usage")
     private Double cpuUsage;
+
+    @JsonProperty("cpu_model")
+    private String cpuModel;
     
     /**
      * 内存使用率（百分比）
      */
     @JsonProperty("memory_usage")
     private Double memoryUsage;
+
+    @JsonProperty("memory_total")
+    private Long memoryTotal;
+
+    @JsonProperty("memory_used")
+    private Long memoryUsed;
+
+    @JsonProperty("memory_available")
+    private Long memoryAvailable;
+
+    /**
+     * 根文件系统使用率（百分比）
+     */
+    @JsonProperty("storage_usage")
+    private Double storageUsage;
+
+    @JsonProperty("storage_total")
+    private Long storageTotal;
+
+    @JsonProperty("storage_used")
+    private Long storageUsed;
+
+    @JsonProperty("storage_free")
+    private Long storageFree;
     
     /**
      * 上报时间戳

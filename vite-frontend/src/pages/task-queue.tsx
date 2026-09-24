@@ -64,8 +64,12 @@ const STAT_TONE_CLASS: Record<string, string> = {
   success: 'text-success-600'
 };
 
-const StatCard = ({ label, value, tone = 'default' }: { label: string; value: string | number; tone?: 'default' | 'warning' | 'success' }) => (
-  <Card className="shadow-sm border border-default-200">
+const StatCard = ({ label, value, tone = 'default', onPress }: { label: string; value: string | number; tone?: 'default' | 'warning' | 'success'; onPress?: () => void }) => (
+  <Card
+    isPressable={!!onPress}
+    onPress={onPress}
+    className={`shadow-sm border border-default-200 ${onPress ? 'hover:border-primary-300 transition-colors' : ''}`}
+  >
     <CardBody className="py-3 px-4">
       <p className="text-xs text-default-500">{label}</p>
       <p className={`text-2xl font-semibold mt-1 ${tone !== 'default' && Number(value) > 0 ? STAT_TONE_CLASS[tone] : 'text-foreground'}`}>{value}</p>
@@ -108,6 +112,8 @@ export default function TaskQueuePage() {
 
   const [detailModalOpen, setDetailModalOpen] = useState(false);
   const [detailItem, setDetailItem] = useState<TaskQueueItem | null>(null);
+
+  const [currentJobsModalOpen, setCurrentJobsModalOpen] = useState(false);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -237,7 +243,7 @@ export default function TaskQueuePage() {
 
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-3 mb-4">
         <HealthCard health={health} />
-        <StatCard label="当前作业量" value={stats.total} />
+        <StatCard label="当前作业量" value={stats.total} onPress={() => setCurrentJobsModalOpen(true)} />
         <StatCard label="近一小时处理量" value={stats.processedLastHour} />
         <StatCard label="24小时内新增" value={stats.last24h} />
         <StatCard label="24小时内成功" value={stats.successLast24h} tone="success" />
@@ -256,65 +262,6 @@ export default function TaskQueuePage() {
             )}
           </CardBody>
         </Card>
-      </div>
-
-      <div className="mb-4">
-        <h2 className="text-sm font-semibold text-foreground mb-2">当前作业详情</h2>
-        {pendingItems.length === 0 ? (
-          <div className="text-xs text-default-400 border border-default-200 rounded-lg px-4 py-3">当前没有待处理的作业，一切正常</div>
-        ) : (
-          <div className="space-y-3">
-            {pendingItems.map((item) => (
-              <Card key={item.id} className="shadow-sm border border-default-200">
-                <CardBody className="p-4">
-                  <div className="flex items-start justify-between gap-3 flex-wrap">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-xs text-default-400">#{item.id}</span>
-                      <Chip size="sm" variant="flat" color={TASK_TYPE_COLORS[item.taskType] || 'default'}>{item.taskTypeLabel}</Chip>
-                      {item.retryCount >= AUTO_RETRY_LIMIT ? (
-                        <Chip size="sm" variant="flat" color="danger">已达重试上限</Chip>
-                      ) : (
-                        <Chip size="sm" variant="flat" color="default">待重试</Chip>
-                      )}
-                      <Chip size="sm" variant="flat" color={item.retryCount > 0 ? 'warning' : 'default'}>重试 {item.retryCount} 次</Chip>
-                    </div>
-                    <div className="flex gap-2">
-                      <Button size="sm" variant="flat" color="default" isLoading={retryingId === item.id} onPress={() => handleRetry(item)}>
-                        立即重试
-                      </Button>
-                      <Button size="sm" variant="light" color="danger" isIconOnly onPress={() => handleDelete(item)}>
-                        <IconDelete />
-                      </Button>
-                    </div>
-                  </div>
-
-                  <div className="mt-3 grid sm:grid-cols-2 gap-3 text-sm">
-                    <div>
-                      <p className="text-xs text-default-500 mb-1">任务内容</p>
-                      <p className="text-foreground whitespace-pre-wrap break-all">{item.summary || '—'}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-default-500 mb-1">关联节点</p>
-                      <p className="text-foreground">{item.nodeNames && item.nodeNames.length > 0 ? item.nodeNames.join(' / ') : '—'}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-default-500 mb-1">创建时间</p>
-                      <p className="text-foreground">{formatDate(item.createdTime)}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-default-500 mb-1">最近更新</p>
-                      <p className="text-foreground">{formatDate(item.updatedTime)}</p>
-                    </div>
-                    <div className="sm:col-span-2">
-                      <p className="text-xs text-default-500 mb-1">最近错误</p>
-                      <p className="text-foreground whitespace-pre-wrap break-all">{item.lastError || '—'}</p>
-                    </div>
-                  </div>
-                </CardBody>
-              </Card>
-            ))}
-          </div>
-        )}
       </div>
 
       <Card className="shadow-sm border border-default-200">
@@ -460,6 +407,76 @@ export default function TaskQueuePage() {
               <ModalFooter>
                 <Button variant="light" onPress={onClose}>关闭</Button>
               </ModalFooter>
+            </>
+          )}
+        </ModalContent>
+      </Modal>
+
+      <Modal isOpen={currentJobsModalOpen} onOpenChange={setCurrentJobsModalOpen} size="3xl" scrollBehavior="inside" backdrop="blur" placement="center">
+        <ModalContent>
+          {() => (
+            <>
+              <ModalHeader className="flex flex-col gap-1">
+                <h2 className="text-lg font-bold">当前作业详情</h2>
+                <span className="text-small text-default-500 font-normal">共 {pendingItems.length} 个待处理作业</span>
+              </ModalHeader>
+              <ModalBody className="pb-6">
+                {pendingItems.length === 0 ? (
+                  <div className="text-xs text-default-400 border border-default-200 rounded-lg px-4 py-3">当前没有待处理的作业，一切正常</div>
+                ) : (
+                  <div className="space-y-3">
+                    {pendingItems.map((item) => (
+                      <Card key={item.id} className="shadow-sm border border-default-200">
+                        <CardBody className="p-4">
+                          <div className="flex items-start justify-between gap-3 flex-wrap">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-xs text-default-400">#{item.id}</span>
+                              <Chip size="sm" variant="flat" color={TASK_TYPE_COLORS[item.taskType] || 'default'}>{item.taskTypeLabel}</Chip>
+                              {item.retryCount >= AUTO_RETRY_LIMIT ? (
+                                <Chip size="sm" variant="flat" color="danger">已达重试上限</Chip>
+                              ) : (
+                                <Chip size="sm" variant="flat" color="default">待重试</Chip>
+                              )}
+                              <Chip size="sm" variant="flat" color={item.retryCount > 0 ? 'warning' : 'default'}>重试 {item.retryCount} 次</Chip>
+                            </div>
+                            <div className="flex gap-2">
+                              <Button size="sm" variant="flat" color="default" isLoading={retryingId === item.id} onPress={() => handleRetry(item)}>
+                                立即重试
+                              </Button>
+                              <Button size="sm" variant="light" color="danger" isIconOnly onPress={() => handleDelete(item)}>
+                                <IconDelete />
+                              </Button>
+                            </div>
+                          </div>
+
+                          <div className="mt-3 grid sm:grid-cols-2 gap-3 text-sm">
+                            <div>
+                              <p className="text-xs text-default-500 mb-1">任务内容</p>
+                              <p className="text-foreground whitespace-pre-wrap break-all">{item.summary || '—'}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-default-500 mb-1">关联节点</p>
+                              <p className="text-foreground">{item.nodeNames && item.nodeNames.length > 0 ? item.nodeNames.join(' / ') : '—'}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-default-500 mb-1">创建时间</p>
+                              <p className="text-foreground">{formatDate(item.createdTime)}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-default-500 mb-1">最近更新</p>
+                              <p className="text-foreground">{formatDate(item.updatedTime)}</p>
+                            </div>
+                            <div className="sm:col-span-2">
+                              <p className="text-xs text-default-500 mb-1">最近错误</p>
+                              <p className="text-foreground whitespace-pre-wrap break-all">{item.lastError || '—'}</p>
+                            </div>
+                          </div>
+                        </CardBody>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </ModalBody>
             </>
           )}
         </ModalContent>

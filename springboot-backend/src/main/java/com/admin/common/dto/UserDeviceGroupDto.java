@@ -41,6 +41,11 @@ public class UserDeviceGroupDto {
     private String protocol;
 
     /**
+     * 所属单端组ID（可为空，表示不分组）
+     */
+    private Long singleTunnelGroupId;
+
+    /**
      * 是否开放给其他用户在添加转发规则时选用（false-仅自己可用，true-所有用户可用）
      */
     private boolean shared;

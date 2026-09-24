@@ -52,6 +52,11 @@ public class DeviceGroup extends BaseEntity {
     private Long ownerUserId;
 
     /**
+     * 单端隧道：该设备所属的单端组（用户自建设备时选择），管理员建立的设备组此字段为空
+     */
+    private Long singleTunnelGroupId;
+
+    /**
      * 仅 ownerUserId 非空时有意义：0-仅拥有者自己可用，1-开放给所有用户在添加转发规则时选用
      */
     private Integer shared;

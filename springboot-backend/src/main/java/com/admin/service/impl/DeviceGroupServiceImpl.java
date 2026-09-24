@@ -14,9 +14,11 @@ import com.admin.entity.Node;
 import com.admin.entity.User;
 import com.admin.mapper.DeviceGroupChainHopMapper;
 import com.admin.mapper.DeviceGroupMapper;
+import com.admin.entity.SingleTunnelGroup;
 import com.admin.service.DeviceGroupService;
 import com.admin.service.ForwardService;
 import com.admin.service.NodeService;
+import com.admin.service.SingleTunnelGroupService;
 import com.admin.service.UserService;
 import com.admin.service.ViteConfigService;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
@@ -60,6 +62,10 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
     @Autowired
     @Lazy
     private ViteConfigService viteConfigService;
+
+    @Autowired
+    @Lazy
+    private SingleTunnelGroupService singleTunnelGroupService;
 
     @Autowired
     private DeviceGroupChainHopMapper chainHopMapper;
@@ -212,6 +218,12 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
         Map<Long, DeviceGroup> groupById = this.list().stream()
                 .collect(Collectors.toMap(DeviceGroup::getId, g -> g, (a, b) -> a));
 
+        // 单端组名称一次性批量解析，避免在循环里逐条查询
+        Map<Long, String> singleTunnelGroupNameMap = new HashMap<>();
+        for (SingleTunnelGroup g : singleTunnelGroupService.list()) {
+            singleTunnelGroupNameMap.put(g.getId(), g.getName());
+        }
+
         List<Map<String, Object>> result = groups.stream().map(group -> {
             Node node = nodeMap.get(group.getNodeId());
             Map<String, Object> item = new HashMap<>();
@@ -222,6 +234,10 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
             item.put("protocol", group.getProtocol() == null ? "tls" : group.getProtocol());
             item.put("ownerUserId", group.getOwnerUserId());
             item.put("shared", group.getShared() != null && group.getShared() == 1);
+            item.put("singleTunnelGroupId", group.getSingleTunnelGroupId());
+            item.put("singleTunnelGroupName", group.getSingleTunnelGroupId() != null
+                    ? singleTunnelGroupNameMap.getOrDefault(group.getSingleTunnelGroupId(), "未知分组")
+                    : null);
             // 普通用户的节点列表按设备组权限过滤；同时在此返回已验证可见的节点摘要，
             // 供节点状态页与设备组保持同一份可见性数据，避免两个接口筛选不同步。
             if (node != null) {
@@ -406,6 +422,9 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
         if (!"inbound".equals(dto.getDirection()) && !"outbound".equals(dto.getDirection())) {
             return R.err("单端隧道只能选择入口或出口");
         }
+        if (dto.getSingleTunnelGroupId() != null && !singleTunnelGroupService.isOwnedByUser(dto.getSingleTunnelGroupId(), userId)) {
+            return R.err("所选单端组不存在或无权限使用");
+        }
 
         com.admin.common.dto.NodeDto nodeDto = new com.admin.common.dto.NodeDto();
         nodeDto.setName(dto.getName());
@@ -425,6 +444,7 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
         group.setDirection(dto.getDirection());
         group.setProtocol(dto.getProtocol() != null && !dto.getProtocol().isEmpty() ? dto.getProtocol() : "tls");
         group.setOwnerUserId(userId.longValue());
+        group.setSingleTunnelGroupId(dto.getSingleTunnelGroupId());
         group.setShared(dto.isShared() ? 1 : 0);
         group.setRatio(BigDecimal.ONE);
         group.setHideInProbe(0);
@@ -455,6 +475,7 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
             item.put("direction", group.getDirection());
             item.put("protocol", group.getProtocol() == null ? "tls" : group.getProtocol());
             item.put("shared", group.getShared() != null && group.getShared() == 1);
+            item.put("singleTunnelGroupId", group.getSingleTunnelGroupId());
             item.put("nodeId", group.getNodeId());
             if (node != null) {
                 item.put("serverIp", node.getServerIp());
@@ -486,6 +507,9 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
         if (group == null) {
             return R.err("设备组不存在或无权限操作");
         }
+        if (dto.getSingleTunnelGroupId() != null && !singleTunnelGroupService.isOwnedByUser(dto.getSingleTunnelGroupId(), userId)) {
+            return R.err("所选单端组不存在或无权限使用");
+        }
 
         if (group.getNodeId() != null) {
             com.admin.common.dto.NodeUpdateDto nodeUpdateDto = new com.admin.common.dto.NodeUpdateDto();
@@ -505,9 +529,15 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
         if ("outbound".equals(group.getDirection())) {
             group.setProtocol(dto.getProtocol() != null && !dto.getProtocol().isEmpty() ? dto.getProtocol() : "tls");
         }
+        group.setSingleTunnelGroupId(dto.getSingleTunnelGroupId());
         group.setShared(dto.isShared() ? 1 : 0);
         group.setUpdatedTime(System.currentTimeMillis());
         boolean result = this.updateById(group);
+        if (result && dto.getSingleTunnelGroupId() == null) {
+            // MyBatis-Plus 默认 UPDATE 会跳过 null 字段，updateById 无法清空 single_tunnel_group_id，需要显式 set
+            this.update(new com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper<DeviceGroup>()
+                    .eq("id", group.getId()).set("single_tunnel_group_id", null));
+        }
         return result ? R.ok(SUCCESS_UPDATE_MSG) : R.err(ERROR_UPDATE_FAILED);
     }
 

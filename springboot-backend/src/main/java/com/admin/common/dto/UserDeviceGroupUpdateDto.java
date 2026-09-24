@@ -37,5 +37,10 @@ public class UserDeviceGroupUpdateDto {
      */
     private String protocol;
 
+    /**
+     * 所属单端组ID（可为空，表示不分组）
+     */
+    private Long singleTunnelGroupId;
+
     private boolean shared;
 }

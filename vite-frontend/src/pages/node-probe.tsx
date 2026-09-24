@@ -21,7 +21,7 @@ type Node = {
     uptime: number;
   } | null;
 };
-type DeviceGroup = { id: number; name: string; nodeId: number; nodeName?: string; node?: Node; userGroupId?: number | null; ratio?: number; remark?: string; hideInProbe?: number };
+type DeviceGroup = { id: number; name: string; nodeId: number; nodeName?: string; node?: Node; userGroupId?: number | null; ownerUserId?: number | null; singleTunnelGroupName?: string | null; ratio?: number; remark?: string; hideInProbe?: number };
 type UserGroup = { id: number; name: string };
 
 const formatBytes = (value = 0) => value >= 1024 ** 3 ? `${(value / 1024 ** 3).toFixed(2)} GB` : value >= 1024 ** 2 ? `${(value / 1024 ** 2).toFixed(2)} MB` : `${(value / 1024).toFixed(2)} KB`;
@@ -174,7 +174,12 @@ export default function NodeProbePage() {
 
   const visibleGroups = groups
     .filter(group => effectiveAdmin || (group.hideInProbe ?? 0) === 0)
-    .map(group => ({ label: userGroupName(group.userGroupId), id: group.id, meta: group, nodes: nodes.filter(node => node.id === group.nodeId) }));
+    .map(group => ({
+      label: group.ownerUserId != null ? (group.singleTunnelGroupName || '未分组') : userGroupName(group.userGroupId),
+      id: group.id,
+      meta: group,
+      nodes: nodes.filter(node => node.id === group.nodeId)
+    }));
 
   return (
     <main className="probe-page min-h-screen">

@@ -17,7 +17,11 @@ import {
   updateUserDeviceGroup,
   deleteUserDeviceGroup,
   getMyDeviceGroupInstallCommand,
-  resetMyDeviceGroupSecret
+  resetMyDeviceGroupSecret,
+  createMySingleTunnelGroup,
+  getMySingleTunnelGroupList,
+  updateMySingleTunnelGroup,
+  deleteMySingleTunnelGroup
 } from "@/api";
 import { EditIcon, DeleteIcon } from "@/components/icons";
 import { EmptyState } from "@/components/empty-state";
@@ -29,12 +33,19 @@ interface MyDeviceGroup {
   direction: 'inbound' | 'outbound';
   protocol?: string;
   shared: boolean;
+  singleTunnelGroupId?: number | null;
   nodeId: number | null;
   serverIp?: string;
   entryIp?: string;
   portSta?: number;
   portEnd?: number;
   status?: number;
+}
+
+interface SingleTunnelGroupOption {
+  id: number;
+  name: string;
+  deviceCount: number;
 }
 
 interface GroupForm {
@@ -46,6 +57,7 @@ interface GroupForm {
   portSta: number;
   portEnd: number;
   protocol: string;
+  singleTunnelGroupId: number | null;
   shared: boolean;
 }
 
@@ -64,6 +76,7 @@ const DEFAULT_FORM: GroupForm = {
   portSta: 1000,
   portEnd: 65535,
   protocol: 'tls',
+  singleTunnelGroupId: null,
   shared: false
 };
 
@@ -89,6 +102,7 @@ const IconCopy = () => (
 export default function SingleTunnelPage() {
   const [loading, setLoading] = useState(true);
   const [groups, setGroups] = useState<MyDeviceGroup[]>([]);
+  const [singleTunnelGroups, setSingleTunnelGroups] = useState<SingleTunnelGroupOption[]>([]);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [isEdit, setIsEdit] = useState(false);
@@ -109,6 +123,11 @@ export default function SingleTunnelPage() {
   const [offlineInfo, setOfflineInfo] = useState<InstallInfo | null>(null);
   const [offlineTitle, setOfflineTitle] = useState('');
 
+  const [groupManageModalOpen, setGroupManageModalOpen] = useState(false);
+  const [groupNameInput, setGroupNameInput] = useState('');
+  const [groupEditingId, setGroupEditingId] = useState<number | null>(null);
+  const [groupSubmitLoading, setGroupSubmitLoading] = useState(false);
+
   useEffect(() => {
     loadData();
   }, []);
@@ -116,16 +135,63 @@ export default function SingleTunnelPage() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const res = await getMyDeviceGroupList();
+      const [res, groupRes] = await Promise.all([getMyDeviceGroupList(), getMySingleTunnelGroupList()]);
       if (res.code === 0) {
         setGroups(res.data || []);
       } else {
         toast.error(res.msg || '获取设备列表失败');
       }
+      if (groupRes.code === 0) {
+        setSingleTunnelGroups(groupRes.data || []);
+      }
     } catch (error) {
       toast.error('获取设备列表失败');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleCreateGroup = async () => {
+    if (!groupNameInput.trim()) {
+      toast.error('请输入分组名称');
+      return;
+    }
+    setGroupSubmitLoading(true);
+    try {
+      const res = groupEditingId
+        ? await updateMySingleTunnelGroup({ id: groupEditingId, name: groupNameInput })
+        : await createMySingleTunnelGroup({ name: groupNameInput });
+      if (res.code === 0) {
+        toast.success(groupEditingId ? '修改成功' : '创建成功');
+        setGroupNameInput('');
+        setGroupEditingId(null);
+        loadData();
+      } else {
+        toast.error(res.msg || '操作失败');
+      }
+    } catch (error) {
+      toast.error('操作失败');
+    } finally {
+      setGroupSubmitLoading(false);
+    }
+  };
+
+  const handleEditGroupStart = (group: SingleTunnelGroupOption) => {
+    setGroupEditingId(group.id);
+    setGroupNameInput(group.name);
+  };
+
+  const handleDeleteGroup = async (group: SingleTunnelGroupOption) => {
+    try {
+      const res = await deleteMySingleTunnelGroup(group.id);
+      if (res.code === 0) {
+        toast.success('删除成功');
+        loadData();
+      } else {
+        toast.error(res.msg || '删除失败');
+      }
+    } catch (error) {
+      toast.error('删除失败');
     }
   };
 
@@ -156,6 +222,7 @@ export default function SingleTunnelPage() {
       portSta: group.portSta || 1000,
       portEnd: group.portEnd || 65535,
       protocol: group.protocol || 'tls',
+      singleTunnelGroupId: group.singleTunnelGroupId ?? null,
       shared: group.shared
     });
     setErrors({});
@@ -275,7 +342,10 @@ export default function SingleTunnelPage() {
             添加自己的设备作为转发规则的入口或出口，添加完成后在此获取对接命令，在你的设备上安装即可连接到面板。
           </p>
         </div>
-        <Button size="sm" color="primary" onPress={handleAdd}>添加设备</Button>
+        <div className="flex gap-2">
+          <Button size="sm" variant="flat" onPress={() => setGroupManageModalOpen(true)}>管理分组</Button>
+          <Button size="sm" color="primary" onPress={handleAdd}>添加设备</Button>
+        </div>
       </div>
 
       <Card className="shadow-sm border border-default-200">
@@ -409,6 +479,25 @@ export default function SingleTunnelPage() {
                     </Select>
                   )}
 
+                  <Select
+                    size="sm"
+                    label="所属分组"
+                    placeholder="不分组"
+                    selectedKeys={[form.singleTunnelGroupId ? form.singleTunnelGroupId.toString() : 'none']}
+                    onSelectionChange={(keys) => {
+                      const selectedKey = Array.from(keys)[0] as string;
+                      setForm(prev => ({ ...prev, singleTunnelGroupId: selectedKey && selectedKey !== 'none' ? parseInt(selectedKey) : null }));
+                    }}
+                    variant="bordered"
+                  >
+                    {[
+                      <SelectItem key="none">不分组</SelectItem>,
+                      ...singleTunnelGroups.map(group => (
+                        <SelectItem key={group.id.toString()}>{group.name || `#${group.id}`}</SelectItem>
+                      ))
+                    ]}
+                  </Select>
+
                   <div className="flex items-center justify-between px-1 py-1">
                     <div>
                       <p className="text-sm font-medium text-foreground">共享给其他用户</p>
@@ -499,6 +588,71 @@ export default function SingleTunnelPage() {
         onConfirm={confirmResetSecret}
         loading={resetLoading}
       />
+
+      <Modal
+        isOpen={groupManageModalOpen}
+        onOpenChange={(open) => {
+          setGroupManageModalOpen(open);
+          if (!open) {
+            setGroupNameInput('');
+            setGroupEditingId(null);
+          }
+        }}
+        size="lg"
+        scrollBehavior="outside"
+        backdrop="blur"
+        placement="center"
+      >
+        <ModalContent>
+          {() => (
+            <>
+              <ModalHeader className="flex flex-col gap-1">
+                <h2 className="text-lg font-bold">管理分组</h2>
+                <p className="text-xs text-default-500 font-normal">这里的分组只属于你自己，其他用户看不到也用不了</p>
+              </ModalHeader>
+              <ModalBody>
+                <div className="flex gap-2">
+                  <Input
+                    size="sm" autoComplete="off"
+                    placeholder="分组名称"
+                    value={groupNameInput}
+                    onChange={(e) => setGroupNameInput(e.target.value)}
+                    variant="bordered"
+                    className="flex-1"
+                  />
+                  <Button color="default" onPress={handleCreateGroup} isLoading={groupSubmitLoading}>
+                    {groupEditingId ? '保存' : '添加'}
+                  </Button>
+                  {groupEditingId && (
+                    <Button variant="light" onPress={() => { setGroupEditingId(null); setGroupNameInput(''); }}>
+                      取消
+                    </Button>
+                  )}
+                </div>
+                <div className="space-y-2 mt-2 max-h-64 overflow-y-auto">
+                  {singleTunnelGroups.length === 0 && (
+                    <p className="text-small text-default-500">暂无分组</p>
+                  )}
+                  {singleTunnelGroups.map(group => (
+                    <div key={group.id} className="flex items-center justify-between p-2 rounded-lg bg-default-100">
+                      <span className="text-small text-foreground">{group.name}（{group.deviceCount} 台设备）</span>
+                      <div className="flex gap-2">
+                        <Button size="sm" variant="light" onPress={() => handleEditGroupStart(group)}>编辑</Button>
+                        <Button size="sm" variant="light" color="danger" onPress={() => handleDeleteGroup(group)}>删除</Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </ModalBody>
+              <ModalFooter>
+                <Button variant="light" onPress={() => setGroupManageModalOpen(false)}>
+                  关闭
+                </Button>
+              </ModalFooter>
+            </>
+          )}
+        </ModalContent>
+      </Modal>
     </div>
   );
 }

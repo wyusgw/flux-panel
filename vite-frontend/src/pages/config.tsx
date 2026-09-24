@@ -10,14 +10,14 @@ import { Modal, ModalBody, ModalContent, ModalFooter, ModalHeader, useDisclosure
 import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from "@heroui/table";
 import { Tooltip } from "@heroui/tooltip";
 import toast from 'react-hot-toast';
-import { updateConfigs, testTelegramNotify } from '@/api';
+import { updateConfigs } from '@/api';
 
 import { isAdmin } from '@/utils/auth';
 import { getCachedConfigs, clearConfigCache, updateSiteConfig } from '@/config/site';
 
 interface ConfigItem {
   key: string;
-  section: 'basic' | 'announcement' | 'payment' | 'telegram';
+  section: 'basic' | 'announcement' | 'payment';
   label: string;
   placeholder?: string;
   description?: string;
@@ -54,8 +54,7 @@ const HelpIcon = () => (
 const CONFIG_SECTIONS = [
   { key: 'basic', title: '基本设置', description: '站点名称、注册权限与主题展示策略' },
   { key: 'announcement', title: '站点公告', description: '显示在用户主页的公告内容' },
-  { key: 'payment', title: '支付设置', description: '支付功能开关与服务商配置' },
-  { key: 'telegram', title: 'Telegram 机器人', description: '配置机器人以启用账号绑定与个人中心推送通知' }
+  { key: 'payment', title: '支付设置', description: '支付功能开关与服务商配置' }
 ] as const;
 
 // 网站配置项定义
@@ -228,28 +227,6 @@ const CONFIG_ITEMS: ConfigItem[] = [
     description: '添加支付渠道后，配置渠道名称、类型与是否启用',
     type: 'paymentChannels'
   },
-  {
-    key: 'telegram_enabled',
-    section: 'telegram',
-    label: '启用 Telegram 通知',
-    description: '开启后用户可在个人中心绑定 Telegram 账号并接收推送通知',
-    type: 'switch'
-  },
-  {
-    key: 'telegram_bot_token',
-    section: 'telegram',
-    label: 'Bot Token',
-    placeholder: '从 @BotFather 获取',
-    description: '保存后将自动校验并获取机器人用户名',
-    type: 'input'
-  },
-  {
-    key: 'telegram_bot_username',
-    section: 'telegram',
-    label: 'Bot 用户名',
-    description: 'Bot Token 校验成功后自动填充，用于生成绑定跳转链接，无需手动填写',
-    type: 'readonly'
-  }
 ];
 
 // 初始化时从缓存读取配置，避免闪烁
@@ -281,7 +258,6 @@ export default function ConfigPage() {
   const [hasChanges, setHasChanges] = useState(false);
   const [originalConfigs, setOriginalConfigs] = useState<Record<string, string>>(initialConfigs);
   const [paymentChannels, setPaymentChannels] = useState<PaymentChannel[]>([]);
-  const [telegramTesting, setTelegramTesting] = useState(false);
   const { isOpen: isChannelConfigOpen, onOpen: onChannelConfigOpen, onClose: onChannelConfigClose } = useDisclosure();
   const [configuringChannel, setConfiguringChannel] = useState<PaymentChannel | null>(null);
 
@@ -369,22 +345,6 @@ export default function ConfigPage() {
   const updatePaymentChannels = (channels: PaymentChannel[]) => {
     setPaymentChannels(channels);
     handleConfigChange('payment_config_json', JSON.stringify(channels));
-  };
-
-  const handleTestTelegram = async () => {
-    setTelegramTesting(true);
-    try {
-      const res = await testTelegramNotify();
-      if (res.code === 0) {
-        toast.success(res.msg || '测试消息已发送，请查看 Telegram');
-      } else {
-        toast.error(res.msg || '发送失败');
-      }
-    } catch (error) {
-      toast.error('发送失败，请重试');
-    } finally {
-      setTelegramTesting(false);
-    }
   };
 
   const addPaymentChannel = () => {
@@ -606,13 +566,14 @@ export default function ConfigPage() {
               return (
                 <section key={section.key} className="settings-section">
                   <div className="flex items-center justify-between gap-4 px-4 py-4 lg:px-5 border-b border-default-100 bg-default-50/50 dark:bg-white/[0.015]">
-                    <div>
+                    <div className="min-w-0">
                       <h2 className="text-sm font-semibold text-foreground">{section.title}</h2>
                       <p className="mt-1 text-xs text-default-500">{section.description}</p>
                     </div>
                     <Button
                       size="sm"
-                      color="primary"
+                      className="flex-shrink-0"
+                      color="default"
                       variant={sectionHasChanges ? 'solid' : 'flat'}
                       onClick={() => handleSave(section.key)}
                       isLoading={saving}
@@ -623,30 +584,45 @@ export default function ConfigPage() {
                   </div>
                   {section.key === 'payment' ? (
                     <div className="p-4 lg:p-5">
-                      <div className="grid grid-cols-1 lg:grid-cols-[minmax(260px,0.75fr)_minmax(360px,1.25fr)] gap-3 lg:gap-8 pb-5 border-b border-default-100">
+                      <div className="grid grid-cols-1 lg:grid-cols-[minmax(260px,0.75fr)_minmax(360px,1.25fr)] gap-3 lg:gap-8 pb-5 border-b border-default-100 items-center">
+                        <div className="pt-1"><p className="text-sm font-medium text-foreground">启用在线支付</p><p className="mt-1 text-xs text-default-500">开启后用户可以在购买套餐时使用已配置的支付渠道</p></div>
+                        <div className="w-full max-w-2xl lg:justify-self-end">
+                          <Switch
+                            isSelected={configs.payment_enabled === 'true'}
+                            onValueChange={(checked) => handleConfigChange('payment_enabled', checked ? 'true' : 'false')}
+                            color="primary"
+                            size="md"
+                          >
+                            <span className="text-sm text-gray-700 dark:text-gray-300">{configs.payment_enabled === 'true' ? '已启用' : '已禁用'}</span>
+                          </Switch>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-1 lg:grid-cols-[minmax(260px,0.75fr)_minmax(360px,1.25fr)] gap-3 lg:gap-8 py-5 border-b border-default-100">
                         <div className="pt-1"><p className="text-sm font-medium text-foreground">最小充值金额</p><p className="mt-1 text-xs text-default-500">订单金额不得低于此金额，单位为元</p></div>
-                        <Input autoComplete="off" value={configs.payment_min_amount || ''} onChange={(event) => handleConfigChange('payment_min_amount', event.target.value)} placeholder="10.00" endContent={<span className="text-sm text-default-500">元</span>} className="w-full max-w-2xl lg:justify-self-end" />
+                        <Input size="sm" autoComplete="off" value={configs.payment_min_amount || ''} onChange={(event) => handleConfigChange('payment_min_amount', event.target.value)} placeholder="10.00" endContent={<span className="text-sm text-default-500">元</span>} className="w-full max-w-2xl lg:justify-self-end" />
                       </div>
                       <div className="flex items-center justify-between gap-3 py-4">
                         <div><p className="text-sm font-medium text-foreground">支付渠道</p><p className="mt-1 text-xs text-default-500">添加并配置可用的在线支付渠道</p></div>
                         <Button size="sm" variant="bordered" onPress={addPaymentChannel}>添加支付渠道</Button>
                       </div>
-                      <Table removeWrapper aria-label="支付渠道列表" classNames={{ th: "management-table-heading", td: "management-table-cell", table: "payment-channel-table" }}>
-                        <TableHeader><TableColumn>排序</TableColumn><TableColumn>类型</TableColumn><TableColumn>名称</TableColumn><TableColumn>是否启用</TableColumn><TableColumn>操作</TableColumn></TableHeader>
-                        <TableBody emptyContent="暂无支付渠道">
-                          {paymentChannels.map((channel, index) => <TableRow key={channel.id}>
-                            <TableCell>{index + 1}</TableCell><TableCell>{PAYMENT_TYPES.find(type => type.value === channel.type)?.label}</TableCell><TableCell>{channel.name || '未命名渠道'}</TableCell><TableCell>{channel.enabled ? 'True' : 'False'}</TableCell>
-                            <TableCell><div className="flex gap-2"><Button size="sm" variant="flat" onPress={() => openChannelConfig(channel)}>编辑</Button><Button size="sm" variant="light" color="danger" onPress={() => updatePaymentChannels(paymentChannels.filter(item => item.id !== channel.id))}>删除</Button></div></TableCell>
-                          </TableRow>)}
-                        </TableBody>
-                      </Table>
+                      <div className="settings-table-scroll">
+                        <Table removeWrapper aria-label="支付渠道列表" classNames={{ th: "management-table-heading", td: "management-table-cell", table: "payment-channel-table" }}>
+                          <TableHeader><TableColumn>排序</TableColumn><TableColumn>类型</TableColumn><TableColumn>名称</TableColumn><TableColumn>是否启用</TableColumn><TableColumn>操作</TableColumn></TableHeader>
+                          <TableBody emptyContent="暂无支付渠道">
+                            {paymentChannels.map((channel, index) => <TableRow key={channel.id}>
+                              <TableCell>{index + 1}</TableCell><TableCell>{PAYMENT_TYPES.find(type => type.value === channel.type)?.label}</TableCell><TableCell>{channel.name || '未命名渠道'}</TableCell><TableCell>{channel.enabled ? 'True' : 'False'}</TableCell>
+                              <TableCell><div className="flex gap-2"><Button size="sm" variant="flat" onPress={() => openChannelConfig(channel)}>编辑</Button><Button size="sm" variant="light" color="danger" onPress={() => updatePaymentChannels(paymentChannels.filter(item => item.id !== channel.id))}>删除</Button></div></TableCell>
+                            </TableRow>)}
+                          </TableBody>
+                        </Table>
+                      </div>
                     </div>
                   ) : (
                     <>
                       {items.map((item, index) => (
                         <div
                           key={item.key}
-                          className={`grid grid-cols-1 lg:grid-cols-[minmax(260px,0.75fr)_minmax(360px,1.25fr)] gap-3 lg:gap-8 px-4 py-5 lg:px-5 ${index < items.length - 1 || section.key === 'telegram' ? 'border-b border-default-100' : ''}`}
+                          className={`grid grid-cols-1 lg:grid-cols-[minmax(260px,0.75fr)_minmax(360px,1.25fr)] gap-3 lg:gap-8 px-4 py-5 lg:px-5 ${index < items.length - 1 ? 'border-b border-default-100' : ''}`}
                         >
                           <div className="pt-1">
                             <label className="text-sm font-medium text-foreground">{item.label}</label>
@@ -655,19 +631,6 @@ export default function ConfigPage() {
                           <div className="w-full max-w-2xl lg:justify-self-end">{renderConfigItem(item)}</div>
                         </div>
                       ))}
-                      {section.key === 'telegram' && (
-                        <div className="grid grid-cols-1 lg:grid-cols-[minmax(260px,0.75fr)_minmax(360px,1.25fr)] gap-3 lg:gap-8 px-4 py-5 lg:px-5">
-                          <div className="pt-1">
-                            <p className="text-sm font-medium text-foreground">发送测试消息</p>
-                            <p className="mt-1 text-xs text-default-500 max-w-md">向当前管理员账号已绑定的 Telegram 发送一条测试消息，验证 Bot Token 配置是否正确（需先在个人中心绑定 Telegram）</p>
-                          </div>
-                          <div className="w-full max-w-2xl lg:justify-self-end">
-                            <Button size="sm" variant="bordered" isLoading={telegramTesting} onPress={handleTestTelegram}>
-                              发送测试消息
-                            </Button>
-                          </div>
-                        </div>
-                      )}
                     </>
                   )}
                 </section>
@@ -695,39 +658,44 @@ export default function ConfigPage() {
             <ModalHeader>{paymentChannels.some(channel => channel.id === configuringChannel?.id) ? '编辑支付渠道' : '添加支付渠道'}</ModalHeader>
             <ModalBody>
               <div className="space-y-3">
-                <Input autoComplete="off" label="名称" placeholder="名称不能重复，且不能为空。" value={configuringChannel?.name || ''} onChange={(event) => setConfiguringChannel(channel => channel ? { ...channel, name: event.target.value } : null)} />
-                <Select label="类型" selectedKeys={configuringChannel ? [configuringChannel.type] : []} onSelectionChange={(keys) => setConfiguringChannel(channel => channel ? { ...channel, type: Array.from(keys)[0] as PaymentChannel['type'] } : null)}>
+                <Input size="sm" autoComplete="off" label="名称" placeholder="名称不能重复，且不能为空。" value={configuringChannel?.name || ''} onChange={(event) => setConfiguringChannel(channel => channel ? { ...channel, name: event.target.value } : null)} />
+                <Select size="sm" label="类型" selectedKeys={configuringChannel ? [configuringChannel.type] : []} onSelectionChange={(keys) => setConfiguringChannel(channel => channel ? { ...channel, type: Array.from(keys)[0] as PaymentChannel['type'] } : null)}>
                   {PAYMENT_TYPES.map(type => <SelectItem key={type.value}>{type.value}</SelectItem>)}
                 </Select>
                 <div className="flex items-center justify-between py-1">
                   <span className="text-sm font-medium text-foreground">启用</span>
                   <Switch isSelected={configuringChannel?.enabled ?? false} onValueChange={(enabled) => setConfiguringChannel(channel => channel ? { ...channel, enabled } : null)} />
                 </div>
-                <Input autoComplete="off"
-                  label={<span className="inline-flex items-center gap-1">URL<Tooltip content="支付服务商提供的 API 接口地址"><span><HelpIcon /></span></Tooltip></span>}
+                <Input
+                  size="sm" autoComplete="off"
+                  label={<span className="inline-flex items-center gap-1 leading-none">URL<Tooltip content="支付服务商提供的 API 接口地址"><span className="inline-flex items-center"><HelpIcon /></span></Tooltip></span>}
                   value={configuringChannel?.config?.url || ''}
                   onChange={(event) => setConfiguringChannel(channel => channel ? { ...channel, config: { ...channel.config, url: event.target.value } } : null)}
                 />
-                <Input autoComplete="off"
+                <Input
+                  size="sm" autoComplete="off"
                   label="PID / 商户号"
                   placeholder="只有部分支付类型需要填写"
                   value={configuringChannel?.config?.pid || ''}
                   onChange={(event) => setConfiguringChannel(channel => channel ? { ...channel, config: { ...channel.config, pid: event.target.value } } : null)}
                 />
-                <Input autoComplete="off"
+                <Input
+                  size="sm" autoComplete="off"
                   label="Secret / 密钥"
                   type="password"
                   value={configuringChannel?.config?.secret || ''}
                   onChange={(event) => setConfiguringChannel(channel => channel ? { ...channel, config: { ...channel.config, secret: event.target.value } } : null)}
                 />
-                <Input autoComplete="off"
+                <Input
+                  size="sm" autoComplete="off"
                   label="回调 Host"
                   placeholder="示例：https://xxx.com，留空则使用用户访问的域名"
                   value={configuringChannel?.config?.callbackHost || ''}
                   onChange={(event) => setConfiguringChannel(channel => channel ? { ...channel, config: { ...channel.config, callbackHost: event.target.value } } : null)}
                 />
-                <Input autoComplete="off"
-                  label={<span className="inline-flex items-center gap-1">费率<Tooltip content="该支付渠道收取的手续费比例"><span><HelpIcon /></span></Tooltip></span>}
+                <Input
+                  size="sm" autoComplete="off"
+                  label={<span className="inline-flex items-center gap-1 leading-none">费率<Tooltip content="该支付渠道收取的手续费比例"><span className="inline-flex items-center"><HelpIcon /></span></Tooltip></span>}
                   type="number"
                   value={configuringChannel?.config?.feeRate ?? '0.0'}
                   onChange={(event) => setConfiguringChannel(channel => channel ? { ...channel, config: { ...channel.config, feeRate: event.target.value } } : null)}
@@ -735,7 +703,7 @@ export default function ConfigPage() {
                 />
               </div>
             </ModalBody>
-            <ModalFooter><Button variant="light" onPress={onChannelConfigClose}>取消</Button><Button color="primary" onPress={saveChannelConfig}>确定</Button></ModalFooter>
+            <ModalFooter><Button variant="light" onPress={onChannelConfigClose}>取消</Button><Button color="default" onPress={saveChannelConfig}>确定</Button></ModalFooter>
           </ModalContent>
         </Modal>
       </div>

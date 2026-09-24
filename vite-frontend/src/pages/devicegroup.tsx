@@ -50,17 +50,33 @@ const DragHandleIcon = () => (
   </svg>
 );
 
+const IconCopy = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+    <rect x="9" y="9" width="12" height="12" rx="2" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M5 15H4a1 1 0 01-1-1V4a1 1 0 011-1h10a1 1 0 011 1v1" />
+  </svg>
+);
+
+interface ChainHopItem {
+  hopOrder: number;
+  targetDeviceGroupId: number;
+  mux: boolean;
+  targetName?: string;
+  targetNodeName?: string;
+}
+
 interface DeviceGroupItem {
   id: number;
   name: string;
-  nodeId: number;
-  nodeName: string;
+  nodeId: number | null;
+  nodeName?: string;
   userGroupId: number | null;
   ratio: number;
   hideInProbe: number;
-  direction?: 'inbound' | 'outbound' | 'monitor' | 'both';
+  direction?: 'inbound' | 'outbound' | 'monitor' | 'both' | 'chain';
   remark?: string;
   sort?: number;
+  chainHops?: ChainHopItem[];
 }
 
 interface NodeItem {
@@ -85,7 +101,13 @@ interface InstallInfo {
   commandOverseas: string;
   addr: string;
   secret: string;
-  downloadUrls: { amd64: string; arm64: string };
+  offlineCommand: string;
+  downloadUrls: { offlineAmd64: string; offlineArm64: string };
+}
+
+interface ChainHopForm {
+  targetDeviceGroupId: number | null;
+  mux: boolean;
 }
 
 interface DeviceGroupForm {
@@ -99,9 +121,12 @@ interface DeviceGroupForm {
   userGroupId: number | null;
   ratio: number;
   hideInProbe: number;
-  direction: 'inbound' | 'outbound' | 'monitor' | 'both';
+  direction: 'inbound' | 'outbound' | 'monitor' | 'both' | 'chain';
   remark: string;
+  chainHops: ChainHopForm[];
 }
+
+const MAX_CHAIN_HOPS = 3;
 
 const DEFAULT_FORM: DeviceGroupForm = {
   name: '',
@@ -114,7 +139,8 @@ const DEFAULT_FORM: DeviceGroupForm = {
   ratio: 1,
   hideInProbe: 0,
   direction: 'inbound',
-  remark: ''
+  remark: '',
+  chainHops: []
 };
 
 const HIDE_OPTIONS = [
@@ -148,6 +174,7 @@ export default function DeviceGroupPage() {
   const [configTarget, setConfigTarget] = useState<{ node: NodeItem | null; group: DeviceGroupItem | null }>({ node: null, group: null });
   const [offlineModalOpen, setOfflineModalOpen] = useState(false);
   const [offlineInfo, setOfflineInfo] = useState<InstallInfo | null>(null);
+  const [offlineTitle, setOfflineTitle] = useState('');
 
   const [advancedModalOpen, setAdvancedModalOpen] = useState(false);
   const [advancedTarget, setAdvancedTarget] = useState<NodeItem | null>(null);
@@ -221,7 +248,11 @@ export default function DeviceGroupPage() {
       ratio: group.ratio,
       hideInProbe: group.hideInProbe,
       direction: group.direction || 'inbound',
-      remark: group.remark || ''
+      remark: group.remark || '',
+      chainHops: (group.chainHops || [])
+        .slice()
+        .sort((a, b) => a.hopOrder - b.hopOrder)
+        .map(hop => ({ targetDeviceGroupId: hop.targetDeviceGroupId, mux: hop.mux }))
     });
     setErrors({});
     setModalOpen(true);
@@ -230,8 +261,16 @@ export default function DeviceGroupPage() {
   const validateForm = (): boolean => {
     const newErrors: { [key: string]: string } = {};
     if (!form.name.trim()) newErrors.name = '请输入设备组名称';
-    if (!form.serverIp.trim()) newErrors.serverIp = '请输入服务器 IP 或域名';
-    if (!form.entryIp.trim()) newErrors.entryIp = '请输入入口 IP 或域名';
+    if (form.direction === 'chain') {
+      if (form.chainHops.length === 0) {
+        newErrors.chainHops = '链式出口至少需要配置 1 跳';
+      } else if (form.chainHops.some(hop => !hop.targetDeviceGroupId)) {
+        newErrors.chainHops = '每一跳都必须选择出口设备组';
+      }
+    } else {
+      if (!form.serverIp.trim()) newErrors.serverIp = '请输入服务器 IP 或域名';
+      if (!form.entryIp.trim()) newErrors.entryIp = '请输入入口 IP 或域名';
+    }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -241,6 +280,29 @@ export default function DeviceGroupPage() {
 
     setSubmitLoading(true);
     try {
+      // 链式出口设备组没有自己的物理节点，不需要创建/更新 Node，直接提交设备组本身
+      if (form.direction === 'chain') {
+        const groupData = {
+          id: form.id,
+          name: form.name,
+          direction: form.direction,
+          userGroupId: form.userGroupId,
+          ratio: form.ratio,
+          hideInProbe: form.hideInProbe,
+          remark: form.remark,
+          chainHops: form.chainHops.map(hop => ({ targetDeviceGroupId: hop.targetDeviceGroupId, mux: hop.mux }))
+        };
+        const res = isEdit ? await updateDeviceGroup(groupData) : await createDeviceGroup(groupData);
+        if (res.code === 0) {
+          toast.success(isEdit ? '修改成功' : '创建成功');
+          setModalOpen(false);
+          loadData();
+        } else {
+          toast.error(res.msg || '操作失败');
+        }
+        return;
+      }
+
       let nodeId = form.nodeId;
       const nodeData = { name: form.name, ip: form.entryIp, serverIp: form.serverIp, portSta: form.portSta, portEnd: form.portEnd };
       if (isEdit && nodeId) {
@@ -412,7 +474,7 @@ export default function DeviceGroupPage() {
     }
   };
 
-  const handleDockAction = async (nodeId: number, action: string) => {
+  const handleDockAction = async (nodeId: number, action: string, title: string) => {
     if (action === 'view-config') { handleViewConfig(nodeId); return; }
 
     setDockLoadingNodeId(nodeId);
@@ -422,7 +484,7 @@ export default function DeviceGroupPage() {
       const info = res.data as InstallInfo;
       if (action === 'copy-auto') await copyToClipboard(info.commandAuto, '已复制在线安装命令（自动探测线路）');
       else if (action === 'copy-overseas') await copyToClipboard(info.commandOverseas, '已复制在线安装命令（海外主线路）');
-      else if (action === 'offline') { setOfflineInfo(info); setOfflineModalOpen(true); }
+      else if (action === 'offline') { setOfflineInfo(info); setOfflineTitle(title); setOfflineModalOpen(true); }
     } catch (error) {
       toast.error('获取安装信息失败');
     } finally {
@@ -437,7 +499,7 @@ export default function DeviceGroupPage() {
           <DockIcon className="w-4 h-4" />
         </Button>
       </DropdownTrigger>
-      <DropdownMenu aria-label="对接操作" onAction={(key) => handleDockAction(nodeId, key as string)}>
+      <DropdownMenu aria-label="对接操作" onAction={(key) => handleDockAction(nodeId, key as string, title)}>
         <DropdownSection title={title}>
           <DropdownItem key="copy-auto">复制在线安装命令（自动探测线路）</DropdownItem>
           <DropdownItem key="copy-overseas">复制在线安装命令（海外主线路）</DropdownItem>
@@ -512,14 +574,14 @@ export default function DeviceGroupPage() {
           <div className="flex gap-2">
             {selectedGroupIds.length > 0 && <Button size="sm" color="danger" variant="flat" onPress={() => setBatchDeleteModalOpen(true)}>批量删除（{selectedGroupIds.length}）</Button>}
             <Button size="sm" variant="bordered" onPress={loadData}>刷新</Button>
-            <Button size="sm" color="primary" onPress={handleAdd}>添加设备</Button>
+            <Button size="sm" color="default" onPress={handleAdd}>添加设备</Button>
           </div>
         </CardHeader>
         <CardBody className="p-0"><Table removeWrapper aria-label="设备列表" selectionMode="multiple" selectedKeys={selectedKeys} onSelectionChange={setSelectedKeys} disabledKeys={orphanNodes.map(node => `node-${node.id}`)} classNames={{ base: "w-full", table: "w-full management-table-selectable", th: "management-table-heading", td: "management-table-cell" }}>
           <TableHeader><TableColumn className="w-16">排序</TableColumn><TableColumn>设备 ID</TableColumn><TableColumn>名称</TableColumn><TableColumn>角色</TableColumn><TableColumn>服务器</TableColumn><TableColumn>可见用户组</TableColumn><TableColumn>倍率</TableColumn><TableColumn>备注</TableColumn><TableColumn align="end">操作</TableColumn></TableHeader>
           <TableBody emptyContent={<EmptyState />}>{[
-            ...groups.map(group => <TableRow key={`group-${group.id}`} onDragOver={(e: React.DragEvent) => e.preventDefault()} onDrop={() => handleGroupRowDrop(group.id)}><TableCell><span draggable className="cursor-grab active:cursor-grabbing inline-flex" onDragStart={() => { draggedGroupIdRef.current = group.id; }}><DragHandleIcon /></span></TableCell><TableCell>#{group.id}</TableCell><TableCell className="font-medium">{group.name}</TableCell><TableCell>{{ inbound: '入口', outbound: '出口', monitor: '监控', both: '入口＋出口' }[group.direction || 'inbound']}</TableCell><TableCell>{group.nodeName}</TableCell><TableCell>{userGroupName(group.userGroupId)}</TableCell><TableCell>{group.ratio}</TableCell><TableCell>{group.remark || '—'}</TableCell><TableCell><div className="flex justify-end items-center gap-1">{renderDockMenu(group.nodeId, `${group.name} (#${group.id})`)}<Button isIconOnly size="sm" variant="flat" onPress={() => handleEdit(group)} title="编辑"><EditIcon className="w-4 h-4" /></Button><Button isIconOnly size="sm" variant="flat" color="warning" onPress={() => handleResetSecret(group.nodeId)} title="重置 Token"><KeyIcon className="w-4 h-4" /></Button><Button isIconOnly size="sm" variant="flat" onPress={() => handleAdvancedEdit(group.nodeId)} title="高级编辑"><SettingsIcon className="w-4 h-4" /></Button><Button isIconOnly size="sm" variant="flat" color="danger" onPress={() => handleDelete(group)} title="删除"><DeleteIcon className="w-4 h-4" /></Button></div></TableCell></TableRow>),
-            ...orphanNodes.map(node => <TableRow key={`node-${node.id}`}><TableCell>—</TableCell><TableCell>—</TableCell><TableCell className="font-medium">{node.name}</TableCell><TableCell><span className="text-warning">未配置</span></TableCell><TableCell>{node.serverIp || node.ip || '—'}</TableCell><TableCell>—</TableCell><TableCell>—</TableCell><TableCell>此设备尚未建立设备组</TableCell><TableCell><div className="flex justify-end items-center gap-1">{renderDockMenu(node.id, `${node.name} (#${node.id})`)}<Button isIconOnly size="sm" variant="flat" color="warning" onPress={() => handleResetSecret(node.id)} title="重置 Token"><KeyIcon className="w-4 h-4" /></Button><Button isIconOnly size="sm" variant="flat" onPress={() => handleAdvancedEdit(node.id)} title="高级编辑"><SettingsIcon className="w-4 h-4" /></Button><Button isIconOnly size="sm" variant="flat" color="danger" onPress={() => handleDeleteNode(node)} title="删除"><DeleteIcon className="w-4 h-4" /></Button><Button size="sm" color="primary" onPress={() => handleConfigureOrphan(node)}>补全配置</Button></div></TableCell></TableRow>)
+            ...groups.map(group => { const isChainGroup = group.direction === 'chain'; return <TableRow key={`group-${group.id}`} onDragOver={(e: React.DragEvent) => e.preventDefault()} onDrop={() => handleGroupRowDrop(group.id)}><TableCell><span draggable className="cursor-grab active:cursor-grabbing inline-flex" onDragStart={() => { draggedGroupIdRef.current = group.id; }}><DragHandleIcon /></span></TableCell><TableCell>#{group.id}</TableCell><TableCell className="font-medium">{group.name}</TableCell><TableCell>{{ inbound: '入口', outbound: '出口', monitor: '监控', both: '入口＋出口', chain: '链式出口' }[group.direction || 'inbound']}</TableCell><TableCell>{isChainGroup ? <span className="text-default-500">{(group.chainHops || []).length} 跳链路</span> : group.nodeName}</TableCell><TableCell>{userGroupName(group.userGroupId)}</TableCell><TableCell>{group.ratio}</TableCell><TableCell>{group.remark || '—'}</TableCell><TableCell><div className="flex justify-end items-center gap-1">{!isChainGroup && group.nodeId && renderDockMenu(group.nodeId, `${group.name} (#${group.id})`)}<Button isIconOnly size="sm" variant="flat" onPress={() => handleEdit(group)} title="编辑"><EditIcon className="w-4 h-4" /></Button>{!isChainGroup && group.nodeId && <Button isIconOnly size="sm" variant="flat" color="default" onPress={() => handleResetSecret(group.nodeId!)} title="重置 Token"><KeyIcon className="w-4 h-4" /></Button>}{!isChainGroup && group.nodeId && <Button isIconOnly size="sm" variant="flat" onPress={() => handleAdvancedEdit(group.nodeId!)} title="高级编辑"><SettingsIcon className="w-4 h-4" /></Button>}<Button isIconOnly size="sm" variant="flat" color="danger" onPress={() => handleDelete(group)} title="删除"><DeleteIcon className="w-4 h-4" /></Button></div></TableCell></TableRow>; }),
+            ...orphanNodes.map(node => <TableRow key={`node-${node.id}`}><TableCell>—</TableCell><TableCell>—</TableCell><TableCell className="font-medium">{node.name}</TableCell><TableCell><span className="text-warning">未配置</span></TableCell><TableCell>{node.serverIp || node.ip || '—'}</TableCell><TableCell>—</TableCell><TableCell>—</TableCell><TableCell>此设备尚未建立设备组</TableCell><TableCell><div className="flex justify-end items-center gap-1">{renderDockMenu(node.id, `${node.name} (#${node.id})`)}<Button isIconOnly size="sm" variant="flat" color="default" onPress={() => handleResetSecret(node.id)} title="重置 Token"><KeyIcon className="w-4 h-4" /></Button><Button isIconOnly size="sm" variant="flat" onPress={() => handleAdvancedEdit(node.id)} title="高级编辑"><SettingsIcon className="w-4 h-4" /></Button><Button isIconOnly size="sm" variant="flat" color="danger" onPress={() => handleDeleteNode(node)} title="删除"><DeleteIcon className="w-4 h-4" /></Button><Button size="sm" color="default" onPress={() => handleConfigureOrphan(node)}>补全配置</Button></div></TableCell></TableRow>)
           ]}</TableBody>
         </Table></CardBody>
       </Card>
@@ -533,7 +595,8 @@ export default function DeviceGroupPage() {
               </ModalHeader>
               <ModalBody>
                 <div className="space-y-4">
-                  <Input autoComplete="off"
+                  <Input
+                    size="sm" autoComplete="off"
                     label="名称"
                     value={form.name}
                     onChange={(e) => setForm(prev => ({ ...prev, name: e.target.value }))}
@@ -543,6 +606,7 @@ export default function DeviceGroupPage() {
                   />
 
                   <Select
+                    size="sm"
                     label="设备角色"
                     selectedKeys={[form.direction]}
                     onSelectionChange={(keys) => {
@@ -550,24 +614,98 @@ export default function DeviceGroupPage() {
                       setForm(prev => ({ ...prev, direction: selectedKey || 'inbound' }));
                     }}
                     variant="bordered"
-                    description="监控设备仅用于观测；入口＋出口可同时用于两种转发角色"
+                    description="监控设备仅用于观测；入口＋出口可同时用于两种转发角色；链式出口不绑定自己的物理设备，而是把多个已有的出口设备组串成一条多跳链路"
                   >
                     <SelectItem key="inbound">入口</SelectItem>
                     <SelectItem key="outbound">出口</SelectItem>
                     <SelectItem key="monitor">监控</SelectItem>
                     <SelectItem key="both">入口＋出口</SelectItem>
+                    <SelectItem key="chain">链式出口</SelectItem>
                   </Select>
 
-                  <Input autoComplete="off" label="服务器 IP / 域名" placeholder="例如：203.0.113.10 或 node.example.com" value={form.serverIp} onChange={(e) => setForm(prev => ({ ...prev, serverIp: e.target.value }))} isInvalid={!!errors.serverIp} errorMessage={errors.serverIp} variant="bordered" />
+                  {form.direction === 'chain' ? (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium text-foreground">链式出口配置</span>
+                        <span className="text-xs text-default-400">{form.chainHops.length} / {MAX_CHAIN_HOPS} 跳</span>
+                      </div>
+                      {errors.chainHops && <p className="text-xs text-danger">{errors.chainHops}</p>}
+                      {form.chainHops.length === 0 && (
+                        <p className="text-xs text-default-400">当前没有配置任何出口链，请点击“添加跳数”按钮。</p>
+                      )}
+                      <div className="space-y-3">
+                        {form.chainHops.map((hop, index) => (
+                          <div key={index} className="space-y-2 pb-3 border-b border-dashed border-default-200 last:border-b-0 last:pb-0">
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm font-medium text-foreground">
+                                第 {index + 1} 跳：
+                                {index < form.chainHops.length - 1 ? ` ${index + 1} → ${index + 2}` : '（最后一跳）'}
+                              </span>
+                              <div className="flex items-center gap-3">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-xs text-default-500">Mux</span>
+                                  <Switch
+                                    size="sm"
+                                    isSelected={hop.mux}
+                                    onValueChange={(v) => setForm(prev => ({
+                                      ...prev,
+                                      chainHops: prev.chainHops.map((h, i) => i === index ? { ...h, mux: v } : h)
+                                    }))}
+                                  />
+                                </div>
+                                <Button isIconOnly size="sm" variant="light" color="danger" onPress={() => setForm(prev => ({ ...prev, chainHops: prev.chainHops.filter((_, i) => i !== index) }))} title="删除这一跳">
+                                  <DeleteIcon className="w-4 h-4" />
+                                </Button>
+                              </div>
+                            </div>
+                            <Select
+                              size="sm"
+                              placeholder="请选择出口"
+                              selectedKeys={hop.targetDeviceGroupId ? [hop.targetDeviceGroupId.toString()] : []}
+                              onSelectionChange={(keys) => {
+                                const selectedKey = Array.from(keys)[0] as string;
+                                setForm(prev => ({
+                                  ...prev,
+                                  chainHops: prev.chainHops.map((h, i) => i === index ? { ...h, targetDeviceGroupId: selectedKey ? parseInt(selectedKey) : null } : h)
+                                }));
+                              }}
+                              variant="bordered"
+                            >
+                              {groups.filter(g => g.direction === 'outbound').map(g => (
+                                <SelectItem key={g.id.toString()} description={g.nodeName}>{g.name}</SelectItem>
+                              ))}
+                            </Select>
+                          </div>
+                        ))}
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="flat"
+                        className="w-full"
+                        isDisabled={form.chainHops.length >= MAX_CHAIN_HOPS}
+                        onPress={() => setForm(prev => ({ ...prev, chainHops: [...prev.chainHops, { targetDeviceGroupId: null, mux: false }] }))}
+                      >
+                        + 添加跳数（{form.chainHops.length} / {MAX_CHAIN_HOPS}）
+                      </Button>
+                      {form.chainHops.length >= MAX_CHAIN_HOPS && (
+                        <p className="text-xs text-warning">已达到最大跳数限制（{MAX_CHAIN_HOPS} 跳）。</p>
+                      )}
+                    </div>
+                  ) : (
+                    <>
+                      <Input size="sm" autoComplete="off" label="服务器 IP / 域名" placeholder="例如：203.0.113.10 或 node.example.com" value={form.serverIp} onChange={(e) => setForm(prev => ({ ...prev, serverIp: e.target.value }))} isInvalid={!!errors.serverIp} errorMessage={errors.serverIp} variant="bordered" />
 
-                  <Input autoComplete="off" label="入口 IP / 域名" placeholder="用户连接使用的 IP 或域名" value={form.entryIp} onChange={(e) => setForm(prev => ({ ...prev, entryIp: e.target.value }))} isInvalid={!!errors.entryIp} errorMessage={errors.entryIp} variant="bordered" />
+                      <Input size="sm" autoComplete="off" label="入口 IP / 域名" placeholder="用户连接使用的 IP 或域名" value={form.entryIp} onChange={(e) => setForm(prev => ({ ...prev, entryIp: e.target.value }))} isInvalid={!!errors.entryIp} errorMessage={errors.entryIp} variant="bordered" />
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <Input autoComplete="off" label="起始端口" type="number" value={form.portSta.toString()} onChange={(e) => setForm(prev => ({ ...prev, portSta: Number(e.target.value) || 1000 }))} variant="bordered" />
-                    <Input autoComplete="off" label="结束端口" type="number" value={form.portEnd.toString()} onChange={(e) => setForm(prev => ({ ...prev, portEnd: Number(e.target.value) || 65535 }))} variant="bordered" />
-                  </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <Input size="sm" autoComplete="off" label="起始端口" type="number" value={form.portSta.toString()} onChange={(e) => setForm(prev => ({ ...prev, portSta: Number(e.target.value) || 1000 }))} variant="bordered" />
+                        <Input size="sm" autoComplete="off" label="结束端口" type="number" value={form.portEnd.toString()} onChange={(e) => setForm(prev => ({ ...prev, portEnd: Number(e.target.value) || 65535 }))} variant="bordered" />
+                      </div>
+                    </>
+                  )}
 
                   <Select
+                    size="sm"
                     label="用户组ID"
                     placeholder="留空表示所有用户可见"
                     selectedKeys={form.userGroupId ? [form.userGroupId.toString()] : []}
@@ -583,7 +721,8 @@ export default function DeviceGroupPage() {
                     ))}
                   </Select>
 
-                  <Input autoComplete="off"
+                  <Input
+                    size="sm" autoComplete="off"
                     label="流量倍率"
                     type="number"
                     value={form.ratio.toString()}
@@ -592,6 +731,7 @@ export default function DeviceGroupPage() {
                   />
 
                   <Select
+                    size="sm"
                     label="在探针中隐藏"
                     selectedKeys={[form.hideInProbe.toString()]}
                     onSelectionChange={(keys) => {
@@ -605,7 +745,8 @@ export default function DeviceGroupPage() {
                     ))}
                   </Select>
 
-                  <Textarea autoComplete="off"
+                  <Textarea
+                    size="sm" autoComplete="off"
                     label="备注（仅管理员可见）"
                     value={form.remark}
                     onChange={(e) => setForm(prev => ({ ...prev, remark: e.target.value }))}
@@ -616,7 +757,7 @@ export default function DeviceGroupPage() {
               </ModalBody>
               <ModalFooter>
                 <Button variant="light" onPress={onClose}>取消</Button>
-                <Button color="primary" onPress={handleSubmit} isLoading={submitLoading}>
+                <Button color="default" onPress={handleSubmit} isLoading={submitLoading}>
                   {isEdit ? '保存修改' : '创建'}
                 </Button>
               </ModalFooter>
@@ -649,7 +790,7 @@ export default function DeviceGroupPage() {
                   <div className="text-default-500">服务器 IP / 域名</div><div className="font-medium">{configTarget.node?.serverIp || '—'}</div>
                   <div className="text-default-500">入口 IP / 域名</div><div className="font-medium">{configTarget.node?.ip || '—'}</div>
                   <div className="text-default-500">端口范围</div><div className="font-medium">{configTarget.node?.portSta || '—'} - {configTarget.node?.portEnd || '—'}</div>
-                  <div className="text-default-500">设备角色</div><div className="font-medium">{configTarget.group ? { inbound: '入口', outbound: '出口', monitor: '监控', both: '入口＋出口' }[configTarget.group.direction || 'inbound'] : '未配置设备组'}</div>
+                  <div className="text-default-500">设备角色</div><div className="font-medium">{configTarget.group ? { inbound: '入口', outbound: '出口', monitor: '监控', both: '入口＋出口', chain: '链式出口' }[configTarget.group.direction || 'inbound'] : '未配置设备组'}</div>
                   <div className="text-default-500">可见用户组</div><div className="font-medium">{configTarget.group ? userGroupName(configTarget.group.userGroupId) : '—'}</div>
                   <div className="text-default-500">流量倍率</div><div className="font-medium">{configTarget.group?.ratio ?? '—'}</div>
                   <div className="text-default-500">备注</div><div className="font-medium">{configTarget.group?.remark || '—'}</div>
@@ -667,30 +808,47 @@ export default function DeviceGroupPage() {
         <ModalContent>
           {(onClose) => (
             <>
-              <ModalHeader className="flex flex-col gap-1">
+              <ModalHeader className="flex items-center gap-2">
+                <svg className="w-6 h-6 flex-shrink-0" viewBox="0 0 24 24" aria-hidden="true">
+                  <circle cx="12" cy="12" r="11" fill="#6f9bff" />
+                  <circle cx="12" cy="7.4" r="1.5" fill="#15161a" />
+                  <rect x="10.7" y="10.2" width="2.6" height="7.6" rx="1.3" fill="#15161a" />
+                </svg>
                 <h2 className="text-lg font-bold">离线部署</h2>
               </ModalHeader>
               <ModalBody>
                 <div className="space-y-4 text-sm">
-                  <p className="text-default-600">适用于服务器无法访问在线安装脚本的场景：手动下载对应架构的程序包，并按下方参数手动配置。</p>
                   <div className="space-y-2">
-                    <div className="text-default-500">1. 下载程序包（根据服务器 CPU 架构选择）</div>
+                    <div className="text-default-600">请按机器的架构下载合适的包：</div>
                     <div className="flex flex-col gap-1">
-                      <a className="text-primary underline break-all" href={offlineInfo?.downloadUrls.amd64} target="_blank" rel="noopener noreferrer">gost-amd64（x86_64）</a>
-                      <a className="text-primary underline break-all" href={offlineInfo?.downloadUrls.arm64} target="_blank" rel="noopener noreferrer">gost-arm64（aarch64）</a>
+                      <a className="text-primary underline break-all" href={offlineInfo?.downloadUrls.offlineAmd64} target="_blank" rel="noopener noreferrer">flux-panel-offline-amd64.zip（x86_64）</a>
+                      <a className="text-primary underline break-all" href={offlineInfo?.downloadUrls.offlineArm64} target="_blank" rel="noopener noreferrer">flux-panel-offline-arm64.zip（aarch64）</a>
                     </div>
                   </div>
-                  <div className="space-y-2">
-                    <div className="text-default-500">2. 将程序放至 /etc/gost/gost 并赋予执行权限（chmod +x）</div>
-                    <div className="text-default-500">3. 在同目录创建 config.json，内容如下</div>
-                    <Textarea autoComplete="off" readOnly variant="bordered" minRows={4} classNames={{ input: 'font-mono text-xs' }} value={offlineInfo ? `{\n  "addr": "${offlineInfo.addr}",\n  "secret": "${offlineInfo.secret}"\n}` : ''} />
-                    <Button size="sm" variant="flat" onPress={() => offlineInfo && copyToClipboard(`{\n  "addr": "${offlineInfo.addr}",\n  "secret": "${offlineInfo.secret}"\n}`, '已复制配置内容')}>复制配置内容</Button>
+
+                  <div className="space-y-2 pt-1 border-t border-default-100">
+                    <div className="text-default-600 pt-3">『{offlineTitle}』的离线对接命令：</div>
+                    <div className="relative bg-default-100 dark:bg-content2 rounded-lg p-3 pr-10">
+                      <code className="block font-mono text-xs whitespace-pre-wrap break-all text-foreground">{offlineInfo?.offlineCommand}</code>
+                      <button
+                        type="button"
+                        className="absolute right-2 top-2 text-default-400 hover:text-foreground"
+                        title="复制命令"
+                        onClick={() => offlineInfo && copyToClipboard(offlineInfo.offlineCommand, '已复制离线对接命令')}
+                      >
+                        <IconCopy />
+                      </button>
+                    </div>
                   </div>
-                  <div className="text-default-500">4. 手动启动程序，或参考在线安装脚本创建 systemd 服务实现开机自启</div>
+
+                  <p className="text-default-500 text-xs leading-relaxed">
+                    使用方法：上传离线包到【无法在线对接的机器】并重命名为 offline.zip。然后 cd 切换到【离线包所在目录】运行以上命令。
+                  </p>
+                  <p className="text-default-400 text-xs">提示：离线安装依赖 unzip 命令，请自行安装。</p>
                 </div>
               </ModalBody>
               <ModalFooter>
-                <Button variant="light" onPress={onClose}>关闭</Button>
+                <Button onPress={onClose}>知道了</Button>
               </ModalFooter>
             </>
           )}
@@ -724,7 +882,7 @@ export default function DeviceGroupPage() {
               </ModalBody>
               <ModalFooter>
                 <Button variant="light" onPress={onClose}>取消</Button>
-                <Button color="primary" onPress={submitAdvancedEdit} isLoading={advancedLoading}>保存</Button>
+                <Button color="default" onPress={submitAdvancedEdit} isLoading={advancedLoading}>保存</Button>
               </ModalFooter>
             </>
           )}

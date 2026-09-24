@@ -51,6 +51,10 @@ export const purchasePackage = (packageId: number, redeemCode?: string) => Netwo
 export const redeemPackageCode = (redeemCode: string) => Network.post("/order/redeem", { redeemCode });
 export const createRechargeOrder = (amount: number, channelId: string) => Network.post("/recharge/create", { amount, channelId });
 export const getOrderList = () => Network.post("/order/list");
+export const getAdminOrderList = () => Network.post("/order/admin/list");
+export const createManualOrder = (data: { userId: number; info: string; amount: number }) => Network.post("/order/manual-create", data);
+export const batchDeleteOrders = (ids: number[]) => Network.post("/order/batch-delete", { ids });
+export const updateOrderStatus = (id: number, orderStatus: number) => Network.post("/order/update-status", { id, orderStatus });
 
 // 兑换码相关操作 - 全部使用POST请求
 export const batchCreateRedeemCodes = (data: any) => Network.post("/redeem-code/batch-create", data);
@@ -64,6 +68,7 @@ export const updateDeviceGroup = (data: any) => Network.post("/device-group/upda
 export const deleteDeviceGroup = (id: number) => Network.post("/device-group/delete", { id });
 export const batchDeleteDeviceGroups = (ids: number[]) => Network.post("/device-group/batch-delete", { ids });
 export const reorderDeviceGroups = (groups: Array<{ id: number; sort: number }>) => Network.post("/device-group/reorder", { groups });
+export const updateDeviceGroupOfflineConfig = (groups: Array<{ id: number; offlineGraceEnabled: boolean; offlineGraceSeconds: number | null; offlineRetainEnabled: boolean; offlineRetainSeconds: number | null }>) => Network.post("/device-group/offline-config", { groups });
 
 // 节点CRUD操作 - 全部使用POST请求
 export const createNode = (data: any) => Network.post("/node/create", data);
@@ -108,6 +113,7 @@ export const diagnoseForward = (forwardId: number) => Network.post("/forward/dia
 
 // 转发排序操作
 export const updateForwardOrder = (data: { forwards: Array<{ id: number; inx: number }> }) => Network.post("/forward/update-order", data);
+export const getForwardDailyFlow = () => Network.post("/forward/daily-flow");
 
 // 转发规则分组CRUD操作 - 全部使用POST请求
 export const createForwardGroup = (data: any) => Network.post("/forward-group/create", data);

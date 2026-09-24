@@ -5,6 +5,7 @@ import { HeroUIProvider } from "@heroui/system";
 import { useHref, useNavigate } from "react-router-dom";
 import { Toaster } from 'react-hot-toast';
 import { ThemeProvider } from '@/components/theme-provider';
+import { ToastErrorIcon, ToastInfoIcon, ToastSuccessIcon } from '@/components/toast-icons';
 import { I18nProvider } from "@react-aria/i18n";
 
 declare module "@react-types/shared" {
@@ -25,30 +26,15 @@ export function Provider({ children }: ProvidersProps) {
       <HeroUIProvider navigate={navigate} useHref={useHref}>
         <ThemeProvider>
           {children}
-          <Toaster 
+          <Toaster
             position="top-center"
+            containerStyle={{ top: 20 }}
             toastOptions={{
               duration: 2000,
-              className: 'dark:bg-gray-800 dark:text-white',
-              style: {
-                background: 'var(--toaster-bg, #ffffff)',
-                color: 'var(--toaster-color, #000000)',
-                border: '1px solid var(--toaster-border, #e5e7eb)',
-              },
-              success: {
-                duration: 2000,
-                style: {
-                  background: '#10b981',
-                  color: '#ffffff',
-                },
-              },
-              error: {
-                duration: 2000,
-                style: {
-                  background: '#ef4444',
-                  color: '#ffffff',
-                },
-              },
+              className: 'app-toast',
+              blank: { icon: <ToastInfoIcon /> },
+              success: { icon: <ToastSuccessIcon /> },
+              error: { icon: <ToastErrorIcon /> },
             }}
           />
         </ThemeProvider>

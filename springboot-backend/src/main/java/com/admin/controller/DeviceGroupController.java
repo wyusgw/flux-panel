@@ -76,4 +76,16 @@ public class DeviceGroupController extends BaseController {
         List<Map<String, Object>> groups = (List<Map<String, Object>>) params.get("groups");
         return deviceGroupService.reorderDeviceGroups(groups);
     }
+
+    /**
+     * 保存推送通知页「设备组覆盖设置」表格：批量更新各设备组的离线宽限期/保留期覆盖配置
+     */
+    @LogAnnotation
+    @RequireRole
+    @PostMapping("/offline-config")
+    public R updateOfflineConfig(@RequestBody Map<String, Object> params) {
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> groups = (List<Map<String, Object>>) params.get("groups");
+        return deviceGroupService.updateOfflineConfig(groups);
+    }
 }

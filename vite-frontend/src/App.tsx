@@ -12,12 +12,14 @@ import NodeProbePage from "@/pages/node-probe";
 import UserPage from "@/pages/user";
 import ShopPage from "@/pages/shop";
 import OrdersPage from "@/pages/orders";
+import OrderManagementPage from "@/pages/order-management";
 import AccountCenterPage from "@/pages/account-center";
 import RedeemCodePage from "@/pages/redeemcode";
 import DeviceGroupPage from "@/pages/devicegroup";
 import UserGroupPage from "@/pages/usergroup";
 import PackagePlanPage from "@/pages/package";
 import ConfigPage from "@/pages/config";
+import PushNotificationPage from "@/pages/push-notification";
 import { SettingsPage } from "@/pages/settings";
 
 import AdminLayout from "@/layouts/admin";
@@ -223,6 +225,14 @@ function App() {
         }
       />
       <Route
+        path="/order-management"
+        element={
+          <ProtectedRoute useSimpleLayout={true}>
+            <OrderManagementPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
         path="/account-center"
         element={
           <ProtectedRoute useSimpleLayout={true}>
@@ -268,10 +278,18 @@ function App() {
           <ProtectedRoute useSimpleLayout={true}>
             <ConfigPage />
           </ProtectedRoute>
-        } 
+        }
       />
-      <Route 
-        path="/settings" 
+      <Route
+        path="/push-notification"
+        element={
+          <ProtectedRoute useSimpleLayout={true}>
+            <PushNotificationPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/settings"
         element={<SettingsPage />}
       />
     </Routes>

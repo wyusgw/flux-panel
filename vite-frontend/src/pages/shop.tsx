@@ -9,6 +9,7 @@ import toast from 'react-hot-toast';
 
 import { getPackagePlanList, purchasePackage, getUserPackageInfo, redeemPackageCode, createRechargeOrder } from "@/api";
 import { getCachedConfigs } from "@/config/site";
+import { EmptyState } from "@/components/empty-state";
 
 interface PackagePlanItem {
   id: number;
@@ -45,18 +46,6 @@ const NoPaymentIcon = () => (
     <circle cx="35" cy="12" r="1.6" className="fill-content1" />
     <circle cx="39" cy="12" r="1.6" className="fill-content1" />
     <circle cx="43" cy="12" r="1.6" className="fill-content1" />
-  </svg>
-);
-
-const NoDataIcon = () => (
-  <svg className="w-16 h-16 text-default-300" viewBox="0 0 64 64" fill="currentColor">
-    <path d="M20 6h16l8 8v22a2 2 0 01-2 2H20a2 2 0 01-2-2V8a2 2 0 012-2z" />
-    <path d="M36 6v8h8z" className="fill-content1" />
-    <rect x="23" y="19" width="14" height="2" rx="1" className="fill-content1" />
-    <rect x="23" y="24" width="14" height="2" rx="1" className="fill-content1" />
-    <rect x="23" y="29" width="9" height="2" rx="1" className="fill-content1" />
-    <path d="M9 34h46l-5 20a3 3 0 01-3 2.3H17a3 3 0 01-3-2.3L9 34z" />
-    <path d="M9 34h46l-2 8H11l-2-8z" className="fill-content1" opacity={0.5} />
   </svg>
 );
 
@@ -178,7 +167,11 @@ export default function ShopPage() {
     try {
       const res = await redeemPackageCode(redeemInput.trim());
       if (res.code === 0) {
-        toast.success('兑换成功');
+        if (res.data?.type === 'balance') {
+          toast.success(`兑换成功，已到账 ${res.data.amount} 元`);
+        } else {
+          toast.success('兑换成功');
+        }
         setRedeemInput('');
         loadData();
       } else {
@@ -240,6 +233,7 @@ export default function ShopPage() {
         <CardBody>
           <div className="flex items-end gap-2 max-w-sm">
             <Input
+              size="sm"
               autoComplete="off"
               label="充值金额"
               type="number"
@@ -309,7 +303,7 @@ export default function ShopPage() {
                           <p className="text-small text-default-600 mt-2 font-medium">购买后将覆盖当前套餐</p>
                           <div className="flex justify-end gap-2 mt-3">
                             <Button size="sm" variant="light" onPress={() => setOpenPopoverId(null)}>取消</Button>
-                            <Button size="sm" color="primary" onPress={confirmPurchase} isLoading={purchaseLoading}>确定</Button>
+                            <Button size="sm" color="default" onPress={confirmPurchase} isLoading={purchaseLoading}>确定</Button>
                           </div>
                         </div>
                       </PopoverContent>
@@ -319,10 +313,7 @@ export default function ShopPage() {
               ))}
             </div>
           ) : (
-            <div className="flex flex-col items-center justify-center gap-3 py-12">
-              <NoDataIcon />
-              <p className="text-sm text-default-500">暂无数据</p>
-            </div>
+            <EmptyState className="py-12" />
           )}
         </CardBody>
       </Card>
@@ -333,6 +324,7 @@ export default function ShopPage() {
           <p className="text-sm text-default-500 mb-3">如果您有兑换码，则可以免费或低价购买对应的套餐。</p>
           <div className="flex gap-2 max-w-lg">
             <Input
+              size="sm"
               autoComplete="off"
               placeholder="兑换码"
               value={redeemInput}
@@ -341,7 +333,7 @@ export default function ShopPage() {
               startContent={<TagIcon />}
               className="flex-1"
             />
-            <Button color="primary" onPress={handleRedeem} isLoading={redeemLoading}>兑换</Button>
+            <Button color="default" onPress={handleRedeem} isLoading={redeemLoading}>兑换</Button>
           </div>
         </CardBody>
       </Card>
@@ -358,7 +350,7 @@ export default function ShopPage() {
                 <p className="text-small text-default-600">购买成功</p>
               </ModalBody>
               <ModalFooter>
-                <Button color="primary" onPress={onClose}>知道了</Button>
+                <Button color="default" onPress={onClose}>知道了</Button>
               </ModalFooter>
             </>
           )}

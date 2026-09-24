@@ -386,13 +386,17 @@ export const NoDataIcon = ({
     focusable="false"
     height={size || height}
     role="presentation"
-    viewBox="0 0 64 64"
+    viewBox="0 0 24 24"
     width={size || width}
-    fill="currentColor"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.6}
+    strokeLinecap="round"
+    strokeLinejoin="round"
     {...props}
   >
-    <ellipse cx="32" cy="54" rx="18" ry="3" opacity="0.3" />
-    <path d="M16 22h32a2 2 0 012 2v18a4 4 0 01-4 4H18a4 4 0 01-4-4V24a2 2 0 012-2z" />
-    <rect x="25" y="27" width="14" height="6" rx="2" className="fill-content1" />
+    <ellipse cx="12" cy="20.2" rx="8" ry="1.2" fill="currentColor" stroke="none" opacity="0.3" />
+    <polyline points="22 12 16 12 14 15 10 15 8 12 2 12" />
+    <path d="M5.45 5.11L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.45-6.89A2 2 0 0016.76 4H7.24a2 2 0 00-1.79 1.11z" />
   </svg>
 );

@@ -134,11 +134,36 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         R gostResult = createGostServices(forward, tunnel, permissionResult.getLimiter(), nodeInfo, permissionResult.getUserTunnel());
 
         if (gostResult.getCode() != 0) {
+            if (isNodeOfflineFailure(gostResult)) {
+                // 节点当前离线：规则本身正常保存，只是暂时无法把配置推送到节点，不应因此阻止创建。
+                // 面板没有节点重新上线后自动补推配置的机制，需要等节点上线后手动编辑并保存该规则来完成同步。
+                log.warn("转发 {} 创建成功，但目标节点当前离线，配置暂未同步：{}", forward.getId(), gostResult.getMsg());
+                return okWithMsg("转发规则已创建，但目标节点当前离线，暂未同步到节点。节点上线后请重新编辑并保存该规则以完成同步");
+            }
             this.removeById(forward.getId());
             return gostResult;
         }
 
         return R.ok();
+    }
+
+    /**
+     * 判断 Gost 操作失败是否是因为目标节点当前离线/连接已断开（而非配置本身有问题）。
+     */
+    private boolean isNodeOfflineFailure(R gostResult) {
+        if (gostResult == null || gostResult.getMsg() == null) return false;
+        String msg = gostResult.getMsg();
+        return msg.contains("不在线") || msg.contains("连接已断开");
+    }
+
+    /**
+     * 构造一个 code=0、带自定义提示文案的成功响应（{@link R#ok(Object)} 是把参数存进 data 而非 msg，
+     * 前端这里要读的是 msg，所以不能直接用它）
+     */
+    private R okWithMsg(String msg) {
+        R result = R.ok();
+        result.setMsg(msg);
+        return result;
     }
 
     @Override
@@ -221,18 +246,13 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
                         return R.err("隧道被禁用");
                     }
 
-                    // 检查隧道权限到期时间
-                    if (userTunnel.getExpTime() != null && userTunnel.getExpTime() <= System.currentTimeMillis()) {
-                        return R.err("用户的该隧道权限已到期");
-                    }
-
-                    // 检查原用户的流量和转发数量限制
-                    R quotaCheckResult = checkForwardQuota(existForward.getUserId(), userTunnel.getTunnelId(), userTunnel, originalUser, forwardUpdateDto.getId());
+                    // 检查原用户的转发数量限制（账号级别，套餐决定的总量上限）
+                    R quotaCheckResult = checkForwardQuota(existForward.getUserId(), originalUser, forwardUpdateDto.getId());
                     if (quotaCheckResult.getCode() != 0) {
                         return R.err("用户" + quotaCheckResult.getMsg());
                     }
 
-                    permissionResult = UserPermissionResult.success(userTunnel.getSpeedId(), userTunnel);
+                    permissionResult = UserPermissionResult.success(null, userTunnel);
                 }
             } else {
                 // 普通用户检查自己的权限
@@ -267,6 +287,15 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         }
 
         if (gostResult.getCode() != 0) {
+            if (isNodeOfflineFailure(gostResult)) {
+                // 节点当前离线：更新内容正常保存，只是暂时无法把配置推送到节点，不应因此阻止保存。
+                log.warn("转发 {} 更新成功，但目标节点当前离线，配置暂未同步：{}", updatedForward.getId(), gostResult.getMsg());
+                updatedForward.setStatus(1);
+                boolean savedOffline = this.updateById(updatedForward);
+                return savedOffline
+                        ? okWithMsg("端口转发已更新，但目标节点当前离线，暂未同步到节点。节点上线后请重新编辑并保存该规则以完成同步")
+                        : R.err("端口转发更新失败");
+            }
             return gostResult;
         }
         updatedForward.setStatus(1);
@@ -867,7 +896,8 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             return UserPermissionResult.success(null, null);
         }
 
-        // 获取用户信息
+        // 获取用户信息（流量/到期时间/转发数量等额度统一由账号自身的套餐控制，
+        // 不再额外维护一套隧道级别的额度——避免账号层与隧道层两套限制重复配置、互相打架）
         User userInfo = userService.getById(currentUser.getUserId());
         if (userInfo.getExpTime() != null && userInfo.getExpTime() <= System.currentTimeMillis()) {
             return UserPermissionResult.error("当前账号已到期");
@@ -882,50 +912,31 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             return UserPermissionResult.error("隧道被禁用");
         }
 
-        // 检查隧道权限到期时间
-        if (userTunnel.getExpTime() != null && userTunnel.getExpTime() <= System.currentTimeMillis()) {
-            return UserPermissionResult.error("该隧道权限已到期");
-        }
-
         // 流量限制检查
         if (userInfo.getFlow() <= 0) {
             return UserPermissionResult.error("用户总流量已用完");
         }
-        if (userTunnel.getFlow() <= 0) {
-            return UserPermissionResult.error("该隧道流量已用完");
-        }
 
         // 转发数量限制检查
-        R quotaCheckResult = checkForwardQuota(currentUser.getUserId(), userTunnel.getTunnelId(), userTunnel, userInfo, excludeForwardId);
+        R quotaCheckResult = checkForwardQuota(currentUser.getUserId(), userInfo, excludeForwardId);
         if (quotaCheckResult.getCode() != 0) {
             return UserPermissionResult.error(quotaCheckResult.getMsg());
         }
 
-        return UserPermissionResult.success(userTunnel.getSpeedId(), userTunnel);
+        return UserPermissionResult.success(null, userTunnel);
     }
 
     /**
-     * 检查用户转发数量限制
+     * 检查用户转发数量限制（账号级别，套餐决定的总量上限）
      */
-    private R checkForwardQuota(Integer userId, Integer tunnelId, UserTunnel userTunnel, User userInfo, Long excludeForwardId) {
-        // 检查用户总转发数量限制
-        long userForwardCount = this.count(new QueryWrapper<Forward>().eq("user_id", userId));
+    private R checkForwardQuota(Integer userId, User userInfo, Long excludeForwardId) {
+        QueryWrapper<Forward> userQuery = new QueryWrapper<Forward>().eq("user_id", userId);
+        if (excludeForwardId != null) {
+            userQuery.ne("id", excludeForwardId);
+        }
+        long userForwardCount = this.count(userQuery);
         if (userForwardCount >= userInfo.getNum()) {
             return R.err("用户总转发数量已达上限，当前限制：" + userInfo.getNum() + "个");
-        }
-
-        // 检查用户在该隧道的转发数量限制
-        QueryWrapper<Forward> tunnelQuery = new QueryWrapper<Forward>()
-                .eq("user_id", userId)
-                .eq("tunnel_id", tunnelId);
-
-        if (excludeForwardId != null) {
-            tunnelQuery.ne("id", excludeForwardId);
-        }
-
-        long tunnelForwardCount = this.count(tunnelQuery);
-        if (tunnelForwardCount >= userTunnel.getNum()) {
-            return R.err("该隧道转发数量已达上限，当前限制：" + userTunnel.getNum() + "个");
         }
 
         return R.ok();
@@ -945,22 +956,9 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             return R.err("你没有该隧道权限");
         }
 
-        // 检查隧道权限到期时间
-        if (userTunnel.getExpTime() != null && userTunnel.getExpTime() <= System.currentTimeMillis()) {
-            return R.err("该隧道权限已到期，无法恢复服务");
-        }
-
-        // 检查用户总流量限制
+        // 检查用户总流量限制（账号级别，套餐决定的总量上限）
         if (userInfo.getFlow() * BYTES_TO_GB <= userInfo.getInFlow() + userInfo.getOutFlow()) {
             return R.err("用户总流量已用完，无法恢复服务");
-        }
-
-        // 检查隧道流量限制
-        // 数据库中的流量已按计费类型处理，直接使用总和
-        long tunnelFlow = userTunnel.getInFlow() + userTunnel.getOutFlow();
-
-        if (userTunnel.getFlow() * BYTES_TO_GB <= tunnelFlow) {
-            return R.err("该隧道流量已用完，无法恢复服务");
         }
 
         return R.ok();
@@ -1296,8 +1294,10 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
     }
 
     /**
-     * 综合规则限速、套餐用户限速、管理员指派的限速（legacySpeedLimitId 对应的 SpeedLimit）三个来源，
-     * 取非零最小值作为该转发规则的最终限速；三者均未设置（或均为0）时不下发限速器。
+     * 综合规则限速、套餐用户限速两个来源，取非零最小值作为该转发规则的最终限速；
+     * 均未设置（或均为0）时不下发限速器。
+     * legacySpeedLimitId 对应的是已下线的"隧道权限限速规则"功能，调用方现在总是传 null，
+     * 保留这个参数只是为了不再牵动上层一串方法签名，属于安全的死代码，不影响行为。
      * 派生限速器统一命名为 "fwd_{forwardId}"，与 SpeedLimit 的纯数字ID命名空间区分，避免冲突。
      */
     private String resolveEffectiveLimiterName(Node inNode, Forward forward, Integer legacySpeedLimitId) {
@@ -1597,13 +1597,8 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         if (nodeInfo.isHasError()) {
             return;
         }
-        Integer limiter;
-        if (userTunnel == null) {
-            limiter = null;
-        } else {
-            limiter = userTunnel.getSpeedId();
-        }
-        updateGostServices(forward, tunnel, limiter, nodeInfo, userTunnel);
+        // 隧道级别的管理员指派限速已移除，限速统一由规则限速 + 套餐用户限速两者取更严格值决定
+        updateGostServices(forward, tunnel, null, nodeInfo, userTunnel);
     }
 
 

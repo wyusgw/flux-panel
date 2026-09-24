@@ -436,7 +436,7 @@ export default function TunnelPage() {
         <Button
               size="sm"
               variant="flat"
-              color="primary"
+              color="default"
               onPress={handleAdd}
              
             >
@@ -537,7 +537,7 @@ export default function TunnelPage() {
                       <Button
                         size="sm"
                         variant="flat"
-                        color="primary"
+                        color="default"
                         onPress={() => handleEdit(tunnel)}
                         className="flex-1 min-h-8"
                         startContent={
@@ -551,7 +551,7 @@ export default function TunnelPage() {
                       <Button
                         size="sm"
                         variant="flat"
-                        color="warning"
+                        color="default"
                         onPress={() => handleDiagnose(tunnel)}
                         className="flex-1 min-h-8"
                         startContent={
@@ -614,7 +614,8 @@ export default function TunnelPage() {
                 </ModalHeader>
                 <ModalBody>
                   <div className="space-y-4">
-                    <Input autoComplete="off"
+                    <Input
+                      size="sm" autoComplete="off"
                       label="隧道名称"
                       placeholder="请输入隧道名称"
                       value={form.name}
@@ -625,6 +626,7 @@ export default function TunnelPage() {
                     />
                     
                     <Select
+                      size="sm"
                       label="隧道类型"
                       placeholder="请选择隧道类型"
                       selectedKeys={[form.type.toString()]}
@@ -645,6 +647,7 @@ export default function TunnelPage() {
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <Select
+                        size="sm"
                         label="流量计算"
                         placeholder="请选择流量计算方式"
                         selectedKeys={[form.flow.toString()]}
@@ -662,7 +665,8 @@ export default function TunnelPage() {
                         <SelectItem key="2">双向计算（上传+下载）</SelectItem>
                       </Select>
 
-                      <Input autoComplete="off"
+                      <Input
+                        size="sm" autoComplete="off"
                         label="流量倍率"
                         placeholder="请输入流量倍率"
                         type="number"
@@ -686,6 +690,7 @@ export default function TunnelPage() {
                     <h3 className="text-lg font-semibold">入口配置</h3>
 
                     <Select
+                      size="sm"
                       label="入口节点"
                       placeholder="请选择入口节点"
                       selectedKeys={form.inNodeId ? [form.inNodeId.toString()] : []}
@@ -720,7 +725,8 @@ export default function TunnelPage() {
                     </Select>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <Input autoComplete="off"
+                      <Input
+                        size="sm" autoComplete="off"
                         label="TCP监听地址"
                         placeholder="请输入TCP监听地址"
                         value={form.tcpListenAddr}
@@ -735,7 +741,8 @@ export default function TunnelPage() {
                         }
                       />
 
-                      <Input autoComplete="off"
+                      <Input
+                        size="sm" autoComplete="off"
                         label="UDP监听地址"
                         placeholder="请输入UDP监听地址"
                         value={form.udpListenAddr}
@@ -753,7 +760,8 @@ export default function TunnelPage() {
 
                     {/* 隧道转发时显示出口网卡配置 */}
                     {form.type === 2 && (
-                      <Input autoComplete="off"
+                      <Input
+                        size="sm" autoComplete="off"
                         label="出口网卡名或IP"
                         placeholder="请输入出口网卡名或IP"
                         value={form.interfaceName}
@@ -771,6 +779,7 @@ export default function TunnelPage() {
                         <h3 className="text-lg font-semibold">出口配置</h3>
 
                         <Select
+                          size="sm"
                           label="协议类型"
                           placeholder="请选择协议类型"
                           selectedKeys={[form.protocol]}
@@ -793,6 +802,7 @@ export default function TunnelPage() {
                         </Select>
 
                         <Select
+                          size="sm"
                           label="出口节点"
                           placeholder="请选择出口节点"
                           selectedKeys={form.outNodeId ? [form.outNodeId.toString()] : []}
@@ -855,8 +865,8 @@ export default function TunnelPage() {
                   <Button variant="light" onPress={onClose}>
                     取消
                   </Button>
-                  <Button 
-                    color="primary" 
+                  <Button
+                    color="default"
                     onPress={handleSubmit}
                     isLoading={submitLoading}
                   >
@@ -997,8 +1007,8 @@ export default function TunnelPage() {
                     关闭
                   </Button>
                   {currentDiagnosisTunnel && (
-                    <Button 
-                      color="primary" 
+                    <Button
+                      color="default"
                       onPress={() => handleDiagnose(currentDiagnosisTunnel)}
                       isLoading={diagnosisLoading}
                     >

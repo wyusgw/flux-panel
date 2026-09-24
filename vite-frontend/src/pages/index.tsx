@@ -194,7 +194,7 @@ export default function IndexPage() {
       localStorage.setItem("admin", (response.data.role_id === 0).toString());
 
       // 登录成功
-      toast.success('登录成功');
+      toast('登录成功');
       navigate("/dashboard");
 
     } catch (error) {
@@ -297,7 +297,7 @@ export default function IndexPage() {
                 <div className="flex items-center gap-4 mt-1">
                   <Button
                     size="sm"
-                    color="primary"
+                    color="default"
                     onClick={handleLogin}
                     isLoading={loading}
                     disabled={loading}

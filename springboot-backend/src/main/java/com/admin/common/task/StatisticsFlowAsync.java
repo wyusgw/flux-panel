@@ -3,7 +3,9 @@ package com.admin.common.task;
 
 import com.admin.entity.StatisticsFlow;
 import com.admin.entity.User;
+import com.admin.entity.UserDailyRawFlow;
 import com.admin.service.StatisticsFlowService;
+import com.admin.service.UserDailyRawFlowService;
 import com.admin.service.UserService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.extern.slf4j.Slf4j;
@@ -13,6 +15,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 
 import javax.annotation.PostConstruct;
 import javax.annotation.Resource;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -30,6 +33,9 @@ public class StatisticsFlowAsync {
     @Resource
     StatisticsFlowService statisticsFlowService;
 
+    @Resource
+    UserDailyRawFlowService userDailyRawFlowService;
+
     @Scheduled(cron = "0 0 * * * ?")
     public void statistics_flow() {
         LocalDateTime currentHour = LocalDateTime.now().withMinute(0).withSecond(0).withNano(0);
@@ -42,6 +48,13 @@ public class StatisticsFlowAsync {
         statisticsFlowService.remove(
                 new LambdaQueryWrapper<StatisticsFlow>()
                         .lt(StatisticsFlow::getCreatedTime, cutoffMs)
+        );
+
+        // 顺带清理 3 天前的每日原始流量记录（"统计数据"弹窗只需要今日/昨日，留 3 天余量足够）
+        String keepFromDay = LocalDate.now().minusDays(3).format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
+        userDailyRawFlowService.remove(
+                new LambdaQueryWrapper<UserDailyRawFlow>()
+                        .lt(UserDailyRawFlow::getDay, keepFromDay)
         );
 
 

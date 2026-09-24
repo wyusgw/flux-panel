@@ -40,6 +40,8 @@ type SystemInfo struct {
 	StorageTotal     uint64  `json:"storage_total"`     // 存储总量（字节）
 	StorageUsed      uint64  `json:"storage_used"`      // 存储已用（字节）
 	StorageFree      uint64  `json:"storage_free"`      // 存储剩余（字节）
+	TCPConnections   int     `json:"tcp_connections"`   // 当前 TCP 连接数（ESTABLISHED 状态）
+	UDPConnections   int     `json:"udp_connections"`   // 当前 UDP 连接数（使用中的 UDP 套接字数）
 }
 
 // NetworkStats 网络统计信息
@@ -287,6 +289,14 @@ func (w *WebSocketReporter) handleConnection() {
 	// 启动消息接收goroutine
 	go w.receiveMessages()
 
+	// 连接建立后立即推送一次系统信息，不等第一个 ticker 周期，
+	// 避免节点刚上线时面板那边连接数/CPU/内存等信息要等最多一个周期才有数据
+	initialSysInfo := w.collectSystemInfo()
+	if err := w.sendSystemInfo(initialSysInfo); err != nil {
+		fmt.Printf("发送系统信息失败: %v，准备重连\n", err)
+		return
+	}
+
 	// 主发送循环
 	ticker := time.NewTicker(w.pingInterval)
 	defer ticker.Stop()
@@ -321,6 +331,7 @@ func (w *WebSocketReporter) collectSystemInfo() SystemInfo {
 	cpuInfo := getCPUInfo()
 	memoryInfo := getMemoryInfo()
 	storageInfo := getStorageInfo()
+	tcpConns, udpConns := getConnectionStats()
 
 	return SystemInfo{
 		Uptime:           getUptime(),
@@ -336,7 +347,24 @@ func (w *WebSocketReporter) collectSystemInfo() SystemInfo {
 		StorageTotal:     storageInfo.Total,
 		StorageUsed:      storageInfo.Used,
 		StorageFree:      storageInfo.Free,
+		TCPConnections:   tcpConns,
+		UDPConnections:   udpConns,
 	}
+}
+
+// getConnectionStats 统计当前 TCP（ESTABLISHED 状态）与 UDP 连接数，供节点状态页"点击上/下行"展示
+func getConnectionStats() (tcpCount int, udpCount int) {
+	if tcpConns, err := psnet.Connections("tcp"); err == nil {
+		for _, c := range tcpConns {
+			if c.Status == "ESTABLISHED" {
+				tcpCount++
+			}
+		}
+	}
+	if udpConns, err := psnet.Connections("udp"); err == nil {
+		udpCount = len(udpConns)
+	}
+	return
 }
 
 // sendSystemInfo 发送系统信息

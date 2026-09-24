@@ -93,6 +93,16 @@ export const managementNavItems: NavItem[] = [
     )
   },
   {
+    path: '/push-notification',
+    label: '推送通知',
+    adminOnly: true,
+    icon: (
+      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+        <path d="M10 2a6 6 0 00-6 6v3.586l-1.707 1.707A1 1 0 003 15h14a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM8.343 17a1.994 1.994 0 003.314 0H8.343z" />
+      </svg>
+    )
+  },
+  {
     path: '/tunnel',
     label: '隧道管理',
     adminOnly: true,
@@ -149,6 +159,16 @@ export const managementNavItems: NavItem[] = [
     icon: (
       <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
         <path fillRule="evenodd" d="M17.707 9.293l-7-7A1 1 0 0010 2H5a3 3 0 00-3 3v5a1 1 0 00.293.707l7 7a1 1 0 001.414 0l7-7a1 1 0 000-1.414zM5 6a1 1 0 110-2 1 1 0 010 2z" clipRule="evenodd" />
+      </svg>
+    )
+  },
+  {
+    path: '/order-management',
+    label: '订单管理',
+    adminOnly: true,
+    icon: (
+      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+        <path fillRule="evenodd" d="M4 2a2 2 0 00-2 2v13a1 1 0 001.5.868L5 17l1.5.868a1 1 0 001 0L9 17l1.5.868a1 1 0 001 0L13 17l1.5.868A1 1 0 0016 17V4a2 2 0 00-2-2H4zm2 5a1 1 0 000 2h6a1 1 0 100-2H6zm0 4a1 1 0 100 2h4a1 1 0 100-2H6z" clipRule="evenodd" />
       </svg>
     )
   }

@@ -74,6 +74,7 @@ interface DeviceGroupItem {
   ratio: number;
   hideInProbe: number;
   direction?: 'inbound' | 'outbound' | 'monitor' | 'both' | 'chain';
+  protocol?: string;
   remark?: string;
   sort?: number;
   chainHops?: ChainHopItem[];
@@ -122,6 +123,7 @@ interface DeviceGroupForm {
   ratio: number;
   hideInProbe: number;
   direction: 'inbound' | 'outbound' | 'monitor' | 'both' | 'chain';
+  protocol: string;
   remark: string;
   chainHops: ChainHopForm[];
 }
@@ -139,6 +141,7 @@ const DEFAULT_FORM: DeviceGroupForm = {
   ratio: 1,
   hideInProbe: 0,
   direction: 'inbound',
+  protocol: 'tls',
   remark: '',
   chainHops: []
 };
@@ -248,6 +251,7 @@ export default function DeviceGroupPage() {
       ratio: group.ratio,
       hideInProbe: group.hideInProbe,
       direction: group.direction || 'inbound',
+      protocol: group.protocol || 'tls',
       remark: group.remark || '',
       chainHops: (group.chainHops || [])
         .slice()
@@ -701,6 +705,29 @@ export default function DeviceGroupPage() {
                         <Input size="sm" autoComplete="off" label="起始端口" type="number" value={form.portSta.toString()} onChange={(e) => setForm(prev => ({ ...prev, portSta: Number(e.target.value) || 1000 }))} variant="bordered" />
                         <Input size="sm" autoComplete="off" label="结束端口" type="number" value={form.portEnd.toString()} onChange={(e) => setForm(prev => ({ ...prev, portEnd: Number(e.target.value) || 65535 }))} variant="bordered" />
                       </div>
+
+                      {(form.direction === 'outbound' || form.direction === 'both') && (
+                        <Select
+                          size="sm"
+                          label="协议类型"
+                          selectedKeys={[form.protocol]}
+                          onSelectionChange={(keys) => {
+                            const selectedKey = Array.from(keys)[0] as string;
+                            if (selectedKey) {
+                              setForm(prev => ({ ...prev, protocol: selectedKey }));
+                            }
+                          }}
+                          variant="bordered"
+                          description="该出口设备组作为隧道转发出口节点时使用的传输协议"
+                        >
+                          <SelectItem key="tls">TLS</SelectItem>
+                          <SelectItem key="wss">WSS</SelectItem>
+                          <SelectItem key="tcp">TCP</SelectItem>
+                          <SelectItem key="mtls">MTLS</SelectItem>
+                          <SelectItem key="mwss">MWSS</SelectItem>
+                          <SelectItem key="mtcp">MTCP</SelectItem>
+                        </Select>
+                      )}
                     </>
                   )}
 

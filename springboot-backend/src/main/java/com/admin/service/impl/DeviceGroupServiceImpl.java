@@ -3,6 +3,8 @@ package com.admin.service.impl;
 import com.admin.common.dto.DeviceGroupChainHopDto;
 import com.admin.common.dto.DeviceGroupDto;
 import com.admin.common.dto.DeviceGroupUpdateDto;
+import com.admin.common.dto.UserDeviceGroupDto;
+import com.admin.common.dto.UserDeviceGroupUpdateDto;
 import com.admin.common.lang.R;
 import com.admin.common.utils.JwtUtil;
 import com.admin.entity.DeviceGroup;
@@ -16,6 +18,7 @@ import com.admin.service.DeviceGroupService;
 import com.admin.service.ForwardService;
 import com.admin.service.NodeService;
 import com.admin.service.UserService;
+import com.admin.service.ViteConfigService;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -55,6 +58,10 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
     private ForwardService forwardService;
 
     @Autowired
+    @Lazy
+    private ViteConfigService viteConfigService;
+
+    @Autowired
     private DeviceGroupChainHopMapper chainHopMapper;
 
     @Override
@@ -81,6 +88,7 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
         group.setName(dto.getName());
         group.setNodeId(isChain ? null : dto.getNodeId());
         group.setDirection(normalizeDirection(dto.getDirection()));
+        group.setProtocol(dto.getProtocol() != null && !dto.getProtocol().isEmpty() ? dto.getProtocol() : "tls");
         group.setUserGroupId(dto.getUserGroupId());
         group.setRatio(dto.getRatio() != null ? dto.getRatio() : BigDecimal.ONE);
         group.setHideInProbe(dto.getHideInProbe() != null ? dto.getHideInProbe() : 0);
@@ -169,12 +177,21 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
             User user = userService.getById(userId);
             Long userGroupId = user != null ? user.getGroupId() : null;
 
+            // 可见范围：管理员建立、按用户组规则对自己可见的设备组；或自己名下的单端隧道设备组；
+            // 或他人名下、已设为公开共享的单端隧道设备组
             QueryWrapper<DeviceGroup> query = new QueryWrapper<DeviceGroup>().orderByAsc("sort");
-            if (userGroupId != null) {
-                query.and(w -> w.isNull("user_group_id").or().eq("user_group_id", userGroupId));
-            } else {
-                query.isNull("user_group_id");
-            }
+            query.and(w -> {
+                w.and(w2 -> {
+                    w2.isNull("owner_user_id");
+                    if (userGroupId != null) {
+                        w2.and(w3 -> w3.isNull("user_group_id").or().eq("user_group_id", userGroupId));
+                    } else {
+                        w2.isNull("user_group_id");
+                    }
+                });
+                w.or().eq("owner_user_id", userId);
+                w.or(w2 -> w2.isNotNull("owner_user_id").eq("shared", 1));
+            });
             // 普通用户不应看到对所有人隐藏的设备组
             query.ne("hide_in_probe", 2);
             groups = this.list(query);
@@ -202,6 +219,9 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
             item.put("name", group.getName());
             item.put("nodeId", group.getNodeId());
             item.put("direction", group.getDirection() == null ? "inbound" : group.getDirection());
+            item.put("protocol", group.getProtocol() == null ? "tls" : group.getProtocol());
+            item.put("ownerUserId", group.getOwnerUserId());
+            item.put("shared", group.getShared() != null && group.getShared() == 1);
             // 普通用户的节点列表按设备组权限过滤；同时在此返回已验证可见的节点摘要，
             // 供节点状态页与设备组保持同一份可见性数据，避免两个接口筛选不同步。
             if (node != null) {
@@ -285,6 +305,7 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
         group.setName(dto.getName());
         group.setNodeId(isChain ? null : dto.getNodeId());
         group.setDirection(normalizeDirection(dto.getDirection()));
+        group.setProtocol(dto.getProtocol() != null && !dto.getProtocol().isEmpty() ? dto.getProtocol() : "tls");
         group.setUserGroupId(dto.getUserGroupId());
         group.setRatio(dto.getRatio() != null ? dto.getRatio() : BigDecimal.ONE);
         group.setHideInProbe(dto.getHideInProbe() != null ? dto.getHideInProbe() : 0);
@@ -325,6 +346,14 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
         if (group == null) {
             return R.err(ERROR_GROUP_NOT_FOUND);
         }
+        return doDeleteGroup(group);
+    }
+
+    /**
+     * 实际执行删除（用量校验 + 删除 + 链路清理 + 孤儿节点清理），供管理员删除与用户删除自己名下设备组复用
+     */
+    private R doDeleteGroup(DeviceGroup group) {
+        Long id = group.getId();
 
         long usageCount = forwardService.count(new QueryWrapper<Forward>()
                 .eq("in_device_group_id", id)
@@ -357,6 +386,157 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
         }
 
         return R.ok(SUCCESS_DELETE_MSG);
+    }
+
+    // ------------------------- 单端隧道：普通用户自建设备组 -------------------------
+
+    private R checkUserDeviceGroupEnabled() {
+        com.admin.entity.ViteConfig config = viteConfigService.getOne(new QueryWrapper<com.admin.entity.ViteConfig>().eq("name", "user_device_group_enabled"));
+        boolean enabled = config != null && "true".equals(config.getValue());
+        return enabled ? R.ok() : R.err("站点未开启单端隧道自托管设备功能");
+    }
+
+    @Override
+    @Transactional
+    public R createUserDeviceGroup(Integer userId, UserDeviceGroupDto dto) {
+        R enabledCheck = checkUserDeviceGroupEnabled();
+        if (enabledCheck.getCode() != 0) {
+            return enabledCheck;
+        }
+        if (!"inbound".equals(dto.getDirection()) && !"outbound".equals(dto.getDirection())) {
+            return R.err("单端隧道只能选择入口或出口");
+        }
+
+        com.admin.common.dto.NodeDto nodeDto = new com.admin.common.dto.NodeDto();
+        nodeDto.setName(dto.getName());
+        nodeDto.setIp(dto.getEntryIp());
+        nodeDto.setServerIp(dto.getServerIp());
+        nodeDto.setPortSta(dto.getPortSta() != null ? dto.getPortSta() : 1000);
+        nodeDto.setPortEnd(dto.getPortEnd() != null ? dto.getPortEnd() : 65535);
+        R nodeResult = nodeService.createNode(nodeDto);
+        if (nodeResult.getCode() != 0) {
+            return nodeResult;
+        }
+        Node node = (Node) nodeResult.getData();
+
+        DeviceGroup group = new DeviceGroup();
+        group.setName(dto.getName());
+        group.setNodeId(node.getId());
+        group.setDirection(dto.getDirection());
+        group.setProtocol(dto.getProtocol() != null && !dto.getProtocol().isEmpty() ? dto.getProtocol() : "tls");
+        group.setOwnerUserId(userId.longValue());
+        group.setShared(dto.isShared() ? 1 : 0);
+        group.setRatio(BigDecimal.ONE);
+        group.setHideInProbe(0);
+        group.setSort(0);
+        long now = System.currentTimeMillis();
+        group.setCreatedTime(now);
+        group.setUpdatedTime(now);
+        group.setStatus(1);
+
+        boolean saved = this.save(group);
+        if (!saved) {
+            nodeService.deleteNode(node.getId());
+            return R.err(ERROR_CREATE_FAILED);
+        }
+        return R.ok(group);
+    }
+
+    @Override
+    public R listMyDeviceGroups(Integer userId) {
+        List<DeviceGroup> groups = this.list(new QueryWrapper<DeviceGroup>()
+                .eq("owner_user_id", userId).orderByDesc("created_time"));
+
+        List<Map<String, Object>> result = groups.stream().map(group -> {
+            Node node = group.getNodeId() != null ? nodeService.getById(group.getNodeId()) : null;
+            Map<String, Object> item = new HashMap<>();
+            item.put("id", group.getId());
+            item.put("name", group.getName());
+            item.put("direction", group.getDirection());
+            item.put("protocol", group.getProtocol() == null ? "tls" : group.getProtocol());
+            item.put("shared", group.getShared() != null && group.getShared() == 1);
+            item.put("nodeId", group.getNodeId());
+            if (node != null) {
+                item.put("serverIp", node.getServerIp());
+                item.put("entryIp", node.getIp());
+                item.put("portSta", node.getPortSta());
+                item.put("portEnd", node.getPortEnd());
+                item.put("status", node.getStatus());
+            }
+            return item;
+        }).collect(Collectors.toList());
+        return R.ok(result);
+    }
+
+    /**
+     * 校验设备组确实属于该用户，返回 null 表示校验通过
+     */
+    private DeviceGroup findOwnedGroupOrNull(Integer userId, Long groupId) {
+        DeviceGroup group = this.getById(groupId);
+        if (group == null || group.getOwnerUserId() == null || !group.getOwnerUserId().equals(userId.longValue())) {
+            return null;
+        }
+        return group;
+    }
+
+    @Override
+    @Transactional
+    public R updateUserDeviceGroup(Integer userId, UserDeviceGroupUpdateDto dto) {
+        DeviceGroup group = findOwnedGroupOrNull(userId, dto.getId());
+        if (group == null) {
+            return R.err("设备组不存在或无权限操作");
+        }
+
+        if (group.getNodeId() != null) {
+            com.admin.common.dto.NodeUpdateDto nodeUpdateDto = new com.admin.common.dto.NodeUpdateDto();
+            nodeUpdateDto.setId(group.getNodeId());
+            nodeUpdateDto.setName(dto.getName());
+            nodeUpdateDto.setIp(dto.getEntryIp());
+            nodeUpdateDto.setServerIp(dto.getServerIp());
+            nodeUpdateDto.setPortSta(dto.getPortSta() != null ? dto.getPortSta() : 1000);
+            nodeUpdateDto.setPortEnd(dto.getPortEnd() != null ? dto.getPortEnd() : 65535);
+            R nodeResult = nodeService.updateNode(nodeUpdateDto);
+            if (nodeResult.getCode() != 0) {
+                return nodeResult;
+            }
+        }
+
+        group.setName(dto.getName());
+        if ("outbound".equals(group.getDirection())) {
+            group.setProtocol(dto.getProtocol() != null && !dto.getProtocol().isEmpty() ? dto.getProtocol() : "tls");
+        }
+        group.setShared(dto.isShared() ? 1 : 0);
+        group.setUpdatedTime(System.currentTimeMillis());
+        boolean result = this.updateById(group);
+        return result ? R.ok(SUCCESS_UPDATE_MSG) : R.err(ERROR_UPDATE_FAILED);
+    }
+
+    @Override
+    @Transactional
+    public R deleteUserDeviceGroup(Integer userId, Long id) {
+        DeviceGroup group = findOwnedGroupOrNull(userId, id);
+        if (group == null) {
+            return R.err("设备组不存在或无权限操作");
+        }
+        return doDeleteGroup(group);
+    }
+
+    @Override
+    public R getMyInstallCommand(Integer userId, Long groupId) {
+        DeviceGroup group = findOwnedGroupOrNull(userId, groupId);
+        if (group == null || group.getNodeId() == null) {
+            return R.err("设备组不存在或无权限操作");
+        }
+        return nodeService.getInstallCommand(group.getNodeId());
+    }
+
+    @Override
+    public R resetMySecret(Integer userId, Long groupId) {
+        DeviceGroup group = findOwnedGroupOrNull(userId, groupId);
+        if (group == null || group.getNodeId() == null) {
+            return R.err("设备组不存在或无权限操作");
+        }
+        return nodeService.resetSecret(group.getNodeId());
     }
 
     @Override

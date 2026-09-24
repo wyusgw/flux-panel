@@ -26,7 +26,9 @@ public class UserUpdateDto {
     @Min(value = 0, message = "转发数量不能小于0")
     private Integer num;
 
-    @NotNull(message = "过期时间不能为空")
+    /**
+     * 到期时间（时间戳）。留空表示永不过期
+     */
     private Long expTime;
 
     @NotNull(message = "流量重置时间不能为空")

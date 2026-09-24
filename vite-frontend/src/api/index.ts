@@ -15,7 +15,7 @@ export interface LoginResponse {
 }
 
 export const login = (data: LoginData) => Network.post<LoginResponse>("/user/login", data);
-export const register = (data: { username: string; password: string; confirmPassword: string }) => Network.post("/user/register", data);
+export const register = (data: { username: string; password: string; confirmPassword: string; inviteCode?: string }) => Network.post("/user/register", data);
 
 // 用户CRUD操作 - 全部使用POST请求
 export const createUser = (data: any) => Network.post("/user/create", data);
@@ -37,6 +37,7 @@ export const updateUserGroup = (data: any) => Network.post("/user-group/update",
 export const deleteUserGroup = (id: number) => Network.post("/user-group/delete", { id });
 export const batchDeleteUserGroups = (ids: number[]) => Network.post("/user-group/batch-delete", { ids });
 export const reorderUserGroups = (groups: Array<{ id: number; sort: number }>) => Network.post("/user-group/reorder", { groups });
+export const getUserGroupNames = () => Network.post("/user-group/names");
 
 // 套餐CRUD操作 - 全部使用POST请求
 export const createPackagePlan = (data: any) => Network.post("/package/create", data);
@@ -61,6 +62,17 @@ export const batchCreateRedeemCodes = (data: any) => Network.post("/redeem-code/
 export const getRedeemCodeList = () => Network.post("/redeem-code/list");
 export const deleteRedeemCode = (id: number) => Network.post("/redeem-code/delete", { id });
 
+// 邀请码（注册码）相关操作 - 全部使用POST请求
+export const batchCreateInviteCodes = (data: { usesRemaining: number; codes: string[] }) => Network.post("/invite-code/batch-create", data);
+export const getInviteCodeList = () => Network.post("/invite-code/list");
+export const deleteInviteCode = (id: number) => Network.post("/invite-code/delete", { id });
+
+// 任务重试队列相关操作 - 全部使用POST请求
+export const getTaskQueueList = () => Network.post("/task-queue/list");
+export const getTaskQueueHealth = () => Network.post("/task-queue/health");
+export const retryTaskQueue = (id: number) => Network.post("/task-queue/retry", { id });
+export const deleteTaskQueue = (id: number) => Network.post("/task-queue/delete", { id });
+
 // 设备组CRUD操作 - 全部使用POST请求
 export const createDeviceGroup = (data: any) => Network.post("/device-group/create", data);
 export const getDeviceGroupList = () => Network.post("/device-group/list");
@@ -69,6 +81,14 @@ export const deleteDeviceGroup = (id: number) => Network.post("/device-group/del
 export const batchDeleteDeviceGroups = (ids: number[]) => Network.post("/device-group/batch-delete", { ids });
 export const reorderDeviceGroups = (groups: Array<{ id: number; sort: number }>) => Network.post("/device-group/reorder", { groups });
 export const updateDeviceGroupOfflineConfig = (groups: Array<{ id: number; offlineGraceEnabled: boolean; offlineGraceSeconds: number | null; offlineRetainEnabled: boolean; offlineRetainSeconds: number | null }>) => Network.post("/device-group/offline-config", { groups });
+
+// 单端隧道：普通用户自建设备组 - 全部使用POST请求
+export const createUserDeviceGroup = (data: any) => Network.post("/user-device-group/create", data);
+export const getMyDeviceGroupList = () => Network.post("/user-device-group/list");
+export const updateUserDeviceGroup = (data: any) => Network.post("/user-device-group/update", data);
+export const deleteUserDeviceGroup = (id: number) => Network.post("/user-device-group/delete", { id });
+export const getMyDeviceGroupInstallCommand = (id: number) => Network.post("/user-device-group/install", { id });
+export const resetMyDeviceGroupSecret = (id: number) => Network.post("/user-device-group/reset-secret", { id });
 
 // 节点CRUD操作 - 全部使用POST请求
 export const createNode = (data: any) => Network.post("/node/create", data);

@@ -27,21 +27,23 @@ import (
 
 // SystemInfo 系统信息结构体
 type SystemInfo struct {
-	Uptime           uint64  `json:"uptime"`            // 开机时间	（秒）
-	BytesReceived    uint64  `json:"bytes_received"`    // 接收字节数
-	BytesTransmitted uint64  `json:"bytes_transmitted"` // 发送字节数
-	CPUUsage         float64 `json:"cpu_usage"`         // CPU使用率（百分比）
-	CPUModel         string  `json:"cpu_model"`         // CPU型号
-	MemoryUsage      float64 `json:"memory_usage"`      // 内存使用率（百分比）
-	MemoryTotal      uint64  `json:"memory_total"`      // 内存总量（字节）
-	MemoryUsed       uint64  `json:"memory_used"`       // 内存已用（字节）
-	MemoryAvailable  uint64  `json:"memory_available"`  // 内存可用（字节）
-	StorageUsage     float64 `json:"storage_usage"`     // 根文件系统使用率（百分比）
-	StorageTotal     uint64  `json:"storage_total"`     // 存储总量（字节）
-	StorageUsed      uint64  `json:"storage_used"`      // 存储已用（字节）
-	StorageFree      uint64  `json:"storage_free"`      // 存储剩余（字节）
-	TCPConnections   int     `json:"tcp_connections"`   // 当前 TCP 连接数（ESTABLISHED 状态）
-	UDPConnections   int     `json:"udp_connections"`   // 当前 UDP 连接数（使用中的 UDP 套接字数）
+	Uptime                 uint64  `json:"uptime"`                   // 开机时间	（秒）
+	BytesReceived          uint64  `json:"bytes_received"`           // 接收字节数
+	BytesTransmitted       uint64  `json:"bytes_transmitted"`        // 发送字节数
+	CPUUsage               float64 `json:"cpu_usage"`                // CPU使用率（百分比）
+	CPUModel               string  `json:"cpu_model"`                // CPU型号
+	MemoryUsage            float64 `json:"memory_usage"`             // 内存使用率（百分比）
+	MemoryTotal            uint64  `json:"memory_total"`             // 内存总量（字节）
+	MemoryUsed             uint64  `json:"memory_used"`              // 内存已用（字节）
+	MemoryAvailable        uint64  `json:"memory_available"`         // 内存可用（字节）
+	StorageUsage           float64 `json:"storage_usage"`            // 根文件系统使用率（百分比）
+	StorageTotal           uint64  `json:"storage_total"`            // 存储总量（字节）
+	StorageUsed            uint64  `json:"storage_used"`             // 存储已用（字节）
+	StorageFree            uint64  `json:"storage_free"`             // 存储剩余（字节）
+	InboundTCPConnections  int     `json:"inbound_tcp_connections"`  // 接收（入站）TCP 连接数：客户端连进本机监听端口的 TCP 连接
+	OutboundTCPConnections int     `json:"outbound_tcp_connections"` // 发送（出站）TCP 连接数：本机主动向目标地址拨出的 TCP 连接
+	InboundUDPConnections  int     `json:"inbound_udp_connections"`  // 接收（入站）UDP 套接字数：本地绑定、未设置对端地址（等待接收数据）
+	OutboundUDPConnections int     `json:"outbound_udp_connections"` // 发送（出站）UDP 套接字数：已设置对端地址（本机主动发送数据）
 }
 
 // NetworkStats 网络统计信息
@@ -99,13 +101,22 @@ type TcpPingRequest struct {
 
 // TcpPingResponse TCP ping响应结构体
 type TcpPingResponse struct {
-	IP           string  `json:"ip"`
-	Port         int     `json:"port"`
-	Success      bool    `json:"success"`
-	AverageTime  float64 `json:"averageTime"` // 平均连接时间(ms)
-	PacketLoss   float64 `json:"packetLoss"`  // 连接失败率(%)
-	ErrorMessage string  `json:"errorMessage,omitempty"`
-	RequestId    string  `json:"requestId,omitempty"`
+	IP           string        `json:"ip"`
+	Port         int           `json:"port"`
+	Success      bool          `json:"success"`
+	AverageTime  float64       `json:"averageTime"` // 平均连接时间(ms)
+	PacketLoss   float64       `json:"packetLoss"`  // 连接失败率(%)
+	ErrorMessage string        `json:"errorMessage,omitempty"`
+	RequestId    string        `json:"requestId,omitempty"`
+	Attempts     []PingAttempt `json:"attempts,omitempty"` // 每一次连接尝试的明细，供面板逐行展示
+}
+
+// PingAttempt 单次 TCP 连接尝试的结果
+type PingAttempt struct {
+	Seq     int     `json:"seq"`             // 第几次尝试，从1开始
+	Success bool    `json:"success"`         // 该次连接是否成功
+	TimeMs  float64 `json:"timeMs"`          // 连接耗时(ms)，失败时为0
+	Error   string  `json:"error,omitempty"` // 失败原因
 }
 
 type WebSocketReporter struct {
@@ -331,38 +342,62 @@ func (w *WebSocketReporter) collectSystemInfo() SystemInfo {
 	cpuInfo := getCPUInfo()
 	memoryInfo := getMemoryInfo()
 	storageInfo := getStorageInfo()
-	tcpConns, udpConns := getConnectionStats()
+	inboundTCP, outboundTCP, inboundUDP, outboundUDP := getConnectionDirectionStats()
 
 	return SystemInfo{
-		Uptime:           getUptime(),
-		BytesReceived:    networkStats.BytesReceived,
-		BytesTransmitted: networkStats.BytesTransmitted,
-		CPUUsage:         cpuInfo.Usage,
-		CPUModel:         cpuInfo.Model,
-		MemoryUsage:      memoryInfo.Usage,
-		MemoryTotal:      memoryInfo.Total,
-		MemoryUsed:       memoryInfo.Used,
-		MemoryAvailable:  memoryInfo.Available,
-		StorageUsage:     storageInfo.Usage,
-		StorageTotal:     storageInfo.Total,
-		StorageUsed:      storageInfo.Used,
-		StorageFree:      storageInfo.Free,
-		TCPConnections:   tcpConns,
-		UDPConnections:   udpConns,
+		Uptime:                 getUptime(),
+		BytesReceived:          networkStats.BytesReceived,
+		BytesTransmitted:       networkStats.BytesTransmitted,
+		CPUUsage:               cpuInfo.Usage,
+		CPUModel:               cpuInfo.Model,
+		MemoryUsage:            memoryInfo.Usage,
+		MemoryTotal:            memoryInfo.Total,
+		MemoryUsed:             memoryInfo.Used,
+		MemoryAvailable:        memoryInfo.Available,
+		StorageUsage:           storageInfo.Usage,
+		StorageTotal:           storageInfo.Total,
+		StorageUsed:            storageInfo.Used,
+		StorageFree:            storageInfo.Free,
+		InboundTCPConnections:  inboundTCP,
+		OutboundTCPConnections: outboundTCP,
+		InboundUDPConnections:  inboundUDP,
+		OutboundUDPConnections: outboundUDP,
 	}
 }
 
-// getConnectionStats 统计当前 TCP（ESTABLISHED 状态）与 UDP 连接数，供节点状态页"点击上/下行"展示
-func getConnectionStats() (tcpCount int, udpCount int) {
+// getConnectionDirectionStats 按协议+方向统计当前连接数，供节点状态页"点击上/下行"展示：
+// 接收（入站）＝客户端连接到本机监听端口的连接（TCP 本地端口命中某个 LISTEN 端口）；
+// 发送（出站）＝本机主动向目标地址拨出的连接（TCP 本地端口是临时端口，不在监听端口集合里）。
+// UDP 是无连接协议，这里用一个近似规则：未设置对端地址的套接字视为监听中接收数据（入站），
+// 已设置对端地址的视为本机主动发送数据的出站套接字。
+func getConnectionDirectionStats() (inboundTCP int, outboundTCP int, inboundUDP int, outboundUDP int) {
 	if tcpConns, err := psnet.Connections("tcp"); err == nil {
+		listenPorts := make(map[uint32]struct{})
 		for _, c := range tcpConns {
-			if c.Status == "ESTABLISHED" {
-				tcpCount++
+			if c.Status == "LISTEN" {
+				listenPorts[c.Laddr.Port] = struct{}{}
+			}
+		}
+		for _, c := range tcpConns {
+			if c.Status != "ESTABLISHED" {
+				continue
+			}
+			if _, isListenPort := listenPorts[c.Laddr.Port]; isListenPort {
+				inboundTCP++
+			} else {
+				outboundTCP++
 			}
 		}
 	}
+
 	if udpConns, err := psnet.Connections("udp"); err == nil {
-		udpCount = len(udpConns)
+		for _, c := range udpConns {
+			if c.Raddr.Port == 0 {
+				inboundUDP++
+			} else {
+				outboundUDP++
+			}
+		}
 	}
 	return
 }
@@ -1249,12 +1284,13 @@ func (w *WebSocketReporter) handleTcpPing(data interface{}) (TcpPingResponse, er
 	}
 
 	// 执行TCP ping操作
-	avgTime, packetLoss, err := tcpPingHost(req.IP, req.Port, req.Count, req.Timeout)
+	avgTime, packetLoss, attempts, err := tcpPingHost(req.IP, req.Port, req.Count, req.Timeout)
 
 	response := TcpPingResponse{
 		IP:        req.IP,
 		Port:      req.Port,
 		RequestId: req.RequestId,
+		Attempts:  attempts,
 	}
 
 	if err != nil {
@@ -1269,10 +1305,11 @@ func (w *WebSocketReporter) handleTcpPing(data interface{}) (TcpPingResponse, er
 	return response, nil
 }
 
-// tcpPingHost 执行TCP连接测试，返回平均连接时间和失败率
-func tcpPingHost(ip string, port int, count int, timeoutMs int) (float64, float64, error) {
+// tcpPingHost 执行TCP连接测试，返回平均连接时间、失败率，以及每一次连接尝试的明细
+func tcpPingHost(ip string, port int, count int, timeoutMs int) (float64, float64, []PingAttempt, error) {
 	var totalTime float64
 	var successCount int
+	attempts := make([]PingAttempt, 0, count)
 
 	timeout := time.Duration(timeoutMs) * time.Millisecond
 
@@ -1292,10 +1329,10 @@ func tcpPingHost(ip string, port int, count int, timeoutMs int) (float64, float6
 		dnsDuration := time.Since(dnsStart)
 
 		if err != nil {
-			return 0, 100.0, fmt.Errorf("DNS解析失败: %v", err)
+			return 0, 100.0, nil, fmt.Errorf("DNS解析失败: %v", err)
 		}
 		if len(addrs) == 0 {
-			return 0, 100.0, fmt.Errorf("DNS解析未返回任何IP地址")
+			return 0, 100.0, nil, fmt.Errorf("DNS解析未返回任何IP地址")
 		}
 
 		fmt.Printf("DNS解析完成 (%.2fms)，解析到 %d 个IP: %v\n",
@@ -1315,14 +1352,17 @@ func tcpPingHost(ip string, port int, count int, timeoutMs int) (float64, float6
 		conn, err := net.DialTimeout("tcp", target, timeout)
 
 		elapsed := time.Since(start)
+		elapsedMs := elapsed.Seconds() * 1000
 
 		if err != nil {
-			fmt.Printf("  第%d次连接失败: %v (%.2fms)\n", i+1, err, elapsed.Seconds()*1000)
+			fmt.Printf("  第%d次连接失败: %v (%.2fms)\n", i+1, err, elapsedMs)
+			attempts = append(attempts, PingAttempt{Seq: i + 1, Success: false, Error: err.Error()})
 		} else {
-			fmt.Printf("  第%d次连接成功: %.2fms\n", i+1, elapsed.Seconds()*1000)
+			fmt.Printf("  第%d次连接成功: %.2fms\n", i+1, elapsedMs)
 			conn.Close()
-			totalTime += elapsed.Seconds() * 1000 // 转换为毫秒
+			totalTime += elapsedMs
 			successCount++
+			attempts = append(attempts, PingAttempt{Seq: i + 1, Success: true, TimeMs: elapsedMs})
 		}
 
 		// 如果不是最后一次，等待一下再进行下次测试
@@ -1332,7 +1372,7 @@ func tcpPingHost(ip string, port int, count int, timeoutMs int) (float64, float6
 	}
 
 	if successCount == 0 {
-		return 0, 100.0, fmt.Errorf("所有TCP连接尝试都失败")
+		return 0, 100.0, attempts, fmt.Errorf("所有TCP连接尝试都失败")
 	}
 
 	avgTime := totalTime / float64(successCount)
@@ -1340,7 +1380,7 @@ func tcpPingHost(ip string, port int, count int, timeoutMs int) (float64, float6
 
 	fmt.Printf("TCP ping完成: 平均连接时间 %.2fms，失败率 %.1f%%\n", avgTime, packetLoss)
 
-	return avgTime, packetLoss, nil
+	return avgTime, packetLoss, attempts, nil
 }
 
 // isValidHostname 验证主机名格式

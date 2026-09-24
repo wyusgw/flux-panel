@@ -60,6 +60,15 @@ export const primaryNavItems: NavItem[] = [
     )
   },
   {
+    path: '/single-tunnel',
+    label: '单端隧道',
+    icon: (
+      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+        <path fillRule="evenodd" d="M12.586 4.586a2 2 0 112.828 2.828l-3 3a2 2 0 01-2.828 0 1 1 0 00-1.414 1.414 4 4 0 005.656 0l3-3a4 4 0 00-5.656-5.656l-1.5 1.5a1 1 0 101.414 1.414l1.5-1.5zm-5 5a2 2 0 012.828 0 1 1 0 101.414-1.414 4 4 0 00-5.656 0l-3 3a4 4 0 105.656 5.656l1.5-1.5a1 1 0 10-1.414-1.414l-1.5 1.5a2 2 0 11-2.828-2.828l3-3z" clipRule="evenodd" />
+      </svg>
+    )
+  },
+  {
     path: '/node',
     label: '节点状态',
     icon: (
@@ -163,12 +172,33 @@ export const managementNavItems: NavItem[] = [
     )
   },
   {
+    path: '/invitecode',
+    label: '邀请码管理',
+    adminOnly: true,
+    icon: (
+      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+        <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z" />
+        <path fillRule="evenodd" d="M14.5 2a1 1 0 011 1v1.5H17a1 1 0 110 2h-1.5V8a1 1 0 11-2 0V6.5H12a1 1 0 110-2h1.5V3a1 1 0 011-1z" clipRule="evenodd" />
+      </svg>
+    )
+  },
+  {
     path: '/order-management',
     label: '订单管理',
     adminOnly: true,
     icon: (
       <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
         <path fillRule="evenodd" d="M4 2a2 2 0 00-2 2v13a1 1 0 001.5.868L5 17l1.5.868a1 1 0 001 0L9 17l1.5.868a1 1 0 001 0L13 17l1.5.868A1 1 0 0016 17V4a2 2 0 00-2-2H4zm2 5a1 1 0 000 2h6a1 1 0 100-2H6zm0 4a1 1 0 100 2h4a1 1 0 100-2H6z" clipRule="evenodd" />
+      </svg>
+    )
+  },
+  {
+    path: '/task-queue',
+    label: '队列监控',
+    adminOnly: true,
+    icon: (
+      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+        <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
       </svg>
     )
   }

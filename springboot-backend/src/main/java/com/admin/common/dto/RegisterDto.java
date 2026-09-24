@@ -18,4 +18,9 @@ public class RegisterDto {
 
     @NotBlank(message = "确认密码不能为空")
     private String confirmPassword;
+
+    /**
+     * 邀请码（是否必填取决于站点设置里的"邀请码注册策略" invite_register_policy）
+     */
+    private String inviteCode;
 }

@@ -938,3 +938,104 @@ ALTER TABLE `user_tunnel`
   MODIFY `flow` bigint(20) DEFAULT NULL,
   MODIFY `flow_reset_time` bigint(20) DEFAULT NULL,
   MODIFY `exp_time` bigint(20) DEFAULT NULL;
+
+-- 创建 invite_code 表（如果不存在）：邀请码/注册码，配合站点设置里的 invite_register_policy 使用
+CREATE TABLE IF NOT EXISTS `invite_code` (
+  `id` int(10) NOT NULL AUTO_INCREMENT,
+  `code` varchar(100) NOT NULL,
+  `uses_remaining` int(10) NOT NULL DEFAULT 1,
+  `created_time` bigint(20) NOT NULL,
+  `updated_time` bigint(20) DEFAULT NULL,
+  `status` int(10) NOT NULL DEFAULT 1,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `unique_invite_code` (`code`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- user.exp_time 允许为空：支持新增/编辑用户时把过期时间留空表示"永不过期"
+ALTER TABLE `user` MODIFY `exp_time` bigint(20) DEFAULT NULL;
+
+-- 创建通用任务重试队列 task_queue / task_queue_node（如果不存在）：
+-- 任务类型化的异步重试队列，取代原先只服务转发同步的 forward_sync_queue，
+-- 目前接入了 FORWARD_SYNC（转发同步）与 TELEGRAM_NOTIFY（Telegram 通知发送）两种任务类型
+CREATE TABLE IF NOT EXISTS `task_queue` (
+  `id` int(10) NOT NULL AUTO_INCREMENT,
+  `task_type` varchar(50) NOT NULL,
+  `dedup_key` varchar(100) DEFAULT NULL,
+  `payload` text,
+  `status` varchar(20) NOT NULL DEFAULT 'PENDING',
+  `retry_count` int(10) NOT NULL DEFAULT 0,
+  `last_error` varchar(500) DEFAULT NULL,
+  `created_time` bigint(20) NOT NULL,
+  `updated_time` bigint(20) NOT NULL,
+  `completed_time` bigint(20) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `unique_task_queue_type_dedup` (`task_type`,`dedup_key`),
+  KEY `idx_task_queue_status` (`status`,`completed_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS `task_queue_node` (
+  `id` int(10) NOT NULL AUTO_INCREMENT,
+  `task_queue_id` bigint(20) NOT NULL,
+  `node_id` bigint(20) NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_task_queue_node_task` (`task_queue_id`),
+  KEY `idx_task_queue_node_node` (`node_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- task_queue 表在本次更新之前已存在时（上一版 update.sql 已跑过），为其补上 status/completed_time 字段
+SET @sql = (
+  SELECT IF(
+    EXISTS (
+      SELECT 1
+      FROM information_schema.COLUMNS
+      WHERE table_schema = DATABASE()
+        AND table_name = 'task_queue'
+        AND column_name = 'status'
+    ),
+    'SELECT "Column `status` already exists in `task_queue`";',
+    'ALTER TABLE `task_queue` ADD COLUMN `status` varchar(20) NOT NULL DEFAULT ''PENDING'' AFTER `payload`, ADD COLUMN `completed_time` bigint(20) DEFAULT NULL AFTER `updated_time`, ADD KEY `idx_task_queue_status` (`status`,`completed_time`);'
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- forward_sync_queue 已被 task_queue 取代（本次更新一并引入，未见于早期版本），此前若已执行过
+-- 上一版 update.sql 创建过该表，这里清理掉，避免和新的通用队列表混淆
+DROP TABLE IF EXISTS `forward_sync_queue`;
+
+-- device_group 表：添加 protocol 字段（如果不存在），出口/入口＋出口设备组用来配置出口协议类型
+SET @sql = (
+  SELECT IF(
+    EXISTS (
+      SELECT 1
+      FROM information_schema.COLUMNS
+      WHERE table_schema = DATABASE()
+        AND table_name = 'device_group'
+        AND column_name = 'protocol'
+    ),
+    'SELECT "Column `protocol` already exists in `device_group`";',
+    'ALTER TABLE `device_group` ADD COLUMN `protocol` varchar(20) NOT NULL DEFAULT ''tls'' AFTER `direction`;'
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- device_group 表：添加 owner_user_id / shared 字段（如果不存在），用于"单端隧道"用户自建设备组
+SET @sql = (
+  SELECT IF(
+    EXISTS (
+      SELECT 1
+      FROM information_schema.COLUMNS
+      WHERE table_schema = DATABASE()
+        AND table_name = 'device_group'
+        AND column_name = 'owner_user_id'
+    ),
+    'SELECT "Column `owner_user_id` already exists in `device_group`";',
+    'ALTER TABLE `device_group` ADD COLUMN `owner_user_id` bigint(20) DEFAULT NULL AFTER `user_group_id`, ADD COLUMN `shared` tinyint(1) NOT NULL DEFAULT 0 AFTER `owner_user_id`;'
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;

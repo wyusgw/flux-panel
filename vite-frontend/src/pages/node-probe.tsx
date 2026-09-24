@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@heroui/button';
 import axios from 'axios';
-import { getDeviceGroupList, getNodeList, getUserGroupList } from '@/api';
+import { getDeviceGroupList, getNodeList, getUserGroupNames } from '@/api';
 import { ThemeSwitch } from '@/components/theme-switch';
 import { isAdmin } from '@/utils/auth';
 import 'flag-icons/css/flag-icons.min.css';
@@ -16,7 +16,8 @@ type Node = {
     memoryUsage: number; memoryTotal?: number; memoryUsed?: number; memoryAvailable?: number;
     storageUsage: number; storageTotal?: number; storageUsed?: number; storageFree?: number;
     uploadTraffic: number; downloadTraffic: number; uploadSpeed: number; downloadSpeed: number;
-    tcpConnections?: number; udpConnections?: number;
+    inboundTcpConnections?: number; outboundTcpConnections?: number;
+    inboundUdpConnections?: number; outboundUdpConnections?: number;
     uptime: number;
   } | null;
 };
@@ -62,7 +63,7 @@ export default function NodeProbePage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [nodeResponse, groupResponse, userGroupResponse] = await Promise.all([getNodeList(), getDeviceGroupList(), getUserGroupList()]);
+      const [nodeResponse, groupResponse, userGroupResponse] = await Promise.all([getNodeList(), getDeviceGroupList(), getUserGroupNames()]);
       const deviceGroups: DeviceGroup[] = groupResponse.code === 0 ? (groupResponse.data || []) : [];
       const nodesById = new Map<number, Node>();
       if (nodeResponse.code === 0) (nodeResponse.data || []).forEach((node: Node) => nodesById.set(node.id, node));
@@ -135,8 +136,10 @@ export default function NodeProbePage() {
                 uploadTraffic: upload, downloadTraffic: download,
                 uploadSpeed: elapsed > 0 ? Math.max(0, (upload - (node.systemInfo?.uploadTraffic || upload)) / elapsed) : 0,
                 downloadSpeed: elapsed > 0 ? Math.max(0, (download - (node.systemInfo?.downloadTraffic || download)) / elapsed) : 0,
-                tcpConnections: info.tcp_connections !== undefined ? Number(info.tcp_connections) : undefined,
-                udpConnections: info.udp_connections !== undefined ? Number(info.udp_connections) : undefined,
+                inboundTcpConnections: info.inbound_tcp_connections !== undefined ? Number(info.inbound_tcp_connections) : undefined,
+                outboundTcpConnections: info.outbound_tcp_connections !== undefined ? Number(info.outbound_tcp_connections) : undefined,
+                inboundUdpConnections: info.inbound_udp_connections !== undefined ? Number(info.inbound_udp_connections) : undefined,
+                outboundUdpConnections: info.outbound_udp_connections !== undefined ? Number(info.outbound_udp_connections) : undefined,
                 uptime
               }
             };
@@ -234,11 +237,18 @@ export default function NodeProbePage() {
                               <PopRow>状态：{node.connectionStatus === 'online' ? '在线' : '离线'}</PopRow>
                             </>
                           );
-                          const connContent = (
+                          const sendConnContent = (
                             <>
-                              <PopRow><b>当前连接数</b></PopRow>
-                              <PopRow>TCP：{node.systemInfo?.tcpConnections ?? '—'}</PopRow>
-                              <PopRow>UDP：{node.systemInfo?.udpConnections ?? '—'}</PopRow>
+                              <PopRow><b>发送当前连接数</b></PopRow>
+                              <PopRow>TCP：{node.systemInfo?.outboundTcpConnections ?? '—'}</PopRow>
+                              <PopRow>UDP：{node.systemInfo?.outboundUdpConnections ?? '—'}</PopRow>
+                            </>
+                          );
+                          const receiveConnContent = (
+                            <>
+                              <PopRow><b>接收当前连接数</b></PopRow>
+                              <PopRow>TCP：{node.systemInfo?.inboundTcpConnections ?? '—'}</PopRow>
+                              <PopRow>UDP：{node.systemInfo?.inboundUdpConnections ?? '—'}</PopRow>
                             </>
                           );
                           const cpuContent = (
@@ -276,8 +286,8 @@ export default function NodeProbePage() {
                               </td>
                               <td><RegionCell code={node.ip ? regionCodes[node.ip] : undefined} /></td>
                               <td><RegionCell /></td>
-                              <td className="probe-clickable" {...detailHandlers(`conn-${node.id}`, connContent)}>{formatSpeed(node.systemInfo?.uploadSpeed)}</td>
-                              <td className="probe-clickable" {...detailHandlers(`conn-${node.id}`, connContent)}>{formatSpeed(node.systemInfo?.downloadSpeed)}</td>
+                              <td className="probe-clickable" {...detailHandlers(`conn-recv-${node.id}`, receiveConnContent)}>{formatSpeed(node.systemInfo?.uploadSpeed)}</td>
+                              <td className="probe-clickable" {...detailHandlers(`conn-send-${node.id}`, sendConnContent)}>{formatSpeed(node.systemInfo?.downloadSpeed)}</td>
                               <td className="probe-uptime">{node.systemInfo ? formatUptime(node.systemInfo.uptime) : ''}</td>
                               <td className="probe-pair"><span>{formatBytes(node.systemInfo?.uploadTraffic)}↑</span><span>{formatBytes(node.systemInfo?.downloadTraffic)}↓</span></td>
                               <td>

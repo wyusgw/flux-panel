@@ -5,11 +5,14 @@ import com.admin.entity.Node;
 import com.admin.entity.User;
 import com.admin.entity.ViteConfig;
 import com.admin.service.DeviceGroupService;
+import com.admin.service.TaskQueueService;
 import com.admin.service.UserService;
 import com.admin.service.ViteConfigService;
 import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Component;
 
 import javax.annotation.Resource;
@@ -35,6 +38,10 @@ public class NotificationUtil {
     @Resource
     private ViteConfigService viteConfigService;
 
+    @Resource
+    @Lazy
+    private TaskQueueService taskQueueService;
+
     /**
      * 充值成功通知
      */
@@ -46,7 +53,7 @@ public class NotificationUtil {
             if (isBlank(token)) return;
 
             String text = String.format("充值成功\n金额：￥%s\n当前余额：￥%s", amount.toPlainString(), newBalance.toPlainString());
-            TelegramBotUtil.sendMessage(token, user.getTelegramChatId(), text);
+            sendWithRetry(token, user.getTelegramChatId(), text);
         } catch (Exception e) {
             log.warn("发送充值通知失败: {}", e.getMessage());
         }
@@ -76,7 +83,7 @@ public class NotificationUtil {
             for (User candidate : candidates) {
                 if (isBlank(candidate.getTelegramChatId())) continue;
                 if (!shouldNotifyDevice(candidate, nodeGroupIds)) continue;
-                TelegramBotUtil.sendMessage(token, candidate.getTelegramChatId(), text);
+                sendWithRetry(token, candidate.getTelegramChatId(), text);
             }
 
             // 管理员无条件接收全部设备上下线通知，不受各自 notify_device_mode 偏好限制
@@ -85,7 +92,7 @@ public class NotificationUtil {
                     .isNotNull("telegram_chat_id"));
             for (User admin : admins) {
                 if (isBlank(admin.getTelegramChatId())) continue;
-                TelegramBotUtil.sendMessage(token, admin.getTelegramChatId(), "[管理员通知] " + text);
+                sendWithRetry(token, admin.getTelegramChatId(), "[管理员通知] " + text);
             }
         } catch (Exception e) {
             log.warn("发送设备状态通知失败: {}", e.getMessage());
@@ -101,7 +108,7 @@ public class NotificationUtil {
             String token = getConfigValue("telegram_bot_token");
             if (isBlank(token)) return;
             String text = String.format("自动续费成功\n扣款金额：￥%s", amount.toPlainString());
-            TelegramBotUtil.sendMessage(token, user.getTelegramChatId(), text);
+            sendWithRetry(token, user.getTelegramChatId(), text);
         } catch (Exception e) {
             log.warn("发送自动续费成功通知失败: {}", e.getMessage());
         }
@@ -116,7 +123,7 @@ public class NotificationUtil {
             String token = getConfigValue("telegram_bot_token");
             if (isBlank(token)) return;
             String text = "自动续费失败\n原因：" + (isBlank(reason) ? "未知错误" : reason);
-            TelegramBotUtil.sendMessage(token, user.getTelegramChatId(), text);
+            sendWithRetry(token, user.getTelegramChatId(), text);
         } catch (Exception e) {
             log.warn("发送自动续费失败通知失败: {}", e.getMessage());
         }
@@ -133,7 +140,7 @@ public class NotificationUtil {
             String text = diffDays <= 1
                     ? "您的套餐将于明天到期，请及时续费"
                     : String.format("您的套餐将于%d天后到期，请及时续费", diffDays);
-            TelegramBotUtil.sendMessage(token, user.getTelegramChatId(), text);
+            sendWithRetry(token, user.getTelegramChatId(), text);
         } catch (Exception e) {
             log.warn("发送到期提醒失败: {}", e.getMessage());
         }
@@ -148,7 +155,7 @@ public class NotificationUtil {
             String token = getConfigValue("telegram_bot_token");
             if (isBlank(token)) return;
             String text = String.format("您的套餐流量已使用 %.0f%%，即将用尽，请留意", usedPercent);
-            TelegramBotUtil.sendMessage(token, user.getTelegramChatId(), text);
+            sendWithRetry(token, user.getTelegramChatId(), text);
         } catch (Exception e) {
             log.warn("发送流量提醒失败: {}", e.getMessage());
         }
@@ -183,6 +190,24 @@ public class NotificationUtil {
             return JSON.parseArray(json, Long.class);
         } catch (Exception e) {
             return Collections.emptyList();
+        }
+    }
+
+    /**
+     * 发送 Telegram 通知，失败时登记进通用任务队列（task_type=TELEGRAM_NOTIFY），
+     * 由定时兜底扫描自动重试，不阻塞/不影响当前调用方的主流程
+     */
+    private void sendWithRetry(String token, String chatId, String text) {
+        boolean ok = TelegramBotUtil.sendMessage(token, chatId, text);
+        if (ok) return;
+        try {
+            JSONObject payload = new JSONObject();
+            payload.put("chatId", chatId);
+            payload.put("text", text);
+            payload.put("summary", "Telegram 通知：" + (text.length() > 40 ? text.substring(0, 40) + "..." : text));
+            taskQueueService.enqueue("TELEGRAM_NOTIFY", null, payload.toJSONString(), Collections.emptyList(), "首次发送失败");
+        } catch (Exception e) {
+            log.warn("登记 Telegram 通知重试任务失败: {}", e.getMessage());
         }
     }
 

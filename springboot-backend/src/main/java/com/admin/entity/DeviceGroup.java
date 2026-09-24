@@ -37,9 +37,24 @@ public class DeviceGroup extends BaseEntity {
     private String direction;
 
     /**
+     * 出口协议类型（TLS/WSS/TCP/MTLS/MWSS/MTCP），仅 direction 为 outbound/both 时有意义
+     */
+    private String protocol;
+
+    /**
      * 可见用户组ID（为空表示所有用户可见）
      */
     private Long userGroupId;
+
+    /**
+     * 单端隧道：用户自建设备组的拥有者用户ID；管理员建立的设备组此字段为空
+     */
+    private Long ownerUserId;
+
+    /**
+     * 仅 ownerUserId 非空时有意义：0-仅拥有者自己可用，1-开放给所有用户在添加转发规则时选用
+     */
+    private Integer shared;
 
     /**
      * 流量倍率

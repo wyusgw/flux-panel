@@ -65,7 +65,10 @@ CREATE TABLE `device_group` (
   `name` varchar(200) NOT NULL,
   `node_id` bigint(20) DEFAULT NULL COMMENT '链式出口设备组（direction=chain）没有自己的物理节点，此字段为空',
   `direction` varchar(20) NOT NULL DEFAULT 'inbound',
+  `protocol` varchar(20) NOT NULL DEFAULT 'tls' COMMENT '出口协议类型（TLS/WSS/TCP/MTLS/MWSS/MTCP），仅出口/入口＋出口设备组用到',
   `user_group_id` bigint(20) DEFAULT NULL,
+  `owner_user_id` bigint(20) DEFAULT NULL COMMENT '单端隧道用户自建设备组的拥有者用户ID；管理员建立的设备组此字段为空',
+  `shared` tinyint(1) NOT NULL DEFAULT '0' COMMENT '仅 owner_user_id 非空时有意义：0-仅拥有者自己可用，1-开放给所有用户在添加转发规则时选用',
   `ratio` decimal(10,2) NOT NULL DEFAULT '1.00',
   `hide_in_probe` int(10) NOT NULL DEFAULT '0',
   `remark` varchar(500) DEFAULT NULL,
@@ -218,7 +221,7 @@ CREATE TABLE `user` (
   `user` varchar(100) NOT NULL,
   `pwd` varchar(100) NOT NULL,
   `role_id` int(10) NOT NULL,
-  `exp_time` bigint(20) NOT NULL,
+  `exp_time` bigint(20) DEFAULT NULL,
   `flow` bigint(20) NOT NULL,
   `in_flow` bigint(20) NOT NULL DEFAULT '0',
   `out_flow` bigint(20) NOT NULL DEFAULT '0',
@@ -327,6 +330,57 @@ CREATE TABLE `redeem_code` (
   `created_time` bigint(20) NOT NULL,
   `updated_time` bigint(20) DEFAULT NULL,
   `status` int(10) NOT NULL DEFAULT '1'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- --------------------------------------------------------
+
+--
+-- 表的结构 `invite_code`
+--
+
+CREATE TABLE `invite_code` (
+  `id` int(10) NOT NULL,
+  `code` varchar(100) NOT NULL,
+  `uses_remaining` int(10) NOT NULL DEFAULT '1',
+  `created_time` bigint(20) NOT NULL,
+  `updated_time` bigint(20) DEFAULT NULL,
+  `status` int(10) NOT NULL DEFAULT '1'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- --------------------------------------------------------
+
+--
+-- 表的结构 `task_queue`
+-- 通用异步任务重试队列：任务（如转发同步、Telegram 通知发送）失败时登记在这里，
+-- 由对应的 TaskHandler 重试；重试成功后状态转为 SUCCESS 并保留 24 小时供查看（由定时任务清理），
+-- 仍失败则累加 retry_count 并记录 last_error，状态保持 PENDING，等待下一次触发（节点上线、定时兜底扫描）再试。
+-- payload 为任务自描述的 JSON，dedup_key 配合 task_type 去重（同一任务类型+key 只保留一条记录）
+--
+
+CREATE TABLE `task_queue` (
+  `id` int(10) NOT NULL,
+  `task_type` varchar(50) NOT NULL,
+  `dedup_key` varchar(100) DEFAULT NULL,
+  `payload` text,
+  `status` varchar(20) NOT NULL DEFAULT 'PENDING',
+  `retry_count` int(10) NOT NULL DEFAULT '0',
+  `last_error` varchar(500) DEFAULT NULL,
+  `created_time` bigint(20) NOT NULL,
+  `updated_time` bigint(20) NOT NULL,
+  `completed_time` bigint(20) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- --------------------------------------------------------
+
+--
+-- 表的结构 `task_queue_node`
+-- task_queue 记录与节点的关联表：节点重新上线时，据此找出所有与该节点相关、待重试的任务
+--
+
+CREATE TABLE `task_queue_node` (
+  `id` int(10) NOT NULL,
+  `task_queue_id` bigint(20) NOT NULL,
+  `node_id` bigint(20) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- --------------------------------------------------------
@@ -475,6 +529,29 @@ ALTER TABLE `redeem_code`
   ADD UNIQUE KEY `unique_redeem_code` (`code`);
 
 --
+-- 表的索引 `invite_code`
+--
+ALTER TABLE `invite_code`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `unique_invite_code` (`code`);
+
+--
+-- 表的索引 `task_queue`
+--
+ALTER TABLE `task_queue`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `unique_task_queue_type_dedup` (`task_type`,`dedup_key`),
+  ADD KEY `idx_task_queue_status` (`status`,`completed_time`);
+
+--
+-- 表的索引 `task_queue_node`
+--
+ALTER TABLE `task_queue_node`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_task_queue_node_task` (`task_queue_id`),
+  ADD KEY `idx_task_queue_node_node` (`node_id`);
+
+--
 -- 在导出的表使用AUTO_INCREMENT
 --
 
@@ -572,6 +649,24 @@ ALTER TABLE `orders`
 -- 使用表AUTO_INCREMENT `redeem_code`
 --
 ALTER TABLE `redeem_code`
+  MODIFY `id` int(10) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=1;
+
+--
+-- 使用表AUTO_INCREMENT `invite_code`
+--
+ALTER TABLE `invite_code`
+  MODIFY `id` int(10) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=1;
+
+--
+-- 使用表AUTO_INCREMENT `task_queue`
+--
+ALTER TABLE `task_queue`
+  MODIFY `id` int(10) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=1;
+
+--
+-- 使用表AUTO_INCREMENT `task_queue_node`
+--
+ALTER TABLE `task_queue_node`
   MODIFY `id` int(10) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=1;
 COMMIT;
 

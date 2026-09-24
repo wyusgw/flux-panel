@@ -82,6 +82,10 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
     @Lazy
     private TunnelResolver tunnelResolver;
 
+    @Resource
+    @Lazy
+    private TaskQueueService taskQueueService;
+
 
     @Override
     public R createForward(ForwardDto forwardDto) {
@@ -136,9 +140,10 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         if (gostResult.getCode() != 0) {
             if (isNodeOfflineFailure(gostResult)) {
                 // 节点当前离线：规则本身正常保存，只是暂时无法把配置推送到节点，不应因此阻止创建。
-                // 面板没有节点重新上线后自动补推配置的机制，需要等节点上线后手动编辑并保存该规则来完成同步。
+                // 登记进同步重试队列，节点重新上线后会自动补推，无需再手动编辑保存。
                 log.warn("转发 {} 创建成功，但目标节点当前离线，配置暂未同步：{}", forward.getId(), gostResult.getMsg());
-                return okWithMsg("转发规则已创建，但目标节点当前离线，暂未同步到节点。节点上线后请重新编辑并保存该规则以完成同步");
+                enqueueForwardSyncTask(forward, tunnel, gostResult.getMsg());
+                return okWithMsg("转发规则已创建，但目标节点当前离线，已加入同步重试队列，节点上线后会自动补推配置");
             }
             this.removeById(forward.getId());
             return gostResult;
@@ -164,6 +169,24 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         R result = R.ok();
         result.setMsg(msg);
         return result;
+    }
+
+    /**
+     * 登记一条「转发同步」任务队列项：节点离线导致的 gost 配置推送失败时调用，
+     * dedupKey 用转发ID，节点重新上线或定时兜底扫描时会自动重试推送
+     */
+    private void enqueueForwardSyncTask(Forward forward, Tunnel tunnel, String error) {
+        List<Long> nodeIds = new ArrayList<>();
+        if (tunnel.getInNodeId() != null) {
+            nodeIds.add(tunnel.getInNodeId());
+        }
+        if (tunnel.getType() == TUNNEL_TYPE_TUNNEL_FORWARD && tunnel.getOutNodeId() != null) {
+            nodeIds.add(tunnel.getOutNodeId());
+        }
+        JSONObject payload = new JSONObject();
+        payload.put("forwardId", forward.getId());
+        payload.put("summary", "转发规则「" + forward.getName() + "」");
+        taskQueueService.enqueue("FORWARD_SYNC", String.valueOf(forward.getId()), payload.toJSONString(), nodeIds, error);
     }
 
     @Override
@@ -289,11 +312,15 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         if (gostResult.getCode() != 0) {
             if (isNodeOfflineFailure(gostResult)) {
                 // 节点当前离线：更新内容正常保存，只是暂时无法把配置推送到节点，不应因此阻止保存。
+                // 隧道未发生变化的情况下才登记重试队列（隧道变更+离线的场景更复杂，暂不自动重试，走原有手动兜底）。
                 log.warn("转发 {} 更新成功，但目标节点当前离线，配置暂未同步：{}", updatedForward.getId(), gostResult.getMsg());
                 updatedForward.setStatus(1);
                 boolean savedOffline = this.updateById(updatedForward);
+                if (savedOffline && !tunnelChanged) {
+                    enqueueForwardSyncTask(updatedForward, tunnel, gostResult.getMsg());
+                }
                 return savedOffline
-                        ? okWithMsg("端口转发已更新，但目标节点当前离线，暂未同步到节点。节点上线后请重新编辑并保存该规则以完成同步")
+                        ? okWithMsg("端口转发已更新，但目标节点当前离线，已加入同步重试队列，节点上线后会自动补推配置")
                         : R.err("端口转发更新失败");
             }
             return gostResult;
@@ -348,6 +375,7 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         // 7. 删除转发记录
         boolean result = this.removeById(id);
         if (result) {
+            taskQueueService.removeByTypeAndKey("FORWARD_SYNC", String.valueOf(id));
             return R.ok("端口转发删除成功");
         } else {
             return R.err("端口转发删除失败");
@@ -378,6 +406,7 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         // 3. 直接删除转发记录，跳过GOST服务删除
         boolean result = this.removeById(id);
         if (result) {
+            taskQueueService.removeByTypeAndKey("FORWARD_SYNC", String.valueOf(id));
             return R.ok("端口转发强制删除成功");
         } else {
             return R.err("端口转发强制删除失败");
@@ -530,7 +559,7 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
                     return R.err("无法解析目标地址: " + remoteAddress);
                 }
 
-                DiagnosisResult result = performTcpPingDiagnosis(inNode, targetIp, targetPort, "转发->目标");
+                DiagnosisResult result = performTcpPingDiagnosis(inNode, targetIp, targetPort, "转发->目标", "inbound", forward.getInDeviceGroupId());
                 results.add(result);
             }
         } else {
@@ -541,7 +570,7 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             }
 
             // 入口TCP ping出口（使用转发的出口端口）
-            DiagnosisResult inToOutResult = performTcpPingDiagnosis(inNode, outNode.getServerIp(), forward.getOutPort(), "入口->出口");
+            DiagnosisResult inToOutResult = performTcpPingDiagnosis(inNode, outNode.getServerIp(), forward.getOutPort(), "入口->出口", "inbound", forward.getInDeviceGroupId());
             results.add(inToOutResult);
 
             // 出口TCP ping目标
@@ -552,18 +581,26 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
                 if (targetIp == null || targetPort == -1) {
                     return R.err("无法解析目标地址: " + remoteAddress);
                 }
-                DiagnosisResult outToTargetResult = performTcpPingDiagnosis(outNode, targetIp, targetPort, "出口->目标");
+                DiagnosisResult outToTargetResult = performTcpPingDiagnosis(outNode, targetIp, targetPort, "出口->目标", "outbound", forward.getOutDeviceGroupId());
                 results.add(outToTargetResult);
             }
 
         }
 
         // 7. 构建诊断报告
+        long dispatchFailedCount = results.stream().filter(DiagnosisResult::isDispatchFailed).count();
+        long recoveredCount = results.stream().filter(DiagnosisResult::isRecovered).count();
+        Map<String, Object> dispatchStats = new HashMap<>();
+        dispatchStats.put("sent", results.size());
+        dispatchStats.put("failed", dispatchFailedCount);
+        dispatchStats.put("recovered", recoveredCount);
+
         Map<String, Object> diagnosisReport = new HashMap<>();
         diagnosisReport.put("forwardId", id);
         diagnosisReport.put("forwardName", forward.getName());
         diagnosisReport.put("tunnelType", tunnel.getType() == TUNNEL_TYPE_PORT_FORWARD ? "端口转发" : "隧道转发");
         diagnosisReport.put("results", results);
+        diagnosisReport.put("dispatchStats", dispatchStats);
         diagnosisReport.put("timestamp", System.currentTimeMillis());
 
         return R.ok(diagnosisReport);
@@ -708,7 +745,7 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
      * @param description 诊断描述
      * @return 诊断结果
      */
-    private DiagnosisResult performTcpPingDiagnosis(Node node, String targetIp, int port, String description) {
+    private DiagnosisResult performTcpPingDiagnosis(Node node, String targetIp, int port, String description, String leg, Long groupId) {
         try {
             // 构建TCP ping请求数据
             JSONObject tcpPingData = new JSONObject();
@@ -723,12 +760,16 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             DiagnosisResult result = new DiagnosisResult();
             result.setNodeId(node.getId());
             result.setNodeName(node.getName());
+            result.setGroupId(groupId);
+            result.setLeg(leg);
             result.setTargetIp(targetIp);
             result.setTargetPort(port);
             result.setDescription(description);
             result.setTimestamp(System.currentTimeMillis());
+            result.setRecovered(gostResult != null && "OK".equals(gostResult.getMsg()));
+            result.setDispatchFailed(!result.isRecovered() && isDispatchFailure(gostResult != null ? gostResult.getMsg() : null));
 
-            if (gostResult != null && "OK".equals(gostResult.getMsg())) {
+            if (result.isRecovered()) {
                 // 尝试解析TCP ping响应数据
                 try {
                     if (gostResult.getData() != null) {
@@ -736,6 +777,7 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
                         boolean success = tcpPingResponse.getBooleanValue("success");
 
                         result.setSuccess(success);
+                        result.setAttempts(parsePingAttempts(tcpPingResponse));
                         if (success) {
                             result.setMessage("TCP连接成功");
                             result.setAverageTime(tcpPingResponse.getDoubleValue("averageTime"));
@@ -771,6 +813,8 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             DiagnosisResult result = new DiagnosisResult();
             result.setNodeId(node.getId());
             result.setNodeName(node.getName());
+            result.setGroupId(groupId);
+            result.setLeg(leg);
             result.setTargetIp(targetIp);
             result.setTargetPort(port);
             result.setDescription(description);
@@ -779,8 +823,40 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             result.setTimestamp(System.currentTimeMillis());
             result.setAverageTime(-1.0);
             result.setPacketLoss(100.0);
+            result.setDispatchFailed(true);
             return result;
         }
+    }
+
+    /**
+     * 判断消息是否连节点都没能送达（节点离线/连接已断开/发送本身异常），
+     * 区别于"消息已送达节点，但等待响应超时"（不计入发送失败，也不计入回收成功）
+     */
+    private boolean isDispatchFailure(String msg) {
+        if (msg == null) return true;
+        return msg.contains("不在线") || msg.contains("连接已断开") || msg.startsWith("发送消息失败");
+    }
+
+    /**
+     * 解析 TCP ping 响应中的逐次连接尝试明细（attempts 字段），供前端逐行展示；
+     * 旧版节点 Agent 未返回该字段时返回空列表，前端回退为只显示汇总结果
+     */
+    private List<Map<String, Object>> parsePingAttempts(JSONObject tcpPingResponse) {
+        List<Map<String, Object>> attempts = new ArrayList<>();
+        com.alibaba.fastjson.JSONArray rawAttempts = tcpPingResponse.getJSONArray("attempts");
+        if (rawAttempts == null) {
+            return attempts;
+        }
+        for (int i = 0; i < rawAttempts.size(); i++) {
+            JSONObject attempt = rawAttempts.getJSONObject(i);
+            Map<String, Object> item = new HashMap<>();
+            item.put("seq", attempt.getIntValue("seq"));
+            item.put("success", attempt.getBooleanValue("success"));
+            item.put("timeMs", attempt.getDoubleValue("timeMs"));
+            item.put("error", attempt.getString("error"));
+            attempts.add(item);
+        }
+        return attempts;
     }
 
     /**
@@ -875,9 +951,20 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
     }
 
     /**
-     * 校验普通用户是否有权限使用该设备组（未绑定用户组则所有人可用）
+     * 校验普通用户是否有权限使用该设备组：
+     * 单端隧道用户自建设备组（ownerUserId 非空）——拥有者本人始终可用，其余用户仅当该设备组标记为公开共享才可用；
+     * 管理员建立的设备组——未绑定用户组则所有人可用，否则需与自身用户组一致
      */
     private R checkDeviceGroupVisibility(DeviceGroup group, Integer userId) {
+        if (group.getOwnerUserId() != null) {
+            if (group.getOwnerUserId().equals(userId.longValue())) {
+                return R.ok();
+            }
+            if (group.getShared() != null && group.getShared() == 1) {
+                return R.ok();
+            }
+            return R.err("无权限使用设备组：" + group.getName());
+        }
         if (group.getUserGroupId() == null) {
             return R.ok();
         }
@@ -1601,6 +1688,27 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         updateGostServices(forward, tunnel, null, nodeInfo, userTunnel);
     }
 
+    @Override
+    public R retrySyncForward(Long forwardId) {
+        Forward forward = this.getById(forwardId);
+        if (forward == null) {
+            return R.err("转发规则不存在（可能已被删除）");
+        }
+        Tunnel tunnel = tunnelResolver.resolveTunnel(forward);
+        if (tunnel == null) {
+            return R.err("隧道不存在");
+        }
+        if (tunnel.getStatus() != TUNNEL_STATUS_ACTIVE) {
+            return R.err("隧道已禁用");
+        }
+        UserTunnel userTunnel = tunnelResolver.resolveUserTunnel(forward.getUserId(), forward);
+        NodeInfo nodeInfo = getRequiredNodes(tunnel);
+        if (nodeInfo.isHasError()) {
+            return R.err(nodeInfo.getErrorMessage());
+        }
+        return updateGostServices(forward, tunnel, null, nodeInfo, userTunnel);
+    }
+
 
     // ========== 内部数据类 ==========
 
@@ -1699,6 +1807,10 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
     public static class DiagnosisResult {
         private Long nodeId;
         private String nodeName;
+        /** 该诊断段所属的设备组ID（旧版隧道模式无设备组概念时为空），供前端展示 GID */
+        private Long groupId;
+        /** inbound-入口诊断，outbound-出口诊断，供前端分区展示 */
+        private String leg;
         private String targetIp;
         private Integer targetPort;
         private String description;
@@ -1707,5 +1819,11 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         private double averageTime;
         private double packetLoss;
         private long timestamp;
+        /** 是否连消息都没能发送到节点（节点离线/连接已断开/发送异常），区别于"发送成功但目标不可达" */
+        private boolean dispatchFailed;
+        /** 是否成功收到节点回复（无论 ping 本身是否成功），用于统计"回收任务"数 */
+        private boolean recovered;
+        /** 每一次 TCP 连接尝试的明细：{seq, success, timeMs, error}，供前端逐行展示（类似 ping 输出） */
+        private List<Map<String, Object>> attempts;
     }
 }

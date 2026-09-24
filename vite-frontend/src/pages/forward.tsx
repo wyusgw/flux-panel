@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Card, CardBody, CardHeader } from "@heroui/card";
+import { Card, CardBody } from "@heroui/card";
 import { Button } from "@heroui/button";
 import { Input } from "@heroui/input";
 import { Textarea } from "@heroui/input";
@@ -8,7 +8,6 @@ import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter } from "@herou
 import { Table, TableHeader, TableColumn, TableBody, TableRow, TableCell } from "@heroui/table";
 import { Chip } from "@heroui/chip";
 import { Spinner } from "@heroui/spinner";
-import { Alert } from "@heroui/alert";
 import { Accordion, AccordionItem } from "@heroui/accordion";
 import { Tooltip } from "@heroui/tooltip";
 import toast from 'react-hot-toast';
@@ -134,6 +133,7 @@ interface DeviceGroupOption {
   ratio?: number;
   direction?: 'inbound' | 'outbound' | 'monitor' | 'both';
   node?: { status?: number };
+  ownerUserId?: number | null;
 }
 
 const isDeviceGroupOnline = (group?: DeviceGroupOption) => !!group?.nodeName && group.node?.status === 1;
@@ -144,20 +144,36 @@ interface AddressItem {
   copying: boolean;
 }
 
+interface PingAttempt {
+  seq: number;
+  success: boolean;
+  timeMs?: number;
+  error?: string;
+}
+
+interface DiagnosisResultItem {
+  success: boolean;
+  description: string;
+  nodeName: string;
+  nodeId?: string | number;
+  groupId?: number | null;
+  leg?: 'inbound' | 'outbound';
+  targetIp: string;
+  targetPort?: number;
+  message?: string;
+  averageTime?: number;
+  packetLoss?: number;
+  dispatchFailed?: boolean;
+  recovered?: boolean;
+  attempts?: PingAttempt[];
+}
+
 interface DiagnosisResult {
+  forwardId?: number;
   forwardName: string;
   timestamp: number;
-  results: Array<{
-    success: boolean;
-    description: string;
-    nodeName: string;
-    nodeId: string;
-    targetIp: string;
-    targetPort?: number;
-    message?: string;
-    averageTime?: number;
-    packetLoss?: number;
-  }>;
+  dispatchStats?: { sent: number; failed: number; recovered: number };
+  results: DiagnosisResultItem[];
 }
 
 export default function ForwardPage() {
@@ -195,13 +211,18 @@ export default function ForwardPage() {
     }
   });
 
+  // 桌面端侧边导航栏宽度（对应 admin.tsx 的 w-72），拖动条不能被拖到这块区域里，
+  // 否则会被侧边栏挡住/盖住导致完全看不见、也点不到（这是之前的 bug）
+  const SIDEBAR_WIDTH = 288;
+
   const clampRailPos = (x: number, y: number) => {
     const el = railRef.current;
     const w = el?.offsetWidth || 56;
     const h = el?.offsetHeight || 320;
-    const maxX = Math.max(4, window.innerWidth - w - 4);
+    const minX = SIDEBAR_WIDTH + 4;
+    const maxX = Math.max(minX, window.innerWidth - w - 4);
     const maxY = Math.max(4, window.innerHeight - h - 4);
-    return { x: Math.min(Math.max(4, x), maxX), y: Math.min(Math.max(4, y), maxY) };
+    return { x: Math.min(Math.max(minX, x), maxX), y: Math.min(Math.max(4, y), maxY) };
   };
 
   const handleRailDragStart = (e: React.PointerEvent) => {
@@ -231,6 +252,18 @@ export default function ForwardPage() {
     window.addEventListener('pointermove', handleMove);
     window.addEventListener('pointerup', handleUp);
   };
+
+  // 修复历史遗留问题：之前保存到 localStorage 的位置可能落在侧边栏区域（旧版本没有限制拖动范围），
+  // 页面加载后如果发现记住的位置越界，重新收回可见区域并覆盖保存
+  useEffect(() => {
+    if (!railPos) return;
+    const fixed = clampRailPos(railPos.x, railPos.y);
+    if (fixed.x !== railPos.x || fixed.y !== railPos.y) {
+      setRailPos(fixed);
+      try { localStorage.setItem('forward-rail-pos', JSON.stringify(fixed)); } catch {}
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // 搜索规则
   const [searchModalOpen, setSearchModalOpen] = useState(false);
@@ -785,17 +818,65 @@ export default function ForwardPage() {
     }
   };
 
-  // 获取连接质量
-  const getQualityDisplay = (averageTime?: number, packetLoss?: number) => {
-    if (averageTime === undefined || packetLoss === undefined) return null;
-    
-    if (averageTime < 30 && packetLoss === 0) return { text: '优秀', color: 'success' };
-    if (averageTime < 50 && packetLoss === 0) return { text: '很好', color: 'success' };
-    if (averageTime < 100 && packetLoss < 1) return { text: '良好', color: 'primary' };
-    if (averageTime < 150 && packetLoss < 2) return { text: '一般', color: 'warning' };
-    if (averageTime < 200 && packetLoss < 5) return { text: '较差', color: 'warning' };
-    return { text: '很差', color: 'danger' };
+  // 诊断结果里，某一段诊断的逐次连接尝试明细（类似 ping 输出，一行一次）；
+  // 旧版节点 Agent 未返回 attempts 明细时，回退显示汇总消息
+  const renderDiagnosisLines = (result: DiagnosisResultItem) => {
+    const addr = `${result.targetIp}${result.targetPort ? ':' + result.targetPort : ''}`;
+    if (result.attempts && result.attempts.length > 0) {
+      return (
+        <>
+          {result.attempts.map((attempt) => (
+            <div key={attempt.seq} className="font-mono text-xs text-default-400">
+              {attempt.success
+                ? `连接 ${attempt.seq}: 来自 ${addr} 时间=${attempt.timeMs?.toFixed(0)}ms`
+                : `连接 ${attempt.seq}: 来自 ${addr} 失败${attempt.error ? `（${attempt.error}）` : ''}`}
+            </div>
+          ))}
+          {result.recovered && result.success && (
+            <div className="text-xs text-default-500 pt-1">
+              平均延迟 {result.averageTime?.toFixed(0)}ms · 丢包 {result.packetLoss?.toFixed(0)}%
+            </div>
+          )}
+        </>
+      );
+    }
+    if (result.message) {
+      return <div className="text-xs text-default-400">{result.message}</div>;
+    }
+    return <div className="text-xs text-default-400">无数据</div>;
   };
+
+  // 入口诊断/出口诊断分区：每一段诊断渲染成一张卡片（名称 + GID），内容逐行展示连接明细
+  const renderDiagnosisLeg = (title: string, subtitle: string, results: DiagnosisResultItem[], emptyText: string) => (
+    <div>
+      <h3 className="text-sm font-semibold text-foreground mb-2">
+        {title} <span className="text-default-400 font-normal">({subtitle})</span>
+      </h3>
+      {results.length === 0 ? (
+        <div className="text-xs text-default-400 border border-default-200 rounded-lg px-4 py-3">{emptyText}</div>
+      ) : (
+        <div className="space-y-3">
+          {results.map((result, index) => {
+            const groupName = findDeviceGroup(result.groupId)?.name;
+            return (
+              <Card key={index} className="shadow-sm border border-default-200 overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-2.5 border-b border-default-100">
+                  <span className="font-semibold text-foreground truncate">{groupName || result.nodeName}</span>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {result.groupId != null && <Chip size="sm" variant="flat" color="primary">GID: {result.groupId}</Chip>}
+                    {!result.success && <Chip size="sm" variant="flat" color="danger">失败</Chip>}
+                  </div>
+                </div>
+                <div className="px-4 py-3 space-y-1">
+                  {renderDiagnosisLines(result)}
+                </div>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
 
   // 格式化流量
   const formatFlow = (value: number): string => {
@@ -1501,7 +1582,7 @@ export default function ForwardPage() {
                         onPress={() => setEntryMode('tunnel')}
                         className="flex-1"
                       >
-                        选择隧道（旧版）
+                        选择隧道
                       </Button>
                     </div>
 
@@ -1519,6 +1600,7 @@ export default function ForwardPage() {
                           isInvalid={!!errors.inDeviceGroupId}
                           errorMessage={errors.inDeviceGroupId}
                           variant="bordered"
+                          renderValue={(items) => items.map((item) => <div key={item.key}>{item.rendered}</div>)}
                         >
                           {deviceGroups.filter((group) => {
                             const direction = group.direction || 'inbound';
@@ -1529,20 +1611,11 @@ export default function ForwardPage() {
                                 <span className="font-medium">{group.name}</span>
                                 <Chip size="sm" variant="flat" color={isDeviceGroupOnline(group) ? 'success' : 'danger'}>{isDeviceGroupOnline(group) ? '在线' : '离线'}</Chip>
                                 <Chip size="sm" variant="flat" color="success">倍率 {group.ratio ?? 0}</Chip>
+                                {group.ownerUserId != null && <Chip size="sm" variant="flat" color="secondary">用户自带设备</Chip>}
                               </div>
                             </SelectItem>
                           ))}
                         </Select>
-                        {(() => {
-                          const inGroup = findDeviceGroup(form.inDeviceGroupId);
-                          return inGroup ? (
-                            <div className="flex items-center gap-1.5 flex-wrap -mt-2">
-                              <span className="text-sm font-medium">{inGroup.name}</span>
-                              <Chip size="sm" variant="flat" color={isDeviceGroupOnline(inGroup) ? 'success' : 'danger'}>{isDeviceGroupOnline(inGroup) ? '在线' : '离线'}</Chip>
-                              <Chip size="sm" variant="flat" color="success">倍率 {inGroup.ratio ?? 0}</Chip>
-                            </div>
-                          ) : null;
-                        })()}
 
                         <Select
                           size="sm"
@@ -1555,6 +1628,7 @@ export default function ForwardPage() {
                           }}
                           variant="bordered"
                           description="不选择出口时，流量将直接从入口转发至目标地址"
+                          renderValue={(items) => items.map((item) => <div key={item.key}>{item.rendered}</div>)}
                         >
                           {deviceGroups.filter((group) => {
                             const direction = group.direction || 'inbound';
@@ -1565,20 +1639,11 @@ export default function ForwardPage() {
                                 <span className="font-medium">{group.name}</span>
                                 <Chip size="sm" variant="flat" color={isDeviceGroupOnline(group) ? 'success' : 'danger'}>{isDeviceGroupOnline(group) ? '在线' : '离线'}</Chip>
                                 <Chip size="sm" variant="flat" color="success">倍率 {group.ratio ?? 0}</Chip>
+                                {group.ownerUserId != null && <Chip size="sm" variant="flat" color="secondary">用户自带设备</Chip>}
                               </div>
                             </SelectItem>
                           ))}
                         </Select>
-                        {(() => {
-                          const outGroup = findDeviceGroup(form.outDeviceGroupId);
-                          return outGroup ? (
-                            <div className="flex items-center gap-1.5 flex-wrap -mt-2">
-                              <span className="text-sm font-medium">{outGroup.name}</span>
-                              <Chip size="sm" variant="flat" color={isDeviceGroupOnline(outGroup) ? 'success' : 'danger'}>{isDeviceGroupOnline(outGroup) ? '在线' : '离线'}</Chip>
-                              <Chip size="sm" variant="flat" color="success">倍率 {outGroup.ratio ?? 0}</Chip>
-                            </div>
-                          ) : null;
-                        })()}
                       </>
                     ) : (
                       <Select
@@ -2093,19 +2158,11 @@ export default function ForwardPage() {
             {(onClose) => (
               <>
                 <ModalHeader className="flex flex-col gap-1">
-                  <h2 className="text-xl font-bold">转发诊断结果</h2>
+                  <h2 className="text-xl font-bold">
+                    诊断结果{currentDiagnosisForward ? ` (#${currentDiagnosisForward.id})` : ''}
+                  </h2>
                   {currentDiagnosisForward && (
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="text-small text-default-500 truncate flex-1 min-w-0">{currentDiagnosisForward.name}</span>
-                      <Chip 
-                        color="primary"
-                        variant="flat" 
-                        size="sm"
-                        className="flex-shrink-0"
-                      >
-                        转发服务
-                      </Chip>
-                    </div>
+                    <span className="text-small text-default-500 truncate">{currentDiagnosisForward.name}</span>
                   )}
                 </ModalHeader>
                 <ModalBody>
@@ -2117,80 +2174,20 @@ export default function ForwardPage() {
                       </div>
                     </div>
                   ) : diagnosisResult ? (
-                    <div className="space-y-4">
-                      {diagnosisResult.results.map((result, index) => {
-                        const quality = getQualityDisplay(result.averageTime, result.packetLoss);
-                        
-                        return (
-                          <Card key={index} className={`shadow-sm border ${result.success ? 'border-success' : 'border-danger'}`}>
-                            <CardHeader className="pb-2">
-                              <div className="flex items-center justify-between w-full">
-                                <div>
-                                  <h3 className="text-lg font-semibold text-foreground">{result.description}</h3>
-                                  <div className="flex items-center gap-2 mt-1">
-                                    <span className="text-small text-default-500">节点: {result.nodeName}</span>
-                                    <Chip 
-                                      color={result.success ? 'success' : 'danger'} 
-                                      variant="flat" 
-                                      size="sm"
-                                    >
-                                      {result.success ? '连接成功' : '连接失败'}
-                                    </Chip>
-                                  </div>
-                                </div>
-                              </div>
-                            </CardHeader>
-                            
-                            <CardBody className="pt-0">
-                              {result.success ? (
-                                <div className="space-y-3">
-                                  <div className="grid grid-cols-3 gap-4">
-                                    <div className="text-center">
-                                      <div className="text-2xl font-bold text-primary">{result.averageTime?.toFixed(0)}</div>
-                                      <div className="text-small text-default-500">平均延迟(ms)</div>
-                                    </div>
-                                    <div className="text-center">
-                                      <div className="text-2xl font-bold text-warning">{result.packetLoss?.toFixed(1)}</div>
-                                      <div className="text-small text-default-500">丢包率(%)</div>
-                                    </div>
-                                    <div className="text-center">
-                                      {quality && (
-                                        <>
-                                          <Chip color={quality.color as any} variant="flat" size="lg">
-                                            {quality.text}
-                                          </Chip>
-                                          <div className="text-small text-default-500 mt-1">连接质量</div>
-                                        </>
-                                      )}
-                                    </div>
-                                  </div>
-                                  <div className="text-small text-default-500 flex items-center gap-1">
-                                    <span className="flex-shrink-0">目标地址:</span>
-                                    <code className="font-mono truncate min-w-0" title={`${result.targetIp}${result.targetPort ? ':' + result.targetPort : ''}`}>
-                                      {result.targetIp}{result.targetPort ? ':' + result.targetPort : ''}
-                                    </code>
-                                  </div>
-                                </div>
-                              ) : (
-                                <div className="space-y-2">
-                                  <div className="text-small text-default-500 flex items-center gap-1">
-                                    <span className="flex-shrink-0">目标地址:</span>
-                                    <code className="font-mono truncate min-w-0" title={`${result.targetIp}${result.targetPort ? ':' + result.targetPort : ''}`}>
-                                      {result.targetIp}{result.targetPort ? ':' + result.targetPort : ''}
-                                    </code>
-                                  </div>
-                                  <Alert
-                                    color="danger"
-                                    variant="flat"
-                                    title="错误详情"
-                                    description={result.message}
-                                  />
-                                </div>
-                              )}
-                            </CardBody>
-                          </Card>
-                        );
-                      })}
+                    <div className="space-y-5">
+                      {renderDiagnosisLeg('入口诊断', 'Inbound', diagnosisResult.results.filter(r => r.leg !== 'outbound'), '无数据')}
+                      {renderDiagnosisLeg('出口诊断', 'Outbounds', diagnosisResult.results.filter(r => r.leg === 'outbound'), '此转发为直接端口转发，无独立出口节点')}
+
+                      <div>
+                        <h3 className="text-sm font-semibold text-foreground mb-2">
+                          面板反馈 <span className="text-default-400 font-normal">(Backend)</span>
+                        </h3>
+                        <div className="border border-default-200 rounded-lg px-4 py-3 space-y-1 text-sm">
+                          <div className="flex justify-between"><span className="text-default-500">发出任务</span><span className="font-mono text-foreground">{diagnosisResult.dispatchStats?.sent ?? 0}</span></div>
+                          <div className="flex justify-between"><span className="text-default-500">发出失败</span><span className="font-mono text-foreground">{diagnosisResult.dispatchStats?.failed ?? 0}</span></div>
+                          <div className="flex justify-between"><span className="text-default-500">回收任务</span><span className="font-mono text-foreground">{diagnosisResult.dispatchStats?.recovered ?? 0}</span></div>
+                        </div>
+                      </div>
                     </div>
                   ) : (
                     <EmptyState />

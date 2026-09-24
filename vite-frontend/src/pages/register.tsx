@@ -2,17 +2,19 @@ import { Button } from "@heroui/button";
 import { Input } from "@heroui/input";
 import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Divider } from "@heroui/divider";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import toast from 'react-hot-toast';
 import DefaultLayout from "@/layouts/default";
 import { register } from "@/api";
-import { UserIcon, LockIcon, EyeIcon, EyeOffIcon } from "@/components/icons";
+import { getCachedConfigs } from "@/config/site";
+import { UserIcon, LockIcon, TicketIcon, EyeIcon, EyeOffIcon } from "@/components/icons";
 
 interface RegisterForm {
   username: string;
   password: string;
   confirmPassword: string;
+  inviteCode: string;
 }
 
 export default function RegisterPage() {
@@ -20,12 +22,24 @@ export default function RegisterPage() {
     username: "",
     password: "",
     confirmPassword: "",
+    inviteCode: "",
   });
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Partial<RegisterForm>>({});
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  // disabled-不显示邀请码；optional-显示但选填；required-显示且必填
+  const [invitePolicy, setInvitePolicy] = useState<'disabled' | 'optional' | 'required'>('disabled');
   const navigate = useNavigate();
+
+  useEffect(() => {
+    getCachedConfigs().then((configs) => {
+      const policy = configs.invite_register_policy;
+      if (policy === 'optional' || policy === 'required') {
+        setInvitePolicy(policy);
+      }
+    }).catch(() => {});
+  }, []);
 
   const validateForm = (): boolean => {
     const newErrors: Partial<RegisterForm> = {};
@@ -48,6 +62,10 @@ export default function RegisterPage() {
       newErrors.confirmPassword = '两次输入的密码不一致';
     }
 
+    if (invitePolicy === 'required' && !form.inviteCode.trim()) {
+      newErrors.inviteCode = '请输入邀请码';
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -68,6 +86,7 @@ export default function RegisterPage() {
         username: form.username.trim(),
         password: form.password,
         confirmPassword: form.confirmPassword,
+        inviteCode: invitePolicy !== 'disabled' ? form.inviteCode.trim() : undefined,
       });
 
       if (response.code !== 0) {
@@ -162,6 +181,22 @@ export default function RegisterPage() {
                     </button>
                   }
                 />
+
+                {invitePolicy !== 'disabled' && (
+                  <Input autoComplete="off"
+                    size="sm"
+                    placeholder={invitePolicy === 'required' ? '邀请码' : '邀请码（选填）'}
+                    value={form.inviteCode}
+                    onChange={(e) => handleInputChange('inviteCode', e.target.value)}
+                    onKeyDown={handleKeyPress}
+                    variant="bordered"
+                    isDisabled={loading}
+                    isInvalid={!!errors.inviteCode}
+                    errorMessage={errors.inviteCode}
+                    isRequired={invitePolicy === 'required'}
+                    startContent={<TicketIcon className="w-4 h-4 text-gray-400 dark:text-gray-300 flex-shrink-0" />}
+                  />
+                )}
 
                 <div className="flex items-center gap-4 mt-1">
                   <Button

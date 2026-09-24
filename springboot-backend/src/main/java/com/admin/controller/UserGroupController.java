@@ -43,6 +43,15 @@ public class UserGroupController extends BaseController {
         return userGroupService.getAllUserGroups();
     }
 
+    /**
+     * 仅返回 id+名称，不含用户数等管理统计信息，供普通用户在节点状态等页面展示用户组名称
+     */
+    @LogAnnotation
+    @PostMapping("/names")
+    public R names() {
+        return userGroupService.listNames();
+    }
+
     @LogAnnotation
     @RequireRole
     @PostMapping("/update")

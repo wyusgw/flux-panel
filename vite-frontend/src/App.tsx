@@ -14,7 +14,10 @@ import ShopPage from "@/pages/shop";
 import OrdersPage from "@/pages/orders";
 import OrderManagementPage from "@/pages/order-management";
 import AccountCenterPage from "@/pages/account-center";
+import SingleTunnelPage from "@/pages/single-tunnel";
 import RedeemCodePage from "@/pages/redeemcode";
+import InviteCodePage from "@/pages/invitecode";
+import TaskQueuePage from "@/pages/task-queue";
 import DeviceGroupPage from "@/pages/devicegroup";
 import UserGroupPage from "@/pages/usergroup";
 import PackagePlanPage from "@/pages/package";
@@ -241,6 +244,14 @@ function App() {
         }
       />
       <Route
+        path="/single-tunnel"
+        element={
+          <ProtectedRoute useSimpleLayout={true}>
+            <SingleTunnelPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
         path="/devicegroup"
         element={
           <ProtectedRoute useSimpleLayout={true}>
@@ -253,6 +264,22 @@ function App() {
         element={
           <ProtectedRoute useSimpleLayout={true}>
             <RedeemCodePage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/invitecode"
+        element={
+          <ProtectedRoute useSimpleLayout={true}>
+            <InviteCodePage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/task-queue"
+        element={
+          <ProtectedRoute useSimpleLayout={true}>
+            <TaskQueuePage />
           </ProtectedRoute>
         }
       />

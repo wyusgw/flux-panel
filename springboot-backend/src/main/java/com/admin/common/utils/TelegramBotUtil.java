@@ -11,7 +11,8 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Telegram Bot API 的最小封装（长轮询模式，不依赖公网可达的 webhook）。
+ * Telegram Bot API 的最小封装。默认长轮询模式，不依赖公网可达的 webhook；
+ * 若在推送通知页配置了 Webhook URL，则改用 setWebhook 让 Telegram 主动推送更新。
  * 所有方法均对异常静默降级，绝不向调用方抛出异常。
  */
 @Slf4j
@@ -77,20 +78,70 @@ public class TelegramBotUtil {
             JSONArray updates = json.getJSONArray("result");
             if (updates == null) return result;
             for (int i = 0; i < updates.size(); i++) {
-                JSONObject update = updates.getJSONObject(i);
-                JSONObject message = update.getJSONObject("message");
-                if (message == null) continue;
-                JSONObject chat = message.getJSONObject("chat");
-                if (chat == null) continue;
-                TelegramUpdate u = new TelegramUpdate();
-                u.updateId = update.getLongValue("update_id");
-                u.chatId = chat.getString("id");
-                u.text = message.getString("text");
-                result.add(u);
+                TelegramUpdate u = parseUpdate(updates.getJSONObject(i));
+                if (u != null) result.add(u);
             }
         } catch (Exception e) {
             log.warn("Telegram getUpdates 失败: {}", e.getMessage());
         }
         return result;
+    }
+
+    /**
+     * 解析单条 Update JSON（getUpdates 返回数组里的一项，或 Webhook 请求体本身），
+     * 不是文本消息/缺少必要字段时返回 null
+     */
+    public static TelegramUpdate parseUpdate(JSONObject update) {
+        if (update == null) return null;
+        JSONObject message = update.getJSONObject("message");
+        if (message == null) return null;
+        JSONObject chat = message.getJSONObject("chat");
+        if (chat == null) return null;
+        TelegramUpdate u = new TelegramUpdate();
+        u.updateId = update.getLongValue("update_id");
+        u.chatId = chat.getString("id");
+        u.text = message.getString("text");
+        return u;
+    }
+
+    /**
+     * 注册 Webhook：配置了 Webhook URL 时调用，让 Telegram 改为主动推送更新（此后不能再用 getUpdates 长轮询）。
+     * 返回是否注册成功。
+     */
+    public static boolean setWebhook(String token, String url) {
+        if (token == null || token.isEmpty() || url == null || url.isEmpty()) return false;
+        try {
+            Map<String, Object> params = new HashMap<>();
+            params.put("url", url);
+            String resp = HttpUtil.get(API_BASE + token + "/setWebhook", params, TIMEOUT_MS);
+            JSONObject json = JSONObject.parseObject(resp);
+            boolean ok = json != null && json.getBooleanValue("ok");
+            if (!ok) {
+                log.warn("Telegram setWebhook 失败: {}", resp);
+            }
+            return ok;
+        } catch (Exception e) {
+            log.warn("Telegram setWebhook 异常: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * 取消 Webhook：Webhook URL 清空时调用，恢复为长轮询模式。返回是否成功。
+     */
+    public static boolean deleteWebhook(String token) {
+        if (token == null || token.isEmpty()) return false;
+        try {
+            String resp = HttpUtil.get(API_BASE + token + "/deleteWebhook", TIMEOUT_MS);
+            JSONObject json = JSONObject.parseObject(resp);
+            boolean ok = json != null && json.getBooleanValue("ok");
+            if (!ok) {
+                log.warn("Telegram deleteWebhook 失败: {}", resp);
+            }
+            return ok;
+        } catch (Exception e) {
+            log.warn("Telegram deleteWebhook 异常: {}", e.getMessage());
+            return false;
+        }
     }
 }

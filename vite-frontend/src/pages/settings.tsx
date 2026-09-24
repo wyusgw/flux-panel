@@ -106,20 +106,22 @@ export const SettingsPage = () => {
               <h2 className="text-lg font-medium text-gray-900 dark:text-white mb-4">添加新面板地址</h2>
               <div className="space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <Input autoComplete="off"
+                  <Input
+                    size="sm" autoComplete="off"
                     label="名称"
                     placeholder="请输入面板名称"
                     value={newName}
                     onChange={(e) => setNewName(e.target.value)}
                   />
-                  <Input autoComplete="off"
+                  <Input
+                    size="sm" autoComplete="off"
                     label="地址"
                     placeholder="http://192.168.1.100:3000"
                     value={newAddress}
                     onChange={(e) => setNewAddress(e.target.value)}
                   />
                 </div>
-                <Button color="primary" onClick={addPanelAddress}>
+                <Button color="default" onClick={addPanelAddress}>
                   添加
                 </Button>
               </div>
@@ -152,7 +154,7 @@ export const SettingsPage = () => {
                           {!panel.inx && (
                             <Button
                               size="sm"
-                              color="primary"
+                              color="default"
                               variant="flat"
                               onClick={() => setCurrentPanel(panel.name)}
                             >

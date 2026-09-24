@@ -859,8 +859,10 @@ DEALLOCATE PREPARE stmt;
 CREATE TABLE IF NOT EXISTS `redeem_code` (
   `id` int(10) NOT NULL AUTO_INCREMENT,
   `code` varchar(100) NOT NULL,
-  `package_id` bigint(20) NOT NULL,
+  `type` varchar(20) NOT NULL DEFAULT 'discount',
+  `package_id` bigint(20) DEFAULT NULL,
   `discount_ratio` int(10) NOT NULL DEFAULT 100,
+  `amount` decimal(10,2) DEFAULT NULL,
   `uses_remaining` int(10) NOT NULL DEFAULT 1,
   `created_time` bigint(20) NOT NULL,
   `updated_time` bigint(20) DEFAULT NULL,
@@ -868,3 +870,71 @@ CREATE TABLE IF NOT EXISTS `redeem_code` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `unique_redeem_code` (`code`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 兑换码新增「兑换套餐（免费）」「兑换余额」两种类型：type 字段区分兑换类型（discount-折扣购买套餐，package-直接免费兑换套餐，balance-直接兑换钱包余额），
+-- amount 字段供 balance 类型使用；package_id 改为允许为空（balance 类型不关联套餐）
+ALTER TABLE `redeem_code` MODIFY `package_id` bigint(20) DEFAULT NULL;
+SET @sql = (
+  SELECT IF(
+    NOT EXISTS (
+      SELECT 1 FROM information_schema.COLUMNS
+      WHERE table_schema = DATABASE() AND table_name = 'redeem_code' AND column_name = 'type'
+    ),
+    'ALTER TABLE `redeem_code` ADD COLUMN `type` VARCHAR(20) NOT NULL DEFAULT ''discount'' AFTER `code`, ADD COLUMN `amount` DECIMAL(10,2) DEFAULT NULL AFTER `discount_ratio`;',
+    'SELECT "Columns `type`/`amount` already exist in `redeem_code`";'
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- 创建 device_group_chain_hop 表（如果不存在）：链式出口设备组（direction='chain'）的多跳配置
+CREATE TABLE IF NOT EXISTS `device_group_chain_hop` (
+  `id` int(10) NOT NULL AUTO_INCREMENT,
+  `device_group_id` bigint(20) NOT NULL,
+  `hop_order` int(10) NOT NULL,
+  `target_device_group_id` bigint(20) NOT NULL,
+  `mux` tinyint(1) NOT NULL DEFAULT '0',
+  `created_time` bigint(20) NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_device_group_id` (`device_group_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- device_group.node_id 允许为空：链式出口设备组（direction='chain'）没有自己的物理节点
+ALTER TABLE `device_group` MODIFY `node_id` bigint(20) DEFAULT NULL;
+
+-- 设备离线通知：device_group 按设备组覆盖的离线宽限期/保留期（为空则继承全局默认设置）
+SET @sql = (
+  SELECT IF(
+    NOT EXISTS (
+      SELECT 1 FROM information_schema.COLUMNS
+      WHERE table_schema = DATABASE() AND table_name = 'device_group' AND column_name = 'offline_grace_enabled'
+    ),
+    'ALTER TABLE `device_group` ADD COLUMN `offline_grace_enabled` TINYINT(1) DEFAULT NULL, ADD COLUMN `offline_grace_seconds` INT(10) DEFAULT NULL, ADD COLUMN `offline_retain_enabled` TINYINT(1) DEFAULT NULL, ADD COLUMN `offline_retain_seconds` INT(10) DEFAULT NULL;',
+    'SELECT "Columns `offline_*` already exist in `device_group`";'
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- 创建 user_daily_raw_flow 表（如果不存在）：用户按自然日累计的原始流量（不计流量倍率），
+-- 供"我的转发规则"页「统计数据」弹窗的今日/昨日流量展示使用
+CREATE TABLE IF NOT EXISTS `user_daily_raw_flow` (
+  `id` int(10) NOT NULL AUTO_INCREMENT,
+  `user_id` int(10) NOT NULL,
+  `day` varchar(10) NOT NULL,
+  `raw_bytes` bigint(20) NOT NULL DEFAULT '0',
+  `updated_time` bigint(20) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uniq_user_day` (`user_id`,`day`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 简化"分配隧道权限"：不再让管理员为每个用户隧道权限单独设置 流量限制/转发数量/流量重置日期/到期时间/限速规则，
+-- 这些改由账号本身的套餐额度统一控制（避免账号层与隧道层两套限制重复配置、互相打架）。
+-- 放开这几列的 NOT NULL 约束，新建/编辑的记录不再写入这些字段（保留旧数据，不做破坏性删除）。
+ALTER TABLE `user_tunnel`
+  MODIFY `num` int(10) DEFAULT NULL,
+  MODIFY `flow` bigint(20) DEFAULT NULL,
+  MODIFY `flow_reset_time` bigint(20) DEFAULT NULL,
+  MODIFY `exp_time` bigint(20) DEFAULT NULL;

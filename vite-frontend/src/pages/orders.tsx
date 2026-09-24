@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Card, CardBody } from "@heroui/card";
 import {
   Table,
@@ -12,13 +12,13 @@ import { Chip } from "@heroui/chip";
 import { Spinner } from "@heroui/spinner";
 import toast from 'react-hot-toast';
 
+import { EmptyState } from "@/components/empty-state";
+import { TablePagination } from "@/components/table-pagination";
 import { getOrderList } from "@/api";
 
 interface OrderItem {
   id: number;
   orderNo: string;
-  userId: number;
-  userName?: string;
   type: string;
   info: string;
   amount: number;
@@ -35,19 +35,36 @@ const formatDate = (timestamp?: number): string => {
 const getTypeText = (type: string): string => {
   switch (type) {
     case 'package':
-      return '购买套餐';
+      return '余额消费';
+    case 'recharge':
+      return '钱包充值';
+    case 'manual':
+      return '手动记账';
+    case 'redeem_balance':
+      return '兑换余额';
     default:
       return type;
+  }
+};
+
+const getStatusDisplay = (status: number) => {
+  switch (status) {
+    case 1:
+      return { text: '交易完成', color: 'success' as const };
+    case 2:
+      return { text: '已取消', color: 'danger' as const };
+    default:
+      return { text: '待支付', color: 'warning' as const };
   }
 };
 
 export default function OrdersPage() {
   const [loading, setLoading] = useState(true);
   const [orders, setOrders] = useState<OrderItem[]>([]);
-  const [isAdmin, setIsAdmin] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   useEffect(() => {
-    setIsAdmin(localStorage.getItem('admin') === 'true');
     loadData();
   }, []);
 
@@ -68,6 +85,11 @@ export default function OrdersPage() {
     }
   };
 
+  const pagedOrders = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return orders.slice(start, start + pageSize);
+  }, [orders, page, pageSize]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -81,44 +103,54 @@ export default function OrdersPage() {
 
   return (
     <div className="px-3 lg:px-6 py-8">
-      <Card className="shadow-sm border border-gray-200 dark:border-gray-700">
+      <h1 className="text-xl font-semibold mb-4">我的订单</h1>
+
+      <Card className="shadow-sm border border-default-200">
         <CardBody className="p-0">
-          <Table
-            aria-label="订单列表"
-            classNames={{
-              wrapper: "shadow-none",
-              th: "bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300 font-medium"
-            }}
-          >
-            <TableHeader>
-              <TableColumn>订单号</TableColumn>
-              <TableColumn>{isAdmin ? '用户' : '订单信息'}</TableColumn>
-              <TableColumn>订单信息</TableColumn>
-              <TableColumn>金额</TableColumn>
-              <TableColumn>类型</TableColumn>
-              <TableColumn>状态</TableColumn>
-              <TableColumn>创建时间</TableColumn>
-            </TableHeader>
-            <TableBody items={orders} emptyContent="暂无订单">
-              {(order: OrderItem) => (
-                <TableRow key={order.id}>
-                  <TableCell>
-                    <span className="font-mono text-xs">{order.orderNo}</span>
-                  </TableCell>
-                  <TableCell>{isAdmin ? (order.userName || order.userId) : order.info}</TableCell>
-                  <TableCell>{isAdmin ? order.info : '-'}</TableCell>
-                  <TableCell>{order.amount} 元</TableCell>
-                  <TableCell>{getTypeText(order.type)}</TableCell>
-                  <TableCell>
-                    <Chip color={order.orderStatus === 1 ? 'success' : 'default'} size="sm" variant="flat">
-                      {order.orderStatus === 1 ? '已完成' : '处理中'}
-                    </Chip>
-                  </TableCell>
-                  <TableCell>{formatDate(order.createdTime)}</TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
+          <div className="settings-table-scroll">
+            <Table
+              removeWrapper
+              aria-label="我的订单列表"
+              classNames={{ base: "w-full", table: "w-full management-table", th: "management-table-heading", td: "management-table-cell" }}
+            >
+              <TableHeader>
+                <TableColumn>订单号</TableColumn>
+                <TableColumn>创建时间</TableColumn>
+                <TableColumn>支付时间</TableColumn>
+                <TableColumn>订单信息</TableColumn>
+                <TableColumn>金额</TableColumn>
+                <TableColumn>类型</TableColumn>
+                <TableColumn>状态</TableColumn>
+              </TableHeader>
+              <TableBody items={pagedOrders} emptyContent={<EmptyState text="暂无订单" />}>
+                {(order: OrderItem) => {
+                  const status = getStatusDisplay(order.orderStatus);
+                  return (
+                    <TableRow key={order.id}>
+                      <TableCell>
+                        <span className="font-mono text-xs">{order.orderNo}</span>
+                      </TableCell>
+                      <TableCell>{formatDate(order.createdTime)}</TableCell>
+                      <TableCell>{formatDate(order.paidTime)}</TableCell>
+                      <TableCell>{order.info}</TableCell>
+                      <TableCell>{order.amount} 元</TableCell>
+                      <TableCell>{getTypeText(order.type)}</TableCell>
+                      <TableCell>
+                        <Chip color={status.color} size="sm" variant="flat">{status.text}</Chip>
+                      </TableCell>
+                    </TableRow>
+                  );
+                }}
+              </TableBody>
+            </Table>
+          </div>
+          <TablePagination
+            total={orders.length}
+            page={page}
+            pageSize={pageSize}
+            onPageChange={setPage}
+            onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}
+          />
         </CardBody>
       </Card>
     </div>

@@ -177,6 +177,33 @@ public class ViteConfigServiceImpl extends ServiceImpl<ViteConfigMapper, ViteCon
                 }
             }
         }
+
+        // Bot Token 或 Webhook URL 任一项变更时，都需要按最新的两个值重新同步 Webhook 注册状态：
+        // Webhook URL 非空则注册 Webhook（此后长轮询会自动让路）；为空则取消注册，回退为长轮询。
+        if ("telegram_bot_token".equals(name) || "telegram_webhook_url".equals(name)) {
+            syncTelegramWebhook();
+        }
+    }
+
+    /**
+     * 按当前保存的 telegram_bot_token / telegram_webhook_url 同步 Telegram 的 Webhook 注册状态
+     */
+    private void syncTelegramWebhook() {
+        String token = getConfigValueInternal("telegram_bot_token");
+        String webhookUrl = getConfigValueInternal("telegram_webhook_url");
+        if (token == null || token.isEmpty()) {
+            return;
+        }
+        if (webhookUrl != null && !webhookUrl.isEmpty()) {
+            TelegramBotUtil.setWebhook(token, webhookUrl);
+        } else {
+            TelegramBotUtil.deleteWebhook(token);
+        }
+    }
+
+    private String getConfigValueInternal(String name) {
+        ViteConfig config = this.getOne(new QueryWrapper<ViteConfig>().eq("name", name));
+        return config != null ? config.getValue() : null;
     }
 
 }

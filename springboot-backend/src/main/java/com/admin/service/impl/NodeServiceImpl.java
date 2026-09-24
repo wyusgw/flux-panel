@@ -439,11 +439,16 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
         result.put("addr", processedServerAddr);
         result.put("secret", node.getSecret());
 
-        // 离线部署：直接提供 GitHub Releases 最新版二进制包下载链接
+        // 离线部署：提供打包好 gost 二进制 + offline.sh 的离线包下载链接（按架构区分），
+        // 下载解压后运行 offline.sh 即可一键完成本地安装+对接，无需再手动下载二进制、手写配置文件
         JSONObject downloadUrls = new JSONObject();
-        downloadUrls.put("amd64", "https://github.com/wyusgw/flux-panel/releases/latest/download/gost-amd64");
-        downloadUrls.put("arm64", "https://github.com/wyusgw/flux-panel/releases/latest/download/gost-arm64");
+        downloadUrls.put("offlineAmd64", "https://github.com/wyusgw/flux-panel/releases/latest/download/flux-panel-offline-amd64.zip");
+        downloadUrls.put("offlineArm64", "https://github.com/wyusgw/flux-panel/releases/latest/download/flux-panel-offline-arm64.zip");
         result.put("downloadUrls", downloadUrls);
+
+        String offlineDir = "/tmp/flux-panel-offline";
+        result.put("offlineCommand", "unzip -o offline.zip -d " + offlineDir
+                + " && bash " + offlineDir + "/offline.sh -a \"" + processedServerAddr + "\" -s \"" + node.getSecret() + "\"");
 
         return R.ok(result);
     }

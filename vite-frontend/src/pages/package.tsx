@@ -271,7 +271,7 @@ export default function PackagePlanPage() {
           <div className="flex gap-2">
             {selectedIds.length > 0 && <Button size="sm" color="danger" variant="flat" onPress={() => setBatchDeleteModalOpen(true)}>批量删除（{selectedIds.length}）</Button>}
             <Button size="sm" variant="bordered" onPress={loadData} isLoading={loading}>刷新</Button>
-            <Button size="sm" color="primary" onPress={handleAdd}>添加套餐</Button>
+            <Button size="sm" color="default" onPress={handleAdd}>添加套餐</Button>
           </div>
         </CardHeader>
         <CardBody className="p-0">
@@ -324,7 +324,8 @@ export default function PackagePlanPage() {
               </ModalHeader>
               <ModalBody>
                 <div className="space-y-4">
-                  <Input autoComplete="off"
+                  <Input
+                    size="sm" autoComplete="off"
                     label="名称"
                     placeholder="请输入套餐名称"
                     value={form.name}
@@ -335,6 +336,7 @@ export default function PackagePlanPage() {
                   />
 
                   <Select
+                    size="sm"
                     label="分配用户组"
                     placeholder="购买后自动加入的用户组"
                     selectedKeys={form.groupId ? [form.groupId.toString()] : []}
@@ -351,7 +353,8 @@ export default function PackagePlanPage() {
                     ))}
                   </Select>
 
-                  <Input autoComplete="off"
+                  <Input
+                    size="sm" autoComplete="off"
                     label="可用流量"
                     type="number"
                     value={form.traffic.toString()}
@@ -359,20 +362,22 @@ export default function PackagePlanPage() {
                     isInvalid={!!errors.traffic}
                     errorMessage={errors.traffic}
                     variant="bordered"
-                    endContent={<span className="text-default-400 text-small">GiB</span>}
+                    endContent={<span className="px-2 py-0.5 -mr-1 rounded-md bg-default-100 dark:bg-default-50/10 text-default-500 text-xs font-medium">GiB</span>}
                   />
 
-                  <Input autoComplete="off"
+                  <Input
+                    size="sm" autoComplete="off"
                     label="有效天数"
                     type="number"
                     value={form.durationDays.toString()}
                     onChange={(e) => setForm(prev => ({ ...prev, durationDays: parseInt(e.target.value) || 0 }))}
                     variant="bordered"
                     description="购买后套餐的有效天数，0 为永久有效"
-                    endContent={<span className="text-default-400 text-small">天</span>}
+                    endContent={<span className="px-2 py-0.5 -mr-1 rounded-md bg-default-100 dark:bg-default-50/10 text-default-500 text-xs font-medium">天</span>}
                   />
 
-                  <Input autoComplete="off"
+                  <Input
+                    size="sm" autoComplete="off"
                     label="规则数"
                     type="number"
                     value={form.maxRules.toString()}
@@ -382,7 +387,8 @@ export default function PackagePlanPage() {
                     variant="bordered"
                   />
 
-                  <Input autoComplete="off"
+                  <Input
+                    size="sm" autoComplete="off"
                     label="价格"
                     type="number"
                     value={form.price.toString()}
@@ -390,17 +396,18 @@ export default function PackagePlanPage() {
                     isInvalid={!!errors.price}
                     errorMessage={errors.price}
                     variant="bordered"
-                    endContent={<span className="text-default-400 text-small">元</span>}
+                    endContent={<span className="px-2 py-0.5 -mr-1 rounded-md bg-default-100 dark:bg-default-50/10 text-default-500 text-xs font-medium">元</span>}
                   />
 
-                  <Input autoComplete="off"
+                  <Input
+                    size="sm" autoComplete="off"
                     label="用户限速"
                     type="number"
                     value={form.userSpeedLimit.toString()}
                     onChange={(e) => setForm(prev => ({ ...prev, userSpeedLimit: parseInt(e.target.value) || 0 }))}
                     variant="bordered"
                     description="该套餐用户的限速，0 为不限速，不同转发规则的限速可叠加"
-                    endContent={<span className="text-default-400 text-small">Mbps</span>}
+                    endContent={<span className="px-2 py-0.5 -mr-1 rounded-md bg-default-100 dark:bg-default-50/10 text-default-500 text-xs font-medium">Mbps</span>}
                   />
 
                   <div className="flex items-center justify-between">
@@ -414,7 +421,7 @@ export default function PackagePlanPage() {
               </ModalBody>
               <ModalFooter>
                 <Button variant="light" onPress={onClose}>取消</Button>
-                <Button color="primary" onPress={handleSubmit} isLoading={submitLoading}>
+                <Button color="default" onPress={handleSubmit} isLoading={submitLoading}>
                   {isEdit ? '保存修改' : '创建'}
                 </Button>
               </ModalFooter>

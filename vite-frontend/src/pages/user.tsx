@@ -26,13 +26,12 @@ import { Spinner } from "@heroui/spinner";
 
 import toast from 'react-hot-toast';
 import { 
-  User, 
-  UserForm, 
-  UserTunnel, 
-  UserTunnelForm, 
-  Tunnel, 
-  SpeedLimit, 
-  Pagination as PaginationType 
+  User,
+  UserForm,
+  UserTunnel,
+  UserTunnelForm,
+  Tunnel,
+  Pagination as PaginationType
 } from '@/types';
 import {
   getAllUsers,
@@ -44,7 +43,6 @@ import {
   getUserTunnelList,
   removeUserTunnel,
   updateUserTunnel,
-  getSpeedLimitList,
   resetUserFlow,
   getUserGroupList,
   getPackagePlanList
@@ -144,20 +142,8 @@ export default function UserPage() {
   const [tunnelListLoading, setTunnelListLoading] = useState(false);  
   
   // 分配新隧道权限相关状态
-  const [tunnelForm, setTunnelForm] = useState<UserTunnelForm>({
-    tunnelId: null,
-    flow: 100,
-    num: 10,
-    expTime: null,
-    flowResetTime: 0,
-    speedId: null
-  });
+  const [tunnelForm, setTunnelForm] = useState<UserTunnelForm>({ tunnelId: null });
   const [assignLoading, setAssignLoading] = useState(false);
-
-  // 编辑隧道权限相关状态
-  const { isOpen: isEditTunnelModalOpen, onOpen: onEditTunnelModalOpen, onClose: onEditTunnelModalClose } = useDisclosure();
-  const [editTunnelForm, setEditTunnelForm] = useState<UserTunnel | null>(null);
-  const [editTunnelLoading, setEditTunnelLoading] = useState(false);
 
   // 删除确认相关状态
   const { isOpen: isDeleteModalOpen, onOpen: onDeleteModalOpen, onClose: onDeleteModalClose } = useDisclosure();
@@ -179,13 +165,11 @@ export default function UserPage() {
 
   // 其他数据
   const [tunnels, setTunnels] = useState<Tunnel[]>([]);
-  const [speedLimits, setSpeedLimits] = useState<SpeedLimit[]>([]);
 
   // 生命周期
   useEffect(() => {
     loadUsers();
     loadTunnels();
-    loadSpeedLimits();
     loadUserGroups();
     loadPackagePlans();
   }, [pagination.current, pagination.size, searchKeyword]);
@@ -221,17 +205,6 @@ export default function UserPage() {
       }
     } catch (error) {
       console.error('获取隧道列表失败:', error);
-    }
-  };
-
-  const loadSpeedLimits = async () => {
-    try {
-      const response = await getSpeedLimitList();
-      if (response.code === 0) {
-        setSpeedLimits(response.data || []);
-      }
-    } catch (error) {
-      console.error('获取限速规则列表失败:', error);
     }
   };
 
@@ -374,21 +347,14 @@ export default function UserPage() {
   // 隧道权限管理操作
   const handleManageTunnels = (user: User) => {
     setCurrentUser(user);
-    setTunnelForm({
-      tunnelId: null,
-      flow: 100,
-      num: 10,
-      expTime: null,
-      flowResetTime: 0,
-      speedId: null
-    });
+    setTunnelForm({ tunnelId: null });
     onTunnelModalOpen();
     loadUserTunnels(user.id);
   };
 
   const handleAssignTunnel = async () => {
-    if (!tunnelForm.tunnelId || !tunnelForm.expTime || !currentUser) {
-      toast.error('请填写完整信息');
+    if (!tunnelForm.tunnelId || !currentUser) {
+      toast.error('请选择隧道');
       return;
     }
 
@@ -396,24 +362,12 @@ export default function UserPage() {
     try {
       const response = await assignUserTunnel({
         userId: currentUser.id,
-        tunnelId: tunnelForm.tunnelId,
-        flow: tunnelForm.flow,
-        num: tunnelForm.num,
-        expTime: tunnelForm.expTime.getTime(),
-        flowResetTime: tunnelForm.flowResetTime,
-        speedId: tunnelForm.speedId
+        tunnelId: tunnelForm.tunnelId
       });
 
       if (response.code === 0) {
         toast.success('分配成功');
-        setTunnelForm({
-          tunnelId: null,
-          flow: 100,
-          num: 10,
-          expTime: null,
-          flowResetTime: 0,
-          speedId: null
-        });
+        setTunnelForm({ tunnelId: null });
         loadUserTunnels(currentUser.id);
       } else {
         toast.error(response.msg || '分配失败');
@@ -425,32 +379,15 @@ export default function UserPage() {
     }
   };
 
-  const handleEditTunnel = (userTunnel: UserTunnel) => {
-    setEditTunnelForm({
-      ...userTunnel,
-      expTime: userTunnel.expTime
-    });
-    onEditTunnelModalOpen();
-  };
-
-  const handleUpdateTunnel = async () => {
-    if (!editTunnelForm) return;
-
-    setEditTunnelLoading(true);
+  const handleToggleTunnelStatus = async (userTunnel: UserTunnel) => {
     try {
       const response = await updateUserTunnel({
-        id: editTunnelForm.id,
-        flow: editTunnelForm.flow,
-        num: editTunnelForm.num,
-        expTime: editTunnelForm.expTime,
-        flowResetTime: editTunnelForm.flowResetTime,
-        speedId: editTunnelForm.speedId,
-        status: editTunnelForm.status
+        id: userTunnel.id,
+        status: userTunnel.status === 1 ? 0 : 1
       });
 
       if (response.code === 0) {
-        toast.success('更新成功');
-        onEditTunnelModalClose();
+        toast.success(userTunnel.status === 1 ? '已禁用' : '已启用');
         if (currentUser) {
           loadUserTunnels(currentUser.id);
         }
@@ -459,8 +396,6 @@ export default function UserPage() {
       }
     } catch (error) {
       toast.error('更新失败');
-    } finally {
-      setEditTunnelLoading(false);
     }
   };
 
@@ -558,14 +493,6 @@ export default function UserPage() {
     tunnel => !userTunnels.some(ut => ut.tunnelId === tunnel.id)
   );
 
-  const availableSpeedLimits = speedLimits.filter(
-    speedLimit => speedLimit.tunnelId === tunnelForm.tunnelId
-  );
-
-  const editAvailableSpeedLimits = speedLimits.filter(
-    speedLimit => speedLimit.tunnelId === editTunnelForm?.tunnelId
-  );
-
   const groupNameOf = (groupId?: number | null) => {
     if (!groupId) return '未分组';
     return userGroups.find(g => g.id === groupId)?.name || `#${groupId}`;
@@ -589,7 +516,7 @@ export default function UserPage() {
               <span className="text-xs text-default-500">共 {users.length} 位用户</span>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <Button size="sm" color="primary" onPress={handleAdd} startContent={<UserIcon className="w-4 h-4" />}>
+              <Button size="sm" color="default" onPress={handleAdd} startContent={<UserIcon className="w-4 h-4" />}>
                 添加用户
               </Button>
               <Input autoComplete="off"
@@ -670,7 +597,7 @@ export default function UserPage() {
                           <Button isIconOnly size="sm" variant="flat" onPress={() => handleEdit(user)} isDisabled={user.roleId === 0} title="编辑">
                             <EditIcon className="w-4 h-4" />
                           </Button>
-                          <Button isIconOnly size="sm" variant="flat" color="warning" onPress={() => handleResetFlow(user)} title="重置流量">
+                          <Button isIconOnly size="sm" variant="flat" color="default" onPress={() => handleResetFlow(user)} title="重置流量">
                             <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1z" clipRule="evenodd" /></svg>
                           </Button>
                           <Button isIconOnly size="sm" variant="flat" color="danger" onPress={() => handleDelete(user)} isDisabled={user.roleId === 0} title="删除">
@@ -701,14 +628,16 @@ export default function UserPage() {
             {isEdit ? '编辑用户' : '新增用户'}
           </ModalHeader>
           <ModalBody>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Input autoComplete="off"
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <Input
+                size="sm" autoComplete="off"
                 label="用户名"
                 value={userForm.user}
                 onChange={(e) => setUserForm(prev => ({ ...prev, user: e.target.value }))}
                 isRequired
               />
-              <Input autoComplete="off"
+              <Input
+                size="sm" autoComplete="off"
                 label="密码"
                 type="password"
                 value={userForm.pwd}
@@ -716,7 +645,8 @@ export default function UserPage() {
                 placeholder={isEdit ? '留空则不修改密码' : '请输入密码'}
                 isRequired={!isEdit}
               />
-              <Input autoComplete="off"
+              <Input
+                size="sm" autoComplete="off"
                 label="流量限制(GB)"
                 type="number"
                 value={userForm.flow.toString()}
@@ -728,7 +658,8 @@ export default function UserPage() {
                 max="99999"
                 isRequired
               />
-              <Input autoComplete="off"
+              <Input
+                size="sm" autoComplete="off"
                 label="转发数量"
                 type="number"
                 value={userForm.num.toString()}
@@ -741,6 +672,7 @@ export default function UserPage() {
                 isRequired
               />
               <Select
+                size="sm"
                 label="流量重置日期"
                 selectedKeys={[userForm.flowResetTime.toString()]}
                 onSelectionChange={(keys) => {
@@ -760,6 +692,7 @@ export default function UserPage() {
                 </>
               </Select>
               <DatePicker
+                size="sm"
                 label="过期时间"
                 value={userForm.expTime ? parseDate(userForm.expTime.toISOString().split('T')[0]) as any : null}
                 onChange={(date) => {
@@ -775,6 +708,7 @@ export default function UserPage() {
                 className="cursor-pointer"
               />
               <Select
+                size="sm"
                 label="用户组"
                 placeholder="未分组"
                 selectedKeys={userForm.groupId ? [userForm.groupId.toString()] : []}
@@ -790,6 +724,7 @@ export default function UserPage() {
                 ))}
               </Select>
               <Select
+                size="sm"
                 label="套餐"
                 placeholder="无套餐"
                 selectedKeys={userForm.packageId ? [userForm.packageId.toString()] : []}
@@ -804,20 +739,23 @@ export default function UserPage() {
                   </SelectItem>
                 ))}
               </Select>
-              <Input autoComplete="off"
+              <Input
+                size="sm" autoComplete="off"
                 label="钱包余额"
                 type="number"
                 value={(userForm.walletBalance ?? 0).toString()}
                 onChange={(e) => setUserForm(prev => ({ ...prev, walletBalance: parseFloat(e.target.value) || 0 }))}
-                endContent={<span className="text-default-400 text-small">元</span>}
+                endContent={<span className="px-2 py-0.5 -mr-1 rounded-md bg-default-100 dark:bg-default-50/10 text-default-500 text-xs font-medium">元</span>}
               />
             </div>
 
             <RadioGroup
+              size="sm"
               label="状态"
               value={userForm.status.toString()}
               onValueChange={(value: string) => setUserForm(prev => ({ ...prev, status: Number(value) }))}
               orientation="horizontal"
+              className="mt-3"
             >
               <Radio value="1">正常</Radio>
               <Radio value="0">禁用</Radio>
@@ -828,7 +766,7 @@ export default function UserPage() {
               取消
             </Button>
             <Button
-              color="primary"
+              color="default"
               onPress={handleSubmitUser}
               isLoading={userFormLoading}
             >
@@ -857,107 +795,30 @@ export default function UserPage() {
           </ModalHeader>
           <ModalBody>
             <div className="space-y-6">
-              {/* 分配新权限部分 */}
+              {/* 分配新权限部分：流量/转发数量/到期时间等额度统一由账号自身的套餐控制，
+                  这里只代表"该用户可以使用这条隧道" */}
               <div>
                 <h3 className="text-lg font-semibold mb-4">分配新权限</h3>
-                <div className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <Select
-                      label="选择隧道"
-                      selectedKeys={tunnelForm.tunnelId ? [tunnelForm.tunnelId.toString()] : []}
-                      onSelectionChange={(keys) => {
-                        const value = Array.from(keys)[0] as string;
-                        setTunnelForm(prev => ({ ...prev, tunnelId: Number(value) || null, speedId: null }));
-                      }}
-                    >
-                      {availableTunnels.map(tunnel => (
-                        <SelectItem key={tunnel.id.toString()} textValue={tunnel.name}>
-                          {tunnel.name}
-                        </SelectItem>
-                      ))}
-                    </Select>
-                    
-                    <Select
-                      label="限速规则"
-                      selectedKeys={tunnelForm.speedId ? [tunnelForm.speedId.toString()] : ["null"]}
-                      onSelectionChange={(keys) => {
-                        const value = Array.from(keys)[0] as string;
-                        setTunnelForm(prev => ({ ...prev, speedId: value === "null" ? null : Number(value) }));
-                      }}
-                      isDisabled={!tunnelForm.tunnelId}
-                    >
-                      {[
-                        <SelectItem key="null" textValue="不限速">不限速</SelectItem>,
-                        ...availableSpeedLimits.map(speedLimit => (
-                          <SelectItem key={speedLimit.id.toString()} textValue={speedLimit.name}>
-                            {speedLimit.name}
-                          </SelectItem>
-                        ))
-                      ]}
-                    </Select>
-                    
-                    <Input autoComplete="off"
-                      label="流量限制(GB)"
-                      type="number"
-                      value={tunnelForm.flow.toString()}
-                      onChange={(e) => {
-                        const value = Math.min(Math.max(Number(e.target.value) || 0, 1), 99999);
-                        setTunnelForm(prev => ({ ...prev, flow: value }));
-                      }}
-                      min="1"
-                      max="99999"
-                    />
-                    
-                    <Input autoComplete="off"
-                      label="转发数量"
-                      type="number"
-                      value={tunnelForm.num.toString()}
-                      onChange={(e) => {
-                        const value = Math.min(Math.max(Number(e.target.value) || 0, 1), 99999);
-                        setTunnelForm(prev => ({ ...prev, num: value }));
-                      }}
-                      min="1"
-                      max="99999"
-                    />
-                    
-                    <Select
-                      label="流量重置日期"
-                      selectedKeys={[tunnelForm.flowResetTime.toString()]}
-                      onSelectionChange={(keys) => {
-                        const value = Array.from(keys)[0] as string;
-                        setTunnelForm(prev => ({ ...prev, flowResetTime: Number(value) }));
-                      }}
-                    >
-                      <>
-                        <SelectItem key="0" textValue="不重置">
-                          不重置
-                        </SelectItem>
-                      {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
-                        <SelectItem key={day.toString()} textValue={`每月${day}号（0点重置）`}>
-                          每月{day}号（0点重置）
-                        </SelectItem>
-                      ))}
-                      </>
-                    </Select>
-                    
-                    <DatePicker
-                      label="到期时间"
-                      value={tunnelForm.expTime ? parseDate(tunnelForm.expTime.toISOString().split('T')[0]) as any : null}
-                      onChange={(date) => {
-                        if (date) {
-                          const jsDate = new Date(date.year, date.month - 1, date.day, 23, 59, 59);
-                          setTunnelForm(prev => ({ ...prev, expTime: jsDate }));
-                        } else {
-                          setTunnelForm(prev => ({ ...prev, expTime: null }));
-                        }
-                      }}
-                      showMonthAndYearPickers
-                      className="cursor-pointer"
-                    />
-                  </div>
-                  
+                <div className="flex flex-col sm:flex-row gap-3 sm:items-end">
+                  <Select
+                    size="sm"
+                    label="选择隧道"
+                    className="flex-1"
+                    selectedKeys={tunnelForm.tunnelId ? [tunnelForm.tunnelId.toString()] : []}
+                    onSelectionChange={(keys) => {
+                      const value = Array.from(keys)[0] as string;
+                      setTunnelForm({ tunnelId: Number(value) || null });
+                    }}
+                  >
+                    {availableTunnels.map(tunnel => (
+                      <SelectItem key={tunnel.id.toString()} textValue={tunnel.name}>
+                        {tunnel.name}
+                      </SelectItem>
+                    ))}
+                  </Select>
+
                   <Button
-                    color="primary"
+                    color="default"
                     onPress={handleAssignTunnel}
                     isLoading={assignLoading}
                   >
@@ -978,12 +839,8 @@ export default function UserPage() {
                 >
                   <TableHeader>
                     <TableColumn>隧道名称</TableColumn>
-                    <TableColumn>流量统计</TableColumn>
-                    <TableColumn>转发数量</TableColumn>
+                    <TableColumn>已用流量</TableColumn>
                     <TableColumn>状态</TableColumn>
-                    <TableColumn>限速规则</TableColumn>
-                    <TableColumn>重置时间</TableColumn>
-                    <TableColumn>到期时间</TableColumn>
                     <TableColumn>操作</TableColumn>
                   </TableHeader>
                   <TableBody
@@ -995,21 +852,7 @@ export default function UserPage() {
                     {(userTunnel) => (
                       <TableRow key={userTunnel.id}>
                         <TableCell>{userTunnel.tunnelName}</TableCell>
-                        <TableCell>
-                          <div className="flex flex-col gap-1">
-                            <div className="flex justify-between text-small">
-                              <span className="text-gray-600">限制:</span>
-                              <span className="font-medium">{formatFlow(userTunnel.flow, 'gb')}</span>
-                            </div>
-                            <div className="flex justify-between text-small">
-                              <span className="text-gray-600">已用:</span>
-                              <span className="font-medium text-danger">
-                                {formatFlow(calculateTunnelUsedFlow(userTunnel))}
-                              </span>
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell>{userTunnel.num}</TableCell>
+                        <TableCell>{formatFlow(calculateTunnelUsedFlow(userTunnel))}</TableCell>
                         <TableCell>
                           <Chip
                             color={userTunnel.status === 1 ? 'success' : 'danger'}
@@ -1020,31 +863,19 @@ export default function UserPage() {
                           </Chip>
                         </TableCell>
                         <TableCell>
-                          <Chip
-                            color={userTunnel.speedLimitName ? 'warning' : 'success'}
-                            size="sm"
-                            variant="flat"
-                          >
-                            {userTunnel.speedLimitName || '不限速'}
-                          </Chip>
-                        </TableCell>
-                        <TableCell>{userTunnel.flowResetTime === 0 ? '不重置' : `每月${userTunnel.flowResetTime}号`}</TableCell>
-                        <TableCell>{formatDate(userTunnel.expTime)}</TableCell>
-                        <TableCell>
                           <div className="flex items-center gap-2">
                             <Button
                               size="sm"
                               variant="flat"
-                              color="primary"
-                              isIconOnly
-                              onClick={() => handleEditTunnel(userTunnel)}
+                              color="default"
+                              onClick={() => handleToggleTunnelStatus(userTunnel)}
                             >
-                              <EditIcon className="w-4 h-4" />
+                              {userTunnel.status === 1 ? '禁用' : '启用'}
                             </Button>
                             <Button
                               size="sm"
                               variant="flat"
-                              color="warning"
+                              color="default"
                               isIconOnly
                               onClick={() => handleResetTunnelFlow(userTunnel)}
                               title="重置流量"
@@ -1074,130 +905,6 @@ export default function UserPage() {
           <ModalFooter>
             <Button onPress={onTunnelModalClose}>
               关闭
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
-
-      {/* 编辑隧道权限模态框 */}
-      <Modal
-        isOpen={isEditTunnelModalOpen}
-        onClose={onEditTunnelModalClose}
-        size="2xl"
-      scrollBehavior="outside"
-      backdrop="blur"
-      placement="center"
-        isDismissable={false}
-      >
-        <ModalContent>
-          <ModalHeader>
-            编辑隧道权限 - {editTunnelForm?.tunnelName}
-          </ModalHeader>
-          <ModalBody>
-            {editTunnelForm && (
-              <>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Input autoComplete="off"
-                    label="流量限制(GB)"
-                    type="number"
-                    value={editTunnelForm.flow.toString()}
-                    onChange={(e) => {
-                      const value = Math.min(Math.max(Number(e.target.value) || 0, 1), 99999);
-                      setEditTunnelForm(prev => prev ? { ...prev, flow: value } : null);
-                    }}
-                    min="1"
-                    max="99999"
-                  />
-                  
-                  <Input autoComplete="off"
-                    label="转发数量"
-                    type="number"
-                    value={editTunnelForm.num.toString()}
-                    onChange={(e) => {
-                      const value = Math.min(Math.max(Number(e.target.value) || 0, 1), 99999);
-                      setEditTunnelForm(prev => prev ? { ...prev, num: value } : null);
-                    }}
-                    min="1"
-                    max="99999"
-                  />
-                  
-                  <Select
-                    label="限速规则"
-                    selectedKeys={editTunnelForm.speedId ? [editTunnelForm.speedId.toString()] : ['null']}
-                    onSelectionChange={(keys) => {
-                      const value = Array.from(keys)[0] as string;
-                      setEditTunnelForm(prev => prev ? { ...prev, speedId: value === 'null' ? null : Number(value) } : null);
-                    }}
-                  >
-                    {[
-                      <SelectItem key="null" textValue="不限速">不限速</SelectItem>,
-                      ...editAvailableSpeedLimits.map(speedLimit => (
-                        <SelectItem key={speedLimit.id.toString()} textValue={speedLimit.name}>
-                          {speedLimit.name}
-                        </SelectItem>
-                      ))
-                    ]}
-                  </Select>
-                  
-                  <Select
-                    label="流量重置日期"
-                    selectedKeys={[editTunnelForm.flowResetTime.toString()]}
-                    onSelectionChange={(keys) => {
-                      const value = Array.from(keys)[0] as string;
-                      setEditTunnelForm(prev => prev ? { ...prev, flowResetTime: Number(value) } : null);
-                    }}
-                  >
-                    <>
-                      <SelectItem key="0" textValue="不重置">
-                        不重置
-                      </SelectItem>
-                    {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
-                      <SelectItem key={day.toString()} textValue={`每月${day}号（0点重置）`}>
-                        每月{day}号（0点重置）
-                      </SelectItem>
-                    ))}
-                    </>
-                  </Select>
-                  
-                  <DatePicker
-                    label="到期时间"
-                    value={editTunnelForm.expTime ? parseDate(new Date(editTunnelForm.expTime).toISOString().split('T')[0]) as any : null}
-                    onChange={(date) => {
-                      if (date) {
-                        const jsDate = new Date(date.year, date.month - 1, date.day, 23, 59, 59);
-                        setEditTunnelForm(prev => prev ? { ...prev, expTime: jsDate.getTime() } : null);
-                      } else {
-                        setEditTunnelForm(prev => prev ? { ...prev, expTime: Date.now() } : null);
-                      }
-                    }}
-                    showMonthAndYearPickers
-                    className="cursor-pointer"
-                    isRequired
-                  />
-                </div>
-                
-                <RadioGroup
-                  label="状态"
-                  value={editTunnelForm.status.toString()}
-                  onValueChange={(value: string) => setEditTunnelForm(prev => prev ? { ...prev, status: Number(value) } : null)}
-                  orientation="horizontal"
-                >
-                  <Radio value="1">正常</Radio>
-                  <Radio value="0">禁用</Radio>
-                </RadioGroup>
-              </>
-            )}
-          </ModalBody>
-          <ModalFooter>
-            <Button onPress={onEditTunnelModalClose}>
-              取消
-            </Button>
-            <Button
-              color="primary"
-              onPress={handleUpdateTunnel}
-              isLoading={editTunnelLoading}
-            >
-              确定
             </Button>
           </ModalFooter>
         </ModalContent>

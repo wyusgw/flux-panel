@@ -57,4 +57,20 @@ public class DeviceGroup extends BaseEntity {
     private String remark;
 
     private Integer sort;
+
+    /**
+     * 是否启用自定义设备离线宽限期（0-关闭，1-开启；关闭时继承全局默认设置）
+     */
+    private Integer offlineGraceEnabled;
+
+    /** 自定义设备离线宽限期（秒） */
+    private Integer offlineGraceSeconds;
+
+    /**
+     * 是否启用自定义设备离线保留期（0-关闭，1-开启；关闭时继承全局默认设置）
+     */
+    private Integer offlineRetainEnabled;
+
+    /** 自定义设备离线保留期（秒） */
+    private Integer offlineRetainSeconds;
 }

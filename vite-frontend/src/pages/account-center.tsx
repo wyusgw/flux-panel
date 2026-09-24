@@ -94,6 +94,7 @@ export default function AccountCenterPage() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [resetLoading, setResetLoading] = useState(false);
+  const { isOpen: isResetOpen, onOpen: onResetOpen, onOpenChange: onResetOpenChange } = useDisclosure();
   const { isOpen: isGeneratedOpen, onOpenChange: onGeneratedOpenChange } = useDisclosure();
   const [generatedPassword, setGeneratedPassword] = useState('');
 
@@ -121,10 +122,10 @@ export default function AccountCenterPage() {
       localStorage.setItem('admin', adminFlag.toString());
     }
     setIsAdminUser(adminFlag);
-    loadData();
+    loadData(true);
   }, []);
 
-  const loadData = async () => {
+  const loadData = async (notify = false) => {
     setLoading(true);
     try {
       const [userRes, plansRes, groupsRes] = await Promise.all([
@@ -139,6 +140,7 @@ export default function AccountCenterPage() {
         setPaymentMode(info.notifyPaymentMode ?? 0);
         setDeviceMode(info.notifyDeviceMode ?? 0);
         setSelectedGroupIds(info.notifyDeviceGroupIds ?? []);
+        if (notify) toast.success('刷新用户信息成功', { id: 'account-refresh' });
       } else {
         toast.error(userRes.msg || '获取用户信息失败');
       }
@@ -214,6 +216,7 @@ export default function AccountCenterPage() {
         setCurrentPassword('');
         setNewPassword('');
         setConfirmPassword('');
+        onResetOpenChange();
         if (res.data?.generatedPassword) {
           setGeneratedPassword(res.data.generatedPassword);
           onGeneratedOpenChange();
@@ -346,7 +349,7 @@ export default function AccountCenterPage() {
               label="续费价格"
               value={`${currentPlan.price} 元`}
               action={
-                <Button size="sm" variant="flat" color="primary" isLoading={renewLoading} onPress={handleRenew}>
+                <Button size="sm" variant="flat" color="default" isLoading={renewLoading} onPress={handleRenew}>
                   立即续费
                 </Button>
               }
@@ -402,20 +405,47 @@ export default function AccountCenterPage() {
             <Switch isSelected={userInfo.autoRenew === 1} isDisabled={autoRenewLoading} onValueChange={handleAutoRenewChange} />
           </div>
 
-          <div className="pt-3 border-t border-default-100 space-y-3">
-            <div>
-              <p className="text-sm font-medium text-foreground">重置密码</p>
-              <p className="mt-1 text-xs text-default-500">验证当前密码后即可重置，新密码留空将由系统随机生成。</p>
+          <div className="pt-3 border-t border-default-100">
+            <div className="flex items-center justify-between gap-3 py-1">
+              <div>
+                <p className="text-sm font-medium text-foreground">重置密码</p>
+                <p className="mt-1 text-xs text-default-500 max-w-md">验证当前密码后即可重置，新密码留空将由系统随机生成。</p>
+              </div>
+              <Button size="sm" variant="flat" color="danger" onPress={onResetOpen}>
+                重置
+              </Button>
             </div>
-            <Input autoComplete="off" type="password" label="当前密码" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} variant="bordered" size="sm" />
-            <Input autoComplete="off" type="password" label="新密码，留空随机生成" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} variant="bordered" size="sm" />
-            <Input autoComplete="off" type="password" label="确认新密码" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} variant="bordered" size="sm" />
-            <Button color="danger" variant="flat" isLoading={resetLoading} onPress={handleResetPassword}>
-              重置密码
-            </Button>
           </div>
         </CardBody>
       </Card>
+
+      {/* 重置密码弹窗 */}
+      <Modal
+        isOpen={isResetOpen}
+        onOpenChange={() => {
+          onResetOpenChange();
+          setCurrentPassword('');
+          setNewPassword('');
+          setConfirmPassword('');
+        }}
+        size="sm"
+        placement="center"
+        backdrop="blur"
+      >
+        <ModalContent>
+          <ModalHeader>重置密码</ModalHeader>
+          <ModalBody className="space-y-3">
+            <p className="text-xs text-default-500">验证当前密码后即可重置，新密码留空将由系统随机生成。</p>
+            <Input autoComplete="off" type="password" label="当前密码" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} variant="bordered" size="sm" />
+            <Input autoComplete="off" type="password" label="新密码，留空随机生成" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} variant="bordered" size="sm" />
+            <Input autoComplete="off" type="password" label="确认新密码" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} variant="bordered" size="sm" />
+          </ModalBody>
+          <ModalFooter>
+            <Button variant="light" onPress={() => onResetOpenChange()}>取消</Button>
+            <Button color="danger" isLoading={resetLoading} onPress={handleResetPassword}>确定</Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
 
       {/* Telegram 绑定码弹窗 */}
       <Modal isOpen={isBindOpen} onOpenChange={onBindOpenChange} size="sm" placement="center" backdrop="blur">
@@ -432,7 +462,7 @@ export default function AccountCenterPage() {
                 href={`https://t.me/${botUsername}?start=${bindCode}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                color="primary"
+                color="default"
                 variant="flat"
                 className="w-full"
               >
@@ -442,7 +472,7 @@ export default function AccountCenterPage() {
           </ModalBody>
           <ModalFooter>
             <Button variant="light" onPress={() => onBindOpenChange()}>关闭</Button>
-            <Button color="primary" isLoading={bindChecking} onPress={handleRefreshBindStatus}>刷新状态</Button>
+            <Button color="default" isLoading={bindChecking} onPress={handleRefreshBindStatus}>刷新状态</Button>
           </ModalFooter>
         </ModalContent>
       </Modal>
@@ -492,7 +522,7 @@ export default function AccountCenterPage() {
           </ModalBody>
           <ModalFooter>
             <Button variant="light" onPress={() => onPushOpenChange()}>取消</Button>
-            <Button color="primary" isLoading={pushSaving} onPress={handleSavePushSettings}>确定</Button>
+            <Button color="default" isLoading={pushSaving} onPress={handleSavePushSettings}>确定</Button>
           </ModalFooter>
         </ModalContent>
       </Modal>
@@ -507,7 +537,7 @@ export default function AccountCenterPage() {
             <p className="text-xs text-default-500">请使用新密码重新登录。</p>
           </ModalBody>
           <ModalFooter>
-            <Button color="primary" className="w-full" onPress={handleGeneratedConfirm}>我已保存，重新登录</Button>
+            <Button color="default" className="w-full" onPress={handleGeneratedConfirm}>我已保存，重新登录</Button>
           </ModalFooter>
         </ModalContent>
       </Modal>

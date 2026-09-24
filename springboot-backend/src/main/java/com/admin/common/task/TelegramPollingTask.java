@@ -16,8 +16,10 @@ import javax.annotation.Resource;
 import java.util.List;
 
 /**
- * Telegram 长轮询任务：定期拉取 getUpdates，处理 /start、/bind 绑定命令。
- * 采用长轮询而非 webhook，避免要求面板具备公网可达的 HTTPS 入口。
+ * Telegram 更新处理任务：默认定期拉取 getUpdates 长轮询，处理 /start、/bind 绑定命令，
+ * 避免要求面板具备公网可达的 HTTPS 入口；若在推送通知页配置了 Webhook URL，则改为
+ * {@link com.admin.controller.TelegramWebhookController} 被动接收推送、直接调用本类的
+ * {@link #handleUpdate} 处理同一套指令，此时本任务的轮询会自动跳过（两者不能同时使用）。
  */
 @Slf4j
 @Configuration
@@ -35,11 +37,16 @@ public class TelegramPollingTask {
     @Scheduled(fixedDelay = 3000)
     public void poll() {
         try {
-            if (!"1".equals(getConfigValue("telegram_enabled"))) {
+            if (!"true".equals(getConfigValue("telegram_enabled"))) {
                 return;
             }
             String token = getConfigValue("telegram_bot_token");
             if (token == null || token.isEmpty()) {
+                return;
+            }
+            String webhookUrl = getConfigValue("telegram_webhook_url");
+            if (webhookUrl != null && !webhookUrl.isEmpty()) {
+                // 已配置 Webhook：Telegram 不允许同一个 Bot 同时使用 getUpdates 长轮询，跳过本次轮询
                 return;
             }
 
@@ -70,7 +77,10 @@ public class TelegramPollingTask {
 
     private static final String HELP_TEXT = "可用指令：\n/bind <绑定码> 绑定账号（在个人中心获取绑定码）\n/unbind 解除当前账号的绑定\n/help 查看本帮助";
 
-    private void handleUpdate(String token, TelegramBotUtil.TelegramUpdate update) {
+    /**
+     * 处理一条 Telegram 更新（/bind、/unbind、/help 等指令），轮询与 Webhook 两种模式共用。
+     */
+    public void handleUpdate(String token, TelegramBotUtil.TelegramUpdate update) {
         if (update.text == null) return;
         String text = update.text.trim();
 

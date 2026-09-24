@@ -33,4 +33,11 @@ public interface DeviceGroupService extends IService<DeviceGroup> {
      * @param groups 排序数据，每项包含 id 与 sort
      */
     R reorderDeviceGroups(List<Map<String, Object>> groups);
+
+    /**
+     * 批量保存设备组的离线通知覆盖设置（推送通知页「设备组覆盖设置」表格的保存按钮）。
+     * 每项包含 id、offlineGraceEnabled、offlineGraceSeconds、offlineRetainEnabled、offlineRetainSeconds，
+     * 只更新这 4 个字段，不影响设备组的其余配置。
+     */
+    R updateOfflineConfig(List<Map<String, Object>> groups);
 }

@@ -1,14 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Button } from "@heroui/button";
-import { Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from "@heroui/dropdown";
-import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure } from "@heroui/modal";
-import { Input } from "@heroui/input";
-import { toast } from 'react-hot-toast';
+import { useDisclosure } from "@heroui/modal";
 
 import { Logo } from '@/components/icons';
 import { ThemeSwitch } from '@/components/theme-switch';
-import { updatePassword } from '@/api';
+import { UserMenu } from '@/components/user-menu';
+import { ChangePasswordModal } from '@/components/change-password-modal';
 import { safeLogout } from '@/utils/logout';
 import { siteConfig } from '@/config/site';
 
@@ -17,13 +15,6 @@ interface MenuItem {
   label: string;
   icon: React.ReactNode;
   adminOnly?: boolean;
-}
-
-interface PasswordForm {
-  newUsername: string;
-  currentPassword: string;
-  newPassword: string;
-  confirmPassword: string;
 }
 
 export default function AdminLayout({
@@ -40,13 +31,6 @@ export default function AdminLayout({
   const [managementMenuOpen, setManagementMenuOpen] = useState(true);
   const [username, setUsername] = useState('');
   const [isAdmin, setIsAdmin] = useState(false);
-  const [passwordLoading, setPasswordLoading] = useState(false);
-  const [passwordForm, setPasswordForm] = useState<PasswordForm>({
-    newUsername: '',
-    currentPassword: '',
-    newPassword: '',
-    confirmPassword: ''
-  });
 
   // 菜单项配置
   const menuItems: MenuItem[] = [
@@ -176,11 +160,31 @@ export default function AdminLayout({
       adminOnly: true
     },
     {
+      path: '/order-management',
+      label: '订单管理',
+      icon: (
+        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+          <path fillRule="evenodd" d="M4 2a2 2 0 00-2 2v13a1 1 0 001.5.868L5 17l1.5.868a1 1 0 001 0L9 17l1.5.868a1 1 0 001 0L13 17l1.5.868A1 1 0 0016 17V4a2 2 0 00-2-2H4zm2 5a1 1 0 000 2h6a1 1 0 100-2H6zm0 4a1 1 0 100 2h4a1 1 0 100-2H6z" clipRule="evenodd" />
+        </svg>
+      ),
+      adminOnly: true
+    },
+    {
       path: '/config',
       label: '站点设置',
       icon: (
         <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
           <path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
+        </svg>
+      ),
+      adminOnly: true
+    },
+    {
+      path: '/push-notification',
+      label: '推送通知',
+      icon: (
+        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+          <path d="M10 2a6 6 0 00-6 6v3.586l-1.707 1.707A1 1 0 003 15h14a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM8.343 17a1.994 1.994 0 003.314 0H8.343z" />
         </svg>
       ),
       adminOnly: true
@@ -242,67 +246,6 @@ export default function AdminLayout({
     if (isMobile) {
       hideMobileMenu();
     }
-  };
-
-  // 密码表单验证
-  const validatePasswordForm = (): boolean => {
-    if (!passwordForm.newUsername.trim()) {
-      toast.error('请输入新用户名');
-      return false;
-    }
-    if (passwordForm.newUsername.length < 3) {
-      toast.error('用户名长度至少3位');
-      return false;
-    }
-    if (!passwordForm.currentPassword) {
-      toast.error('请输入当前密码');
-      return false;
-    }
-    if (!passwordForm.newPassword) {
-      toast.error('请输入新密码');
-      return false;
-    }
-    if (passwordForm.newPassword.length < 6) {
-      toast.error('新密码长度不能少于6位');
-      return false;
-    }
-    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-      toast.error('两次输入密码不一致');
-      return false;
-    }
-    return true;
-  };
-
-  // 提交密码修改
-  const handlePasswordSubmit = async () => {
-    if (!validatePasswordForm()) return;
-
-    setPasswordLoading(true);
-    try {
-      const response = await updatePassword(passwordForm);
-      if (response.code === 0) {
-        toast.success('密码修改成功，请重新登录');
-        onOpenChange();
-        handleLogout();
-      } else {
-        toast.error(response.msg || '密码修改失败');
-      }
-    } catch (error) {
-      toast.error('修改密码时发生错误');
-      console.error('修改密码错误:', error);
-    } finally {
-      setPasswordLoading(false);
-    }
-  };
-
-  // 重置密码表单
-  const resetPasswordForm = () => {
-    setPasswordForm({
-      newUsername: '',
-      currentPassword: '',
-      newPassword: '',
-      confirmPassword: ''
-    });
   };
 
   // 过滤菜单项（根据权限）
@@ -470,44 +413,8 @@ export default function AdminLayout({
           </div>
 
           <div className="flex items-center gap-3">
+            <UserMenu username={username} onChangePassword={onOpen} onLogout={handleLogout} />
             <ThemeSwitch />
-            {/* 用户菜单 */}
-             <Dropdown placement="bottom-end">
-               <DropdownTrigger>
-                 <Button variant="light" className="text-sm font-medium text-foreground">
-                   {username}
-                   <svg className="w-4 h-4 ml-1" fill="currentColor" viewBox="0 0 20 20">
-                     <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
-                   </svg>
-                 </Button>
-               </DropdownTrigger>
-              <DropdownMenu aria-label="用户菜单">
-                <DropdownItem
-                  key="change-password"
-                  startContent={
-                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M18 8a6 6 0 01-7.743 5.743L10 14l-1 1-1 1H6v2H2v-4l4.257-4.257A6 6 0 1118 8zm-6-4a1 1 0 100 2 2 2 0 012 2 1 1 0 102 0 4 4 0 00-4-4z" clipRule="evenodd" />
-                    </svg>
-                  }
-                  onPress={onOpen}
-                >
-                  修改密码
-                </DropdownItem>
-                <DropdownItem
-                  key="logout"
-                  startContent={
-                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M3 3a1 1 0 00-1 1v12a1 1 0 102 0V4a1 1 0 00-1-1zm10.293 9.293a1 1 0 001.414 1.414l3-3a1 1 0 000-1.414l-3-3a1 1 0 10-1.414 1.414L14.586 9H7a1 1 0 100 2h7.586l-1.293 1.293z" clipRule="evenodd" />
-                    </svg>
-                  }
-                  className="text-danger"
-                  color="danger"
-                  onPress={handleLogout}
-                >
-                  退出登录
-                </DropdownItem>
-              </DropdownMenu>
-            </Dropdown>
           </div>
         </header>
 
@@ -517,73 +424,7 @@ export default function AdminLayout({
         </main>
       </div>
 
-      {/* 修改密码弹窗 */}
-      <Modal 
-        isOpen={isOpen} 
-        onOpenChange={() => {
-          onOpenChange();
-          resetPasswordForm();
-        }}
-        size="2xl"
-        scrollBehavior="outside"
-        backdrop="blur"
-        placement="center"
-      >
-                 <ModalContent>
-           {(onClose: () => void) => (
-            <>
-              <ModalHeader className="flex flex-col gap-1">修改密码</ModalHeader>
-              <ModalBody>
-                                 <div className="space-y-4">
-                   <Input autoComplete="off"
-                     label="新用户名"
-                     placeholder="请输入新用户名（至少3位）"
-                     value={passwordForm.newUsername}
-                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPasswordForm(prev => ({ ...prev, newUsername: e.target.value }))}
-                     variant="bordered"
-                   />
-                   <Input autoComplete="off"
-                     label="当前密码"
-                     type="password"
-                     placeholder="请输入当前密码"
-                     value={passwordForm.currentPassword}
-                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPasswordForm(prev => ({ ...prev, currentPassword: e.target.value }))}
-                     variant="bordered"
-                   />
-                   <Input autoComplete="off"
-                     label="新密码"
-                     type="password"
-                     placeholder="请输入新密码（至少6位）"
-                     value={passwordForm.newPassword}
-                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPasswordForm(prev => ({ ...prev, newPassword: e.target.value }))}
-                     variant="bordered"
-                   />
-                   <Input autoComplete="off"
-                     label="确认密码"
-                     type="password"
-                     placeholder="请再次输入新密码"
-                     value={passwordForm.confirmPassword}
-                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPasswordForm(prev => ({ ...prev, confirmPassword: e.target.value }))}
-                     variant="bordered"
-                   />
-                 </div>
-              </ModalBody>
-              <ModalFooter>
-                <Button color="default" variant="light" onPress={onClose}>
-                  取消
-                </Button>
-                <Button 
-                  color="primary" 
-                  onPress={handlePasswordSubmit}
-                  isLoading={passwordLoading}
-                >
-                  确定
-                </Button>
-              </ModalFooter>
-            </>
-          )}
-        </ModalContent>
-      </Modal>
+      <ChangePasswordModal isOpen={isOpen} onOpenChange={onOpenChange} />
     </div>
   );
 } 

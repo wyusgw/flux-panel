@@ -216,7 +216,7 @@ export default function UserGroupPage() {
           <div className="flex gap-2">
             {selectedIds.length > 0 && <Button size="sm" color="danger" variant="flat" onPress={() => setBatchDeleteModalOpen(true)}>批量删除（{selectedIds.length}）</Button>}
             <Button size="sm" variant="bordered" onPress={loadData} isLoading={loading}>刷新</Button>
-            <Button size="sm" color="primary" onPress={handleAdd}>添加用户组</Button>
+            <Button size="sm" color="default" onPress={handleAdd}>添加用户组</Button>
           </div>
         </CardHeader>
         <CardBody className="p-0">
@@ -237,7 +237,8 @@ export default function UserGroupPage() {
                 <h2 className="text-xl font-bold">{isEdit ? '编辑用户组' : '添加用户组'}</h2>
               </ModalHeader>
               <ModalBody>
-                <Input autoComplete="off"
+                <Input
+                  size="sm" autoComplete="off"
                   label="名称"
                   placeholder="请输入用户组名称"
                   value={form.name}
@@ -249,7 +250,7 @@ export default function UserGroupPage() {
               </ModalBody>
               <ModalFooter>
                 <Button variant="light" onPress={onClose}>取消</Button>
-                <Button color="primary" onPress={handleSubmit} isLoading={submitLoading}>
+                <Button color="default" onPress={handleSubmit} isLoading={submitLoading}>
                   {isEdit ? '保存修改' : '创建'}
                 </Button>
               </ModalFooter>

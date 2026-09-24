@@ -166,7 +166,7 @@ export default function RegisterPage() {
                 <div className="flex items-center gap-4 mt-1">
                   <Button
                     size="sm"
-                    color="primary"
+                    color="default"
                     onClick={handleRegister}
                     isLoading={loading}
                     disabled={loading}

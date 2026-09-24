@@ -15,6 +15,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -29,6 +30,9 @@ public class RedeemCodeServiceImpl extends ServiceImpl<RedeemCodeMapper, RedeemC
     private static final String ERROR_PACKAGE_NOT_FOUND = "套餐不存在";
     private static final String ERROR_CREATE_FAILED = "兑换码创建失败";
     private static final String ERROR_NOT_FOUND = "兑换码不存在";
+    private static final String TYPE_DISCOUNT = "discount";
+    private static final String TYPE_PACKAGE = "package";
+    private static final String TYPE_BALANCE = "balance";
 
     @Autowired
     @Lazy
@@ -36,9 +40,38 @@ public class RedeemCodeServiceImpl extends ServiceImpl<RedeemCodeMapper, RedeemC
 
     @Override
     public R batchCreate(RedeemCodeBatchDto dto) {
-        PackagePlan packagePlan = packagePlanService.getById(dto.getPackageId());
-        if (packagePlan == null) {
-            return R.err(ERROR_PACKAGE_NOT_FOUND);
+        String type = StringUtils.isBlank(dto.getType()) ? TYPE_DISCOUNT : dto.getType();
+        if (!TYPE_DISCOUNT.equals(type) && !TYPE_PACKAGE.equals(type) && !TYPE_BALANCE.equals(type)) {
+            return R.err("兑换类型不正确");
+        }
+
+        Integer discountRatio = null;
+        Long packageId = null;
+        BigDecimal amount = null;
+
+        if (TYPE_DISCOUNT.equals(type) || TYPE_PACKAGE.equals(type)) {
+            if (dto.getPackageId() == null) {
+                return R.err("请选择套餐");
+            }
+            PackagePlan packagePlan = packagePlanService.getById(dto.getPackageId());
+            if (packagePlan == null) {
+                return R.err(ERROR_PACKAGE_NOT_FOUND);
+            }
+            packageId = dto.getPackageId();
+            if (TYPE_DISCOUNT.equals(type)) {
+                if (dto.getDiscountRatio() == null) {
+                    return R.err("请填写折扣比例");
+                }
+                discountRatio = dto.getDiscountRatio();
+            } else {
+                // 免费兑换套餐：折扣比例固定为 0（支付原价的 0%），不采用管理员传入的值
+                discountRatio = 0;
+            }
+        } else {
+            if (dto.getAmount() == null || dto.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
+                return R.err("请填写兑换到账金额");
+            }
+            amount = dto.getAmount();
         }
 
         // 去重、去空白
@@ -64,8 +97,10 @@ public class RedeemCodeServiceImpl extends ServiceImpl<RedeemCodeMapper, RedeemC
         for (String code : uniqueCodes) {
             RedeemCode redeemCode = new RedeemCode();
             redeemCode.setCode(code);
-            redeemCode.setPackageId(dto.getPackageId());
-            redeemCode.setDiscountRatio(dto.getDiscountRatio());
+            redeemCode.setType(type);
+            redeemCode.setPackageId(packageId);
+            redeemCode.setDiscountRatio(discountRatio);
+            redeemCode.setAmount(amount);
             redeemCode.setUsesRemaining(dto.getUsesRemaining());
             redeemCode.setCreatedTime(currentTime);
             redeemCode.setUpdatedTime(currentTime);
@@ -81,7 +116,7 @@ public class RedeemCodeServiceImpl extends ServiceImpl<RedeemCodeMapper, RedeemC
     public R getAllRedeemCodes() {
         List<RedeemCode> codes = this.list(new QueryWrapper<RedeemCode>().orderByDesc("created_time"));
 
-        Set<Long> packageIds = codes.stream().map(RedeemCode::getPackageId).collect(Collectors.toSet());
+        Set<Long> packageIds = codes.stream().map(RedeemCode::getPackageId).filter(java.util.Objects::nonNull).collect(Collectors.toSet());
         Map<Long, String> packageNameMap = new HashMap<>();
         for (Long packageId : packageIds) {
             PackagePlan packagePlan = packagePlanService.getById(packageId);
@@ -94,9 +129,11 @@ public class RedeemCodeServiceImpl extends ServiceImpl<RedeemCodeMapper, RedeemC
             Map<String, Object> item = new HashMap<>();
             item.put("id", redeemCode.getId());
             item.put("code", redeemCode.getCode());
+            item.put("type", StringUtils.isBlank(redeemCode.getType()) ? TYPE_DISCOUNT : redeemCode.getType());
             item.put("packageId", redeemCode.getPackageId());
-            item.put("packageName", packageNameMap.getOrDefault(redeemCode.getPackageId(), "未知套餐"));
+            item.put("packageName", redeemCode.getPackageId() == null ? null : packageNameMap.getOrDefault(redeemCode.getPackageId(), "未知套餐"));
             item.put("discountRatio", redeemCode.getDiscountRatio());
+            item.put("amount", redeemCode.getAmount());
             item.put("usesRemaining", redeemCode.getUsesRemaining());
             return item;
         }).collect(Collectors.toList());
@@ -120,7 +157,7 @@ public class RedeemCodeServiceImpl extends ServiceImpl<RedeemCodeMapper, RedeemC
         if (redeemCode == null) {
             return null;
         }
-        if (!redeemCode.getPackageId().equals(packageId)) {
+        if (redeemCode.getPackageId() == null || !redeemCode.getPackageId().equals(packageId)) {
             return null;
         }
         if (redeemCode.getUsesRemaining() == null || redeemCode.getUsesRemaining() <= 0) {

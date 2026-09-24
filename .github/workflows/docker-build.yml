@@ -211,6 +211,18 @@ jobs:
           mv ./artifacts/amd64/gost-amd64 ./artifacts/gost-amd64
           mv ./artifacts/arm64/gost-arm64 ./artifacts/gost-arm64
 
+      - name: Package offline deployment bundles
+        run: |
+          mkdir -p ./artifacts/offline-amd64 ./artifacts/offline-arm64
+          cp ./artifacts/gost-amd64 ./artifacts/offline-amd64/gost
+          cp ./offline.sh ./artifacts/offline-amd64/offline.sh
+          cp ./artifacts/gost-arm64 ./artifacts/offline-arm64/gost
+          cp ./offline.sh ./artifacts/offline-arm64/offline.sh
+          chmod +x ./artifacts/offline-amd64/gost ./artifacts/offline-amd64/offline.sh
+          chmod +x ./artifacts/offline-arm64/gost ./artifacts/offline-arm64/offline.sh
+          (cd ./artifacts/offline-amd64 && zip -j ../flux-panel-offline-amd64.zip gost offline.sh)
+          (cd ./artifacts/offline-arm64 && zip -j ../flux-panel-offline-arm64.zip gost offline.sh)
+
       - name: Upload assets to the existing Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -221,8 +233,13 @@ jobs:
           gh release upload "${TAG}" ./artifacts/gost-amd64 --clobber
           gh release upload "${TAG}" ./artifacts/gost-arm64 --clobber
 
+          echo "上传离线部署包..."
+          gh release upload "${TAG}" ./artifacts/flux-panel-offline-amd64.zip --clobber
+          gh release upload "${TAG}" ./artifacts/flux-panel-offline-arm64.zip --clobber
+
           echo "上传安装脚本..."
           gh release upload "${TAG}" ./install.sh --clobber
+          gh release upload "${TAG}" ./offline.sh --clobber
           gh release upload "${TAG}" ./panel_install.sh --clobber
 
           echo "上传 Docker Compose 配置文件..."

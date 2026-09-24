@@ -4,10 +4,15 @@ package com.admin.common.utils;
 import com.admin.common.dto.GostConfigDto;
 import com.admin.common.dto.GostDto;
 import com.admin.common.task.CheckGostConfigAsync;
+import com.admin.entity.DeviceGroup;
 import com.admin.entity.Node;
+import com.admin.entity.ViteConfig;
+import com.admin.service.DeviceGroupService;
 import com.admin.service.NodeService;
+import com.admin.service.ViteConfigService;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -17,10 +22,13 @@ import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 
 import javax.annotation.Resource;
+import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.UUID;
 
@@ -33,6 +41,17 @@ public class WebSocketServer extends TextWebSocketHandler {
 
     @Resource
     NotificationUtil notificationUtil;
+
+    @Resource
+    DeviceGroupService deviceGroupService;
+
+    @Resource
+    ViteConfigService viteConfigService;
+
+    // 设备离线宽限期的延迟检查线程池：节点断线后若配置了宽限期，不立即标记离线，
+    // 而是延迟到宽限期结束时才检查——如果期间节点已重连（nodeSessions 里能查到新会话），
+    // 则跳过本次标记，避免网络抖动造成的短暂重连也触发"离线"通知
+    private static final ScheduledExecutorService offlineCheckScheduler = Executors.newScheduledThreadPool(1);
 
     // 存储所有活跃的 WebSocket 连接（
     private static final CopyOnWriteArraySet<WebSocketSession> activeSessions = new CopyOnWriteArraySet<>();
@@ -338,29 +357,22 @@ public class WebSocketServer extends TextWebSocketHandler {
                 }
                 
                 log.info("节点 {} 当前活跃连接关闭，开始验证并更新状态", nodeId);
-                
+
+                    // 连接映射立即清理，保证消息路由的正确性不受宽限期影响
                     nodeSessions.remove(nodeId);
-                    
-                    // 更新节点状态为离线
-                    Node node = nodeService.getById(nodeId);
-                    if (node != null) {
-                        node.setStatus(0);
-                        boolean updateResult = nodeService.updateById(node);
-                        
-                        if (updateResult) {
-                            log.info("节点 {} 状态更新为离线成功", nodeId);
-                            
-                            JSONObject res = new JSONObject();
-                            res.put("id", id);
-                            res.put("type", "status");
-                            res.put("data", 0);
-                            broadcastMessage(res.toJSONString());
-                            notificationUtil.notifyDeviceStatus(node, false);
-                        } else {
-                            log.info("节点 {} 状态更新为离线失败", nodeId);
-                        }
+
+                    long graceSeconds = resolveOfflineGraceSeconds(nodeId);
+                    if (graceSeconds <= 0) {
+                        markNodeOffline(nodeId);
                     } else {
-                        log.info("节点 {} 不存在，无法更新离线状态", nodeId);
+                        log.info("节点 {} 断线，{} 秒宽限期后若仍未重连才标记离线", nodeId, graceSeconds);
+                        offlineCheckScheduler.schedule(() -> {
+                            if (!nodeSessions.containsKey(nodeId)) {
+                                markNodeOffline(nodeId);
+                            } else {
+                                log.info("节点 {} 已在宽限期内重连，跳过离线标记", nodeId);
+                            }
+                        }, graceSeconds, TimeUnit.SECONDS);
                     }
             }
             
@@ -369,6 +381,61 @@ public class WebSocketServer extends TextWebSocketHandler {
 
         } catch (Exception e) {
             log.info("关闭连接时发生异常: {}", e.getMessage(), e);
+        }
+    }
+
+    // 将节点标记为离线：更新状态、广播给管理端、发送离线通知
+    private void markNodeOffline(Long nodeId) {
+        try {
+            Node node = nodeService.getById(nodeId);
+            if (node == null) {
+                log.info("节点 {} 不存在，无法更新离线状态", nodeId);
+                return;
+            }
+            node.setStatus(0);
+            boolean updateResult = nodeService.updateById(node);
+            if (updateResult) {
+                log.info("节点 {} 状态更新为离线成功", nodeId);
+                JSONObject res = new JSONObject();
+                res.put("id", nodeId.toString());
+                res.put("type", "status");
+                res.put("data", 0);
+                broadcastMessage(res.toJSONString());
+                notificationUtil.notifyDeviceStatus(node, false);
+            } else {
+                log.info("节点 {} 状态更新为离线失败", nodeId);
+            }
+        } catch (Exception e) {
+            log.info("标记节点 {} 离线时发生异常: {}", nodeId, e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 解析该节点断线后应等待多久才标记离线（秒）：优先取绑定该节点的设备组自定义设置，
+     * 未启用自定义则取全局默认设置；全局默认也未启用时返回 0（不延迟，立即标记，与旧行为一致）。
+     */
+    private long resolveOfflineGraceSeconds(Long nodeId) {
+        try {
+            List<DeviceGroup> groups = deviceGroupService.list(new QueryWrapper<DeviceGroup>().eq("node_id", nodeId));
+            for (DeviceGroup group : groups) {
+                if (group.getOfflineGraceEnabled() != null && group.getOfflineGraceEnabled() == 1
+                        && group.getOfflineGraceSeconds() != null && group.getOfflineGraceSeconds() > 0) {
+                    return group.getOfflineGraceSeconds();
+                }
+            }
+
+            ViteConfig enabledConfig = viteConfigService.getOne(new QueryWrapper<ViteConfig>().eq("name", "device_offline_grace_enabled"));
+            if (enabledConfig == null || !"true".equals(enabledConfig.getValue())) {
+                return 0;
+            }
+            ViteConfig secondsConfig = viteConfigService.getOne(new QueryWrapper<ViteConfig>().eq("name", "device_offline_grace_seconds"));
+            if (secondsConfig == null || StringUtils.isBlank(secondsConfig.getValue())) {
+                return 0;
+            }
+            return Long.parseLong(secondsConfig.getValue());
+        } catch (Exception e) {
+            log.info("解析节点 {} 离线宽限期失败，回退为立即标记离线: {}", nodeId, e.getMessage());
+            return 0;
         }
     }
 

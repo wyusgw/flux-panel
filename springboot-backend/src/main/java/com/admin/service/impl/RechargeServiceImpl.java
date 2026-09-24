@@ -199,9 +199,55 @@ public class RechargeServiceImpl extends ServiceImpl<OrderMapper, Order> impleme
             return "success";
         }
 
+        if (!creditWallet(order, now)) {
+            return "fail";
+        }
+
+        return "success";
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public R markOrderPaidManually(Long orderId) {
+        Order order = this.getById(orderId);
+        if (order == null) {
+            return R.err("订单不存在");
+        }
+        if (!ORDER_TYPE_RECHARGE.equals(order.getType())) {
+            return R.err("仅充值类型订单支持此操作");
+        }
+        if (order.getOrderStatus() != null && order.getOrderStatus() == ORDER_STATUS_PAID) {
+            return R.ok("订单已是已支付状态");
+        }
+
+        long now = System.currentTimeMillis();
+        // 与网关回调走相同的原子条件更新，避免与真实回调并发时重复加值
+        boolean updated = this.update(new UpdateWrapper<Order>()
+                .eq("id", orderId)
+                .eq("order_status", ORDER_STATUS_PENDING)
+                .set("order_status", ORDER_STATUS_PAID)
+                .set("paid_time", now)
+                .set("updated_time", now));
+
+        if (!updated) {
+            return R.err("订单状态已变化，请刷新后重试");
+        }
+
+        if (!creditWallet(order, now)) {
+            return R.err("用户不存在，加值失败");
+        }
+
+        return R.ok("已标记为支付成功并完成加值");
+    }
+
+    /**
+     * 充值订单转为已支付后的加值动作：更新用户钱包余额并推送通知。
+     * 由网关异步通知与管理员手动标记两处共用，调用前必须已完成订单状态的原子转换。
+     */
+    private boolean creditWallet(Order order, long now) {
         User user = userService.getById(order.getUserId());
         if (user == null) {
-            return "fail";
+            return false;
         }
         BigDecimal balance = user.getWalletBalance() != null ? user.getWalletBalance() : BigDecimal.ZERO;
         BigDecimal newBalance = balance.add(order.getAmount());
@@ -212,8 +258,7 @@ public class RechargeServiceImpl extends ServiceImpl<OrderMapper, Order> impleme
         userService.updateById(updateUser);
 
         notificationUtil.notifyPaymentSuccess(user, order.getAmount(), newBalance);
-
-        return "success";
+        return true;
     }
 
     // ========== 私有辅助方法 ==========

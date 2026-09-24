@@ -5,11 +5,14 @@ import com.admin.common.annotation.RequireRole;
 import com.admin.common.dto.ForwardDto;
 import com.admin.common.dto.ForwardUpdateDto;
 import com.admin.common.lang.R;
+import com.admin.common.utils.JwtUtil;
 import com.admin.service.ForwardService;
+import com.admin.service.UserDailyRawFlowService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.HashMap;
 import java.util.Map;
 
 /**
@@ -27,6 +30,9 @@ public class ForwardController extends BaseController {
 
     @Autowired
     private ForwardService forwardService;
+
+    @Autowired
+    private UserDailyRawFlowService userDailyRawFlowService;
 
     @LogAnnotation
     @PostMapping("/create")
@@ -95,6 +101,20 @@ public class ForwardController extends BaseController {
     @PostMapping("/update-order")
     public R updateForwardOrder(@RequestBody Map<String, Object> params) {
         return forwardService.updateForwardOrder(params);
+    }
+
+    /**
+     * "我的转发规则"页「统计数据」弹窗：当前用户今日/昨日累计流量（不计流量倍率的原始字节数）
+     */
+    @LogAnnotation
+    @PostMapping("/daily-flow")
+    public R dailyFlow() {
+        Integer userId = JwtUtil.getUserIdFromToken();
+        long[] flows = userDailyRawFlowService.getTodayAndYesterday(userId);
+        Map<String, Object> data = new HashMap<>();
+        data.put("todayFlow", flows[0]);
+        data.put("yesterdayFlow", flows[1]);
+        return R.ok(data);
     }
 
 }

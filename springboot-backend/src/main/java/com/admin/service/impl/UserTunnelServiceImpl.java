@@ -155,26 +155,12 @@ public class UserTunnelServiceImpl extends ServiceImpl<UserTunnelMapper, UserTun
         if (existingUserTunnel == null) {
             return R.err(ERROR_USER_TUNNEL_NOT_EXISTS);
         }
-        
-        // 2. 检查是否更新了限速规则
-        boolean speedChanged = hasSpeedChanged(existingUserTunnel.getSpeedId(), updateDto.getSpeedId());
-        
-        // 3. 更新用户隧道权限属性
-        updateUserTunnelProperties(existingUserTunnel, updateDto);
-        
-        // 4. 保存更新
+
+        // 2. 更新状态（启用/禁用），其余额度字段已不再由管理员单独设置
+        existingUserTunnel.setStatus(updateDto.getStatus());
         boolean success = this.updateById(existingUserTunnel);
-        
-        if (success) {
-            // 6. 如果限速规则发生变化，更新该用户隧道下的所有转发
-            if (speedChanged) {
-                updateUserTunnelForwardsSpeed(existingUserTunnel.getUserId(), existingUserTunnel.getTunnelId(), updateDto.getSpeedId());
-            }
-            
-            return R.ok(SUCCESS_UPDATE_MSG);
-        }
-        
-        return R.err(ERROR_UPDATE_FAILED);
+
+        return success ? R.ok(SUCCESS_UPDATE_MSG) : R.err(ERROR_UPDATE_FAILED);
     }
 
     // ========== 私有辅助方法 ==========
@@ -215,41 +201,6 @@ public class UserTunnelServiceImpl extends ServiceImpl<UserTunnelMapper, UserTun
         return this.baseMapper.getUserTunnelWithDetails(userId);
     }
 
-    /**
-     * 更新用户隧道权限属性
-     * 
-     * @param existingUserTunnel 现有的用户隧道权限对象
-     * @param updateDto 更新数据传输对象
-     */
-    private void updateUserTunnelProperties(UserTunnel existingUserTunnel, UserTunnelUpdateDto updateDto) {
-        // 更新基本属性
-        existingUserTunnel.setFlow(updateDto.getFlow());
-        existingUserTunnel.setNum(updateDto.getNum());
-        
-        // 更新可选属性（仅在非空时更新）
-        updateOptionalProperty(existingUserTunnel::setFlowResetTime, updateDto.getFlowResetTime());
-        updateOptionalProperty(existingUserTunnel::setExpTime, updateDto.getExpTime());
-        updateOptionalProperty(existingUserTunnel::setStatus, updateDto.getStatus());
-        
-        // 更新限速规则ID（允许设置为null，表示不限速）
-        existingUserTunnel.setSpeedId(updateDto.getSpeedId());
-    }
-
-    /**
-     * 更新可选属性（仅在值非空时更新）
-     * 
-     * @param setter 属性设置方法
-     * @param value 属性值
-     * @param <T> 属性类型
-     */
-    private <T> void updateOptionalProperty(java.util.function.Consumer<T> setter, T value) {
-        if (value != null) {
-            setter.accept(value);
-        }
-    }
-    
-
-    
     /**
      * 删除用户在指定隧道下的所有转发
      * 
@@ -365,56 +316,4 @@ public class UserTunnelServiceImpl extends ServiceImpl<UserTunnelMapper, UserTun
     }
 
 
-    /**
-     * 检查用户隧道是否启用且有到期时间
-     * 
-     * @param userTunnel 用户隧道对象
-     * @return 是否启用且有到期时间
-     */
-    private boolean isEnabledAndHasExpTime(UserTunnel userTunnel) {
-        return userTunnel.getStatus() != null && userTunnel.getStatus() == 1 
-                && userTunnel.getExpTime() != null;
-    }
-    
-    /**
-     * 检查限速规则是否发生变化
-     * 
-     * @param oldSpeedId 原始限速规则ID
-     * @param newSpeedId 新的限速规则ID
-     * @return 限速规则是否发生变化
-     */
-    private boolean hasSpeedChanged(Integer oldSpeedId, Integer newSpeedId) {
-        if (oldSpeedId == null && newSpeedId == null) {
-            return false;
-        }
-        if (oldSpeedId == null || newSpeedId == null) {
-            return true;
-        }
-        return !oldSpeedId.equals(newSpeedId);
-    }
-    
-    /**
-     * 更新用户隧道下所有转发的限速规则
-     * 管理员操作，不需要权限检查，直接查出该用户在该隧道下的所有转发并应用新的限速
-     * 
-     * @param userId 用户ID
-     * @param tunnelId 隧道ID
-     * @param speedId 新的限速规则ID
-     */
-    private void updateUserTunnelForwardsSpeed(Integer userId, Integer tunnelId, Integer speedId) {
-        // 1. 查询该用户在该隧道下的所有转发
-        QueryWrapper<Forward> queryWrapper = new QueryWrapper<>();
-        queryWrapper.eq("user_id", userId).eq("tunnel_id", tunnelId);
-        List<Forward> userTunnelForwards = forwardService.list(queryWrapper);
-
-        if (userTunnelForwards.isEmpty()) {
-            return;
-        }
-
-        // 2. 逐条重新下发限速配置：updateForwardA 会重新读取该用户隧道的最新限速规则，
-        //    并综合规则限速、套餐用户限速、本次变更后的管理员指派限速，取三者中最严格的非零值
-        for (Forward forward : userTunnelForwards) {
-            forwardService.updateForwardA(forward);
-        }
-    }
 }

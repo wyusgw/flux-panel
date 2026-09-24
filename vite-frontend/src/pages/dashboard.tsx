@@ -615,7 +615,7 @@ export default function DashboardPage() {
               <Button size="sm" variant="bordered" className="dashboard-action" onPress={loadPackageData} isLoading={loading}>
                 刷新数据
               </Button>
-              <Button size="sm" color="primary" className="font-medium" onPress={() => navigate('/forward')}>
+              <Button size="sm" color="default" className="font-medium" onPress={() => navigate('/forward')}>
                 管理转发
               </Button>
             </div>

@@ -72,6 +72,9 @@ public class FlowController extends BaseController {
     @Resource
     TunnelResolver tunnelResolver;
 
+    @Resource
+    com.admin.service.UserDailyRawFlowService userDailyRawFlowService;
+
     /**
      * 加密消息包装器
      */
@@ -233,6 +236,10 @@ public class FlowController extends BaseController {
 
         Forward forward = forwardService.getById(forwardId);
 
+        // 记录原始（不计流量倍率）流量到当日累计，供"统计数据"弹窗展示；
+        // 必须在 filterFlowData 按倍率改写 flowDataList 之前取值，否则拿到的就不是原始数据了
+        recordRawDailyFlow(userId, flowDataList);
+
         // 获取流量计费类型
         int flowType = getFlowType(forward);
 
@@ -329,6 +336,19 @@ public class FlowController extends BaseController {
             }
             forward.setStatus(0);
             forwardService.updateById(forward);
+        }
+    }
+
+    /**
+     * 记录本次上报的原始（未按流量倍率调整）流量到该用户当日累计
+     */
+    private void recordRawDailyFlow(String userId, FlowDto rawFlowDto) {
+        try {
+            long raw = (rawFlowDto.getD() != null ? rawFlowDto.getD() : 0L) + (rawFlowDto.getU() != null ? rawFlowDto.getU() : 0L);
+            if (raw <= 0) return;
+            userDailyRawFlowService.recordRaw(Integer.valueOf(userId), raw);
+        } catch (Exception e) {
+            log.info("记录原始每日流量失败: {}", e.getMessage());
         }
     }
 

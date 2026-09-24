@@ -63,16 +63,51 @@ CREATE TABLE `forward` (
 CREATE TABLE `device_group` (
   `id` int(10) NOT NULL,
   `name` varchar(200) NOT NULL,
-  `node_id` bigint(20) NOT NULL,
+  `node_id` bigint(20) DEFAULT NULL COMMENT '链式出口设备组（direction=chain）没有自己的物理节点，此字段为空',
   `direction` varchar(20) NOT NULL DEFAULT 'inbound',
   `user_group_id` bigint(20) DEFAULT NULL,
   `ratio` decimal(10,2) NOT NULL DEFAULT '1.00',
   `hide_in_probe` int(10) NOT NULL DEFAULT '0',
   `remark` varchar(500) DEFAULT NULL,
   `sort` int(10) NOT NULL DEFAULT '0',
+  `offline_grace_enabled` tinyint(1) DEFAULT NULL,
+  `offline_grace_seconds` int(10) DEFAULT NULL,
+  `offline_retain_enabled` tinyint(1) DEFAULT NULL,
+  `offline_retain_seconds` int(10) DEFAULT NULL,
   `created_time` bigint(20) NOT NULL,
   `updated_time` bigint(20) DEFAULT NULL,
   `status` int(10) NOT NULL DEFAULT '1'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- --------------------------------------------------------
+
+--
+-- 表的结构 `device_group_chain_hop`：链式出口设备组（direction='chain'）的多跳配置，
+-- 每一跳复用一个已存在的出口（direction='outbound'）设备组作为中继节点
+--
+
+CREATE TABLE `device_group_chain_hop` (
+  `id` int(10) NOT NULL,
+  `device_group_id` bigint(20) NOT NULL,
+  `hop_order` int(10) NOT NULL,
+  `target_device_group_id` bigint(20) NOT NULL,
+  `mux` tinyint(1) NOT NULL DEFAULT '0',
+  `created_time` bigint(20) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- --------------------------------------------------------
+
+--
+-- 表的结构 `user_daily_raw_flow`：用户按自然日累计的原始流量（不计设备组流量倍率），
+-- 供"我的转发规则"页「统计数据」弹窗的今日/昨日流量展示使用
+--
+
+CREATE TABLE `user_daily_raw_flow` (
+  `id` int(10) NOT NULL,
+  `user_id` int(10) NOT NULL,
+  `day` varchar(10) NOT NULL,
+  `raw_bytes` bigint(20) NOT NULL DEFAULT '0',
+  `updated_time` bigint(20) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- --------------------------------------------------------
@@ -284,8 +319,10 @@ CREATE TABLE `orders` (
 CREATE TABLE `redeem_code` (
   `id` int(10) NOT NULL,
   `code` varchar(100) NOT NULL,
-  `package_id` bigint(20) NOT NULL,
+  `type` varchar(20) NOT NULL DEFAULT 'discount',
+  `package_id` bigint(20) DEFAULT NULL,
   `discount_ratio` int(10) NOT NULL DEFAULT '100',
+  `amount` decimal(10,2) DEFAULT NULL,
   `uses_remaining` int(10) NOT NULL DEFAULT '1',
   `created_time` bigint(20) NOT NULL,
   `updated_time` bigint(20) DEFAULT NULL,
@@ -303,12 +340,12 @@ CREATE TABLE `user_tunnel` (
   `user_id` int(10) NOT NULL,
   `tunnel_id` int(10) NOT NULL,
   `speed_id` int(10) DEFAULT NULL,
-  `num` int(10) NOT NULL,
-  `flow` bigint(20) NOT NULL,
+  `num` int(10) DEFAULT NULL,
+  `flow` bigint(20) DEFAULT NULL,
   `in_flow` bigint(20) NOT NULL DEFAULT '0',
   `out_flow` bigint(20) NOT NULL DEFAULT '0',
-  `flow_reset_time` bigint(20) NOT NULL,
-  `exp_time` bigint(20) NOT NULL,
+  `flow_reset_time` bigint(20) DEFAULT NULL,
+  `exp_time` bigint(20) DEFAULT NULL,
   `status` int(10) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -347,6 +384,20 @@ ALTER TABLE `forward`
 --
 ALTER TABLE `device_group`
   ADD PRIMARY KEY (`id`);
+
+--
+-- 表的索引 `device_group_chain_hop`
+--
+ALTER TABLE `device_group_chain_hop`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_device_group_id` (`device_group_id`);
+
+--
+-- 表的索引 `user_daily_raw_flow`
+--
+ALTER TABLE `user_daily_raw_flow`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uniq_user_day` (`user_id`,`day`);
 
 --
 -- 表的索引 `node`
@@ -437,6 +488,18 @@ ALTER TABLE `forward`
 -- 使用表AUTO_INCREMENT `device_group`
 --
 ALTER TABLE `device_group`
+  MODIFY `id` int(10) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=1;
+
+--
+-- 使用表AUTO_INCREMENT `device_group_chain_hop`
+--
+ALTER TABLE `device_group_chain_hop`
+  MODIFY `id` int(10) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=1;
+
+--
+-- 使用表AUTO_INCREMENT `user_daily_raw_flow`
+--
+ALTER TABLE `user_daily_raw_flow`
   MODIFY `id` int(10) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=1;
 
 --

@@ -1,13 +1,16 @@
 package com.admin.service.impl;
 
+import com.admin.common.dto.DeviceGroupChainHopDto;
 import com.admin.common.dto.DeviceGroupDto;
 import com.admin.common.dto.DeviceGroupUpdateDto;
 import com.admin.common.lang.R;
 import com.admin.common.utils.JwtUtil;
 import com.admin.entity.DeviceGroup;
+import com.admin.entity.DeviceGroupChainHop;
 import com.admin.entity.Forward;
 import com.admin.entity.Node;
 import com.admin.entity.User;
+import com.admin.mapper.DeviceGroupChainHopMapper;
 import com.admin.mapper.DeviceGroupMapper;
 import com.admin.service.DeviceGroupService;
 import com.admin.service.ForwardService;
@@ -18,8 +21,10 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -33,8 +38,10 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
     private static final String ERROR_CREATE_FAILED = "设备组创建失败";
     private static final String ERROR_UPDATE_FAILED = "设备组更新失败";
     private static final String ERROR_IN_USE = "该设备组仍被转发规则使用，请先删除相关规则";
+    private static final String ERROR_IN_USE_AS_HOP = "该设备组仍被链式出口设备组用作某一跳，请先修改相关链式出口设备组";
     private static final String SUCCESS_UPDATE_MSG = "设备组更新成功";
     private static final String SUCCESS_DELETE_MSG = "设备组删除成功";
+    private static final int MAX_CHAIN_HOPS = 3;
 
     @Autowired
     private NodeService nodeService;
@@ -47,16 +54,32 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
     @Lazy
     private ForwardService forwardService;
 
+    @Autowired
+    private DeviceGroupChainHopMapper chainHopMapper;
+
     @Override
+    @Transactional
     public R createDeviceGroup(DeviceGroupDto dto) {
-        Node node = nodeService.getById(dto.getNodeId());
-        if (node == null) {
-            return R.err(ERROR_NODE_NOT_FOUND);
+        boolean isChain = "chain".equals(dto.getDirection());
+
+        if (isChain) {
+            R hopsCheck = validateChainHops(dto.getChainHops(), null);
+            if (hopsCheck.getCode() != 0) {
+                return hopsCheck;
+            }
+        } else {
+            if (dto.getNodeId() == null) {
+                return R.err("所属节点不能为空");
+            }
+            Node node = nodeService.getById(dto.getNodeId());
+            if (node == null) {
+                return R.err(ERROR_NODE_NOT_FOUND);
+            }
         }
 
         DeviceGroup group = new DeviceGroup();
         group.setName(dto.getName());
-        group.setNodeId(dto.getNodeId());
+        group.setNodeId(isChain ? null : dto.getNodeId());
         group.setDirection(normalizeDirection(dto.getDirection()));
         group.setUserGroupId(dto.getUserGroupId());
         group.setRatio(dto.getRatio() != null ? dto.getRatio() : BigDecimal.ONE);
@@ -70,7 +93,67 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
         group.setStatus(1);
 
         boolean result = this.save(group);
-        return result ? R.ok() : R.err(ERROR_CREATE_FAILED);
+        if (!result) {
+            return R.err(ERROR_CREATE_FAILED);
+        }
+
+        if (isChain) {
+            saveChainHops(group.getId(), dto.getChainHops());
+        }
+
+        return R.ok();
+    }
+
+    /**
+     * 校验链式出口配置：1~{@value #MAX_CHAIN_HOPS} 跳，且每一跳指向的设备组必须存在、
+     * 是 direction = "outbound" 的设备组（不支持嵌套链式出口，避免出现循环引用）。
+     * excludeGroupId 用于更新时排除自身（理论上不会出现自引用，这里仅作防御）。
+     */
+    private R validateChainHops(List<DeviceGroupChainHopDto> hops, Long excludeGroupId) {
+        if (hops == null || hops.isEmpty()) {
+            return R.err("链式出口至少需要配置 1 跳");
+        }
+        if (hops.size() > MAX_CHAIN_HOPS) {
+            return R.err("链式出口最多支持 " + MAX_CHAIN_HOPS + " 跳");
+        }
+        for (int i = 0; i < hops.size(); i++) {
+            Long targetId = hops.get(i).getTargetDeviceGroupId();
+            if (targetId == null) {
+                return R.err("第 " + (i + 1) + " 跳未选择出口设备组");
+            }
+            if (excludeGroupId != null && targetId.equals(excludeGroupId)) {
+                return R.err("第 " + (i + 1) + " 跳不能选择自身");
+            }
+            DeviceGroup target = this.getById(targetId);
+            if (target == null) {
+                return R.err("第 " + (i + 1) + " 跳选择的设备组不存在");
+            }
+            if (!"outbound".equals(target.getDirection())) {
+                return R.err("第 " + (i + 1) + " 跳「" + target.getName() + "」不是出口设备组，链式出口的每一跳都必须是出口设备组");
+            }
+        }
+        return R.ok();
+    }
+
+    /**
+     * 覆盖式保存链式出口的跳配置：先清空该设备组名下的旧配置，再按提交顺序写入新配置。
+     */
+    private void saveChainHops(Long deviceGroupId, List<DeviceGroupChainHopDto> hops) {
+        chainHopMapper.delete(new QueryWrapper<DeviceGroupChainHop>().eq("device_group_id", deviceGroupId));
+        if (hops == null || hops.isEmpty()) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        int order = 1;
+        for (DeviceGroupChainHopDto hopDto : hops) {
+            DeviceGroupChainHop hop = new DeviceGroupChainHop();
+            hop.setDeviceGroupId(deviceGroupId);
+            hop.setHopOrder(order++);
+            hop.setTargetDeviceGroupId(hopDto.getTargetDeviceGroupId());
+            hop.setMux(Boolean.TRUE.equals(hopDto.getMux()) ? 1 : 0);
+            hop.setCreatedTime(now);
+            chainHopMapper.insert(hop);
+        }
     }
 
     @Override
@@ -99,13 +182,18 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
 
         Map<Long, Node> nodeMap = new HashMap<>();
         for (DeviceGroup group : groups) {
-            if (!nodeMap.containsKey(group.getNodeId())) {
+            if (group.getNodeId() != null && !nodeMap.containsKey(group.getNodeId())) {
                 Node node = nodeService.getById(group.getNodeId());
                 if (node != null) {
                     nodeMap.put(group.getNodeId(), node);
                 }
             }
         }
+
+        // 链式出口设备组没有自己的物理节点，改为展示每一跳目标设备组的名称/节点名，
+        // 一次性查出所有设备组，避免在循环里逐条查询
+        Map<Long, DeviceGroup> groupById = this.list().stream()
+                .collect(Collectors.toMap(DeviceGroup::getId, g -> g, (a, b) -> a));
 
         List<Map<String, Object>> result = groups.stream().map(group -> {
             Node node = nodeMap.get(group.getNodeId());
@@ -114,10 +202,10 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
             item.put("name", group.getName());
             item.put("nodeId", group.getNodeId());
             item.put("direction", group.getDirection() == null ? "inbound" : group.getDirection());
-            item.put("nodeName", node != null ? node.getName() : "未知节点");
             // 普通用户的节点列表按设备组权限过滤；同时在此返回已验证可见的节点摘要，
             // 供节点状态页与设备组保持同一份可见性数据，避免两个接口筛选不同步。
             if (node != null) {
+                item.put("nodeName", node.getName());
                 Map<String, Object> nodeInfo = new HashMap<>();
                 nodeInfo.put("id", node.getId());
                 nodeInfo.put("name", node.getName());
@@ -128,6 +216,8 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
                 nodeInfo.put("portEnd", node.getPortEnd());
                 nodeInfo.put("status", node.getStatus());
                 item.put("node", nodeInfo);
+            } else if (!"chain".equals(group.getDirection())) {
+                item.put("nodeName", "未知节点");
             }
             item.put("userGroupId", group.getUserGroupId());
             item.put("ratio", group.getRatio());
@@ -135,6 +225,29 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
             item.put("sort", group.getSort());
             if (isAdmin) {
                 item.put("remark", group.getRemark());
+                item.put("offlineGraceEnabled", group.getOfflineGraceEnabled() != null && group.getOfflineGraceEnabled() == 1);
+                item.put("offlineGraceSeconds", group.getOfflineGraceSeconds());
+                item.put("offlineRetainEnabled", group.getOfflineRetainEnabled() != null && group.getOfflineRetainEnabled() == 1);
+                item.put("offlineRetainSeconds", group.getOfflineRetainSeconds());
+            }
+            if ("chain".equals(group.getDirection())) {
+                List<DeviceGroupChainHop> hops = chainHopMapper.selectList(new QueryWrapper<DeviceGroupChainHop>()
+                        .eq("device_group_id", group.getId())
+                        .orderByAsc("hop_order"));
+                List<Map<String, Object>> hopList = hops.stream().map(hop -> {
+                    Map<String, Object> hopItem = new HashMap<>();
+                    hopItem.put("hopOrder", hop.getHopOrder());
+                    hopItem.put("targetDeviceGroupId", hop.getTargetDeviceGroupId());
+                    hopItem.put("mux", hop.getMux() != null && hop.getMux() == 1);
+                    DeviceGroup targetGroup = groupById.get(hop.getTargetDeviceGroupId());
+                    if (targetGroup != null) {
+                        hopItem.put("targetName", targetGroup.getName());
+                        Node targetNode = targetGroup.getNodeId() != null ? nodeService.getById(targetGroup.getNodeId()) : null;
+                        hopItem.put("targetNodeName", targetNode != null ? targetNode.getName() : "未知节点");
+                    }
+                    return hopItem;
+                }).collect(Collectors.toList());
+                item.put("chainHops", hopList);
             }
             return item;
         }).collect(Collectors.toList());
@@ -143,19 +256,34 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
     }
 
     @Override
+    @Transactional
     public R updateDeviceGroup(DeviceGroupUpdateDto dto) {
         DeviceGroup group = this.getById(dto.getId());
         if (group == null) {
             return R.err(ERROR_GROUP_NOT_FOUND);
         }
 
-        Node node = nodeService.getById(dto.getNodeId());
-        if (node == null) {
-            return R.err(ERROR_NODE_NOT_FOUND);
+        boolean isChain = "chain".equals(dto.getDirection());
+
+        if (isChain) {
+            R hopsCheck = validateChainHops(dto.getChainHops(), dto.getId());
+            if (hopsCheck.getCode() != 0) {
+                return hopsCheck;
+            }
+        } else {
+            if (dto.getNodeId() == null) {
+                return R.err("所属节点不能为空");
+            }
+            Node node = nodeService.getById(dto.getNodeId());
+            if (node == null) {
+                return R.err(ERROR_NODE_NOT_FOUND);
+            }
         }
 
+        Long oldNodeId = group.getNodeId();
+
         group.setName(dto.getName());
-        group.setNodeId(dto.getNodeId());
+        group.setNodeId(isChain ? null : dto.getNodeId());
         group.setDirection(normalizeDirection(dto.getDirection()));
         group.setUserGroupId(dto.getUserGroupId());
         group.setRatio(dto.getRatio() != null ? dto.getRatio() : BigDecimal.ONE);
@@ -167,10 +295,31 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
         group.setUpdatedTime(System.currentTimeMillis());
 
         boolean result = this.updateById(group);
-        return result ? R.ok(SUCCESS_UPDATE_MSG) : R.err(ERROR_UPDATE_FAILED);
+        if (!result) {
+            return R.err(ERROR_UPDATE_FAILED);
+        }
+
+        if (isChain) {
+            saveChainHops(group.getId(), dto.getChainHops());
+        } else {
+            // 类型从链式出口切换为其他类型时，清掉遗留的跳配置
+            chainHopMapper.delete(new QueryWrapper<DeviceGroupChainHop>().eq("device_group_id", group.getId()));
+        }
+
+        // 若原来绑定的节点因本次修改（切换为链式出口，或更换了所属节点）不再被任何设备组引用，
+        // 一并清理，避免残留成孤儿节点
+        if (oldNodeId != null && !oldNodeId.equals(group.getNodeId())) {
+            long remainingGroupCount = this.count(new QueryWrapper<DeviceGroup>().eq("node_id", oldNodeId));
+            if (remainingGroupCount == 0) {
+                nodeService.deleteNode(oldNodeId);
+            }
+        }
+
+        return R.ok(SUCCESS_UPDATE_MSG);
     }
 
     @Override
+    @Transactional
     public R deleteDeviceGroup(Long id) {
         DeviceGroup group = this.getById(id);
         if (group == null) {
@@ -185,15 +334,26 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
             return R.err(ERROR_IN_USE);
         }
 
+        long hopUsageCount = chainHopMapper.selectCount(new QueryWrapper<DeviceGroupChainHop>()
+                .eq("target_device_group_id", id));
+        if (hopUsageCount > 0) {
+            return R.err(ERROR_IN_USE_AS_HOP);
+        }
+
         boolean result = this.removeById(id);
         if (!result) {
             return R.err("设备组删除失败");
         }
 
+        chainHopMapper.delete(new QueryWrapper<DeviceGroupChainHop>().eq("device_group_id", id));
+
         // 若该节点不再被其他设备组引用，则一并删除节点本身，避免残留成需要"补全配置"的孤儿节点
-        long remainingGroupCount = this.count(new QueryWrapper<DeviceGroup>().eq("node_id", group.getNodeId()));
-        if (remainingGroupCount == 0) {
-            nodeService.deleteNode(group.getNodeId());
+        // （链式出口设备组没有自己的物理节点，nodeId 为空时无需处理）
+        if (group.getNodeId() != null) {
+            long remainingGroupCount = this.count(new QueryWrapper<DeviceGroup>().eq("node_id", group.getNodeId()));
+            if (remainingGroupCount == 0) {
+                nodeService.deleteNode(group.getNodeId());
+            }
         }
 
         return R.ok(SUCCESS_DELETE_MSG);
@@ -231,7 +391,7 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
             return R.err("排序数据不能为空");
         }
 
-        List<DeviceGroup> toUpdate = new java.util.ArrayList<>();
+        List<DeviceGroup> toUpdate = new ArrayList<>();
         for (Map<String, Object> item : groups) {
             DeviceGroup group = new DeviceGroup();
             group.setId(Long.valueOf(item.get("id").toString()));
@@ -243,8 +403,38 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
         return result ? R.ok("排序更新成功") : R.err("排序更新失败");
     }
 
+    @Override
+    public R updateOfflineConfig(List<Map<String, Object>> groups) {
+        if (groups == null || groups.isEmpty()) {
+            return R.ok("离线通知配置保存成功");
+        }
+
+        List<DeviceGroup> toUpdate = new ArrayList<>();
+        for (Map<String, Object> item : groups) {
+            DeviceGroup group = new DeviceGroup();
+            group.setId(Long.valueOf(item.get("id").toString()));
+            group.setOfflineGraceEnabled(Boolean.TRUE.equals(item.get("offlineGraceEnabled")) ? 1 : 0);
+            group.setOfflineGraceSeconds(parseNullableInt(item.get("offlineGraceSeconds")));
+            group.setOfflineRetainEnabled(Boolean.TRUE.equals(item.get("offlineRetainEnabled")) ? 1 : 0);
+            group.setOfflineRetainSeconds(parseNullableInt(item.get("offlineRetainSeconds")));
+            toUpdate.add(group);
+        }
+
+        boolean result = this.updateBatchById(toUpdate);
+        return result ? R.ok("离线通知配置保存成功") : R.err("离线通知配置保存失败");
+    }
+
+    private Integer parseNullableInt(Object value) {
+        if (value == null) return null;
+        try {
+            return Integer.valueOf(value.toString());
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
     private String normalizeDirection(String direction) {
-        if ("outbound".equals(direction) || "monitor".equals(direction) || "both".equals(direction)) {
+        if ("outbound".equals(direction) || "monitor".equals(direction) || "both".equals(direction) || "chain".equals(direction)) {
             return direction;
         }
         return "inbound";

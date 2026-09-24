@@ -125,7 +125,8 @@ export default function ChangePasswordPage() {
             
             <CardBody className="px-6 py-6">
               <div className="flex flex-col gap-4">
-                <Input autoComplete="off"
+                <Input
+                  size="sm" autoComplete="off"
                   label="新用户名"
                   placeholder="请输入新用户名（至少3位）"
                   value={form.newUsername}
@@ -137,7 +138,8 @@ export default function ChangePasswordPage() {
                   errorMessage={errors.newUsername}
                 />
                 
-                <Input autoComplete="off"
+                <Input
+                  size="sm" autoComplete="off"
                   label="当前密码"
                   placeholder="请输入当前密码"
                   type="password"
@@ -150,7 +152,8 @@ export default function ChangePasswordPage() {
                   errorMessage={errors.currentPassword}
                 />
                 
-                <Input autoComplete="off"
+                <Input
+                  size="sm" autoComplete="off"
                   label="新密码"
                   placeholder="请输入新密码（至少6位）"
                   type="password"
@@ -163,7 +166,8 @@ export default function ChangePasswordPage() {
                   errorMessage={errors.newPassword}
                 />
                 
-                <Input autoComplete="off"
+                <Input
+                  size="sm" autoComplete="off"
                   label="确认新密码"
                   placeholder="请再次输入新密码"
                   type="password"
@@ -177,7 +181,7 @@ export default function ChangePasswordPage() {
                 />
                 
                 <Button
-                  color="warning"
+                  color="default"
                   size="lg"
                   onClick={handleSubmit}
                   isLoading={loading}

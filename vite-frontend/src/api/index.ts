@@ -39,6 +39,12 @@ export const batchDeleteUserGroups = (ids: number[]) => Network.post("/user-grou
 export const reorderUserGroups = (groups: Array<{ id: number; sort: number }>) => Network.post("/user-group/reorder", { groups });
 export const getUserGroupNames = () => Network.post("/user-group/names");
 
+// 单端组CRUD操作（用户自己名下的单端组）- 全部使用POST请求
+export const createMySingleTunnelGroup = (data: any) => Network.post("/single-tunnel-group/create", data);
+export const getMySingleTunnelGroupList = () => Network.post("/single-tunnel-group/list");
+export const updateMySingleTunnelGroup = (data: any) => Network.post("/single-tunnel-group/update", data);
+export const deleteMySingleTunnelGroup = (id: number) => Network.post("/single-tunnel-group/delete", { id });
+
 // 套餐CRUD操作 - 全部使用POST请求
 export const createPackagePlan = (data: any) => Network.post("/package/create", data);
 export const getPackagePlanList = () => Network.post("/package/list");

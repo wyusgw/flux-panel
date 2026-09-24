@@ -1039,3 +1039,70 @@ SET @sql = (
 PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
+
+-- 创建 single_tunnel_group 表（如果不存在）：单端组，普通用户自己建立用来给自己的单端隧道设备分组分类
+CREATE TABLE IF NOT EXISTS `single_tunnel_group` (
+  `id` int(10) NOT NULL AUTO_INCREMENT,
+  `name` varchar(200) DEFAULT NULL,
+  `owner_user_id` bigint(20) DEFAULT NULL,
+  `sort` int(10) NOT NULL DEFAULT 0,
+  `created_time` bigint(20) NOT NULL,
+  `updated_time` bigint(20) DEFAULT NULL,
+  `status` int(10) NOT NULL DEFAULT 1,
+  PRIMARY KEY (`id`),
+  KEY `idx_single_tunnel_group_owner` (`owner_user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- single_tunnel_group 表在本次更新之前已存在时（上一版 update.sql 已跑过，当时还是管理员共用名单），
+-- 为其补上 owner_user_id 字段，并把既有记录清空一次（旧数据是管理员建立的全局名单，跟新的
+-- "用户自建、互不相通"语义不符）；用 @single_tunnel_group_owner_existed 记录字段是否原本就存在，
+-- 确保清理只在这次真正做了迁移时执行一次，往后重复执行 update.sql 不会误删用户后续建立的数据
+SET @single_tunnel_group_owner_existed = (
+  SELECT COUNT(*)
+  FROM information_schema.COLUMNS
+  WHERE table_schema = DATABASE()
+    AND table_name = 'single_tunnel_group'
+    AND column_name = 'owner_user_id'
+);
+
+SET @sql = IF(@single_tunnel_group_owner_existed > 0,
+  'SELECT "Column `owner_user_id` already exists in `single_tunnel_group`";',
+  'ALTER TABLE `single_tunnel_group` ADD COLUMN `owner_user_id` bigint(20) DEFAULT NULL AFTER `name`, ADD KEY `idx_single_tunnel_group_owner` (`owner_user_id`);'
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @sql = IF(@single_tunnel_group_owner_existed = 0,
+  'DELETE FROM `single_tunnel_group`;',
+  'SELECT "single_tunnel_group already migrated to per-user ownership, skip cleanup";'
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @sql = IF(@single_tunnel_group_owner_existed = 0,
+  'UPDATE `device_group` SET `single_tunnel_group_id` = NULL WHERE `single_tunnel_group_id` IS NOT NULL;',
+  'SELECT "device_group.single_tunnel_group_id already migrated, skip cleanup";'
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- device_group 表：添加 single_tunnel_group_id 字段（如果不存在），用户自建单端隧道设备时选择所属单端组
+SET @sql = (
+  SELECT IF(
+    EXISTS (
+      SELECT 1
+      FROM information_schema.COLUMNS
+      WHERE table_schema = DATABASE()
+        AND table_name = 'device_group'
+        AND column_name = 'single_tunnel_group_id'
+    ),
+    'SELECT "Column `single_tunnel_group_id` already exists in `device_group`";',
+    'ALTER TABLE `device_group` ADD COLUMN `single_tunnel_group_id` int(10) DEFAULT NULL AFTER `owner_user_id`;'
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;

@@ -68,6 +68,7 @@ CREATE TABLE `device_group` (
   `protocol` varchar(20) NOT NULL DEFAULT 'tls' COMMENT '出口协议类型（TLS/WSS/TCP/MTLS/MWSS/MTCP），仅出口/入口＋出口设备组用到',
   `user_group_id` bigint(20) DEFAULT NULL,
   `owner_user_id` bigint(20) DEFAULT NULL COMMENT '单端隧道用户自建设备组的拥有者用户ID；管理员建立的设备组此字段为空',
+  `single_tunnel_group_id` int(10) DEFAULT NULL COMMENT '单端隧道设备所属的单端组ID（用户自建设备时选择），管理员建立的设备组此字段为空',
   `shared` tinyint(1) NOT NULL DEFAULT '0' COMMENT '仅 owner_user_id 非空时有意义：0-仅拥有者自己可用，1-开放给所有用户在添加转发规则时选用',
   `ratio` decimal(10,2) NOT NULL DEFAULT '1.00',
   `hide_in_probe` int(10) NOT NULL DEFAULT '0',
@@ -259,6 +260,23 @@ INSERT INTO `user` (`id`, `user`, `pwd`, `role_id`, `exp_time`, `flow`, `in_flow
 CREATE TABLE `user_group` (
   `id` int(10) NOT NULL,
   `name` varchar(200) DEFAULT NULL,
+  `sort` int(10) NOT NULL DEFAULT '0',
+  `created_time` bigint(20) NOT NULL,
+  `updated_time` bigint(20) DEFAULT NULL,
+  `status` int(10) NOT NULL DEFAULT '1'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- --------------------------------------------------------
+
+--
+-- 表的结构 `single_tunnel_group`
+-- 单端组：普通用户自己建立、用来给自己的单端隧道设备分组分类，每个用户只能看到/管理自己建立的单端组
+--
+
+CREATE TABLE `single_tunnel_group` (
+  `id` int(10) NOT NULL,
+  `name` varchar(200) DEFAULT NULL,
+  `owner_user_id` bigint(20) DEFAULT NULL COMMENT '拥有者用户ID，该单端组只属于这个用户',
   `sort` int(10) NOT NULL DEFAULT '0',
   `created_time` bigint(20) NOT NULL,
   `updated_time` bigint(20) DEFAULT NULL,
@@ -503,6 +521,13 @@ ALTER TABLE `user_group`
   ADD PRIMARY KEY (`id`);
 
 --
+-- 表的索引 `single_tunnel_group`
+--
+ALTER TABLE `single_tunnel_group`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_single_tunnel_group_owner` (`owner_user_id`);
+
+--
 -- 表的索引 `package_plan`
 --
 ALTER TABLE `package_plan`
@@ -625,6 +650,12 @@ ALTER TABLE `vite_config`
 -- 使用表AUTO_INCREMENT `user_group`
 --
 ALTER TABLE `user_group`
+  MODIFY `id` int(10) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=1;
+
+--
+-- 使用表AUTO_INCREMENT `single_tunnel_group`
+--
+ALTER TABLE `single_tunnel_group`
   MODIFY `id` int(10) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=1;
 
 --

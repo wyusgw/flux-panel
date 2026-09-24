@@ -23,6 +23,12 @@ public class DeviceGroupDto {
     private String direction;
 
     /**
+     * 出口协议类型（TLS/WSS/TCP/MTLS/MWSS/MTCP），仅 direction 为 outbound/both 时有意义，
+     * 为空时服务层默认按 "tls" 处理
+     */
+    private String protocol;
+
+    /**
      * 可见用户组ID（为空表示所有用户可见）
      */
     private Long userGroupId;

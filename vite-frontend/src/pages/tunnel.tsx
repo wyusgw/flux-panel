@@ -604,16 +604,13 @@ export default function TunnelPage() {
           <ModalContent>
             {(onClose) => (
               <>
-                <ModalHeader className="flex flex-col gap-1">
-                  <h2 className="text-xl font-bold">
+                <ModalHeader>
+                  <h2 className="text-lg font-bold">
                     {isEdit ? '编辑隧道' : '新增隧道'}
                   </h2>
-                  <p className="text-small text-default-500">
-                    {isEdit ? '修改现有隧道配置的信息' : '创建新的隧道配置'}
-                  </p>
                 </ModalHeader>
                 <ModalBody>
-                  <div className="space-y-4">
+                  <div className="space-y-3 pb-4">
                     <Input
                       size="sm" autoComplete="off"
                       label="隧道名称"
@@ -645,7 +642,7 @@ export default function TunnelPage() {
                       <SelectItem key="2">隧道转发</SelectItem>
                     </Select>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <Select
                         size="sm"
                         label="流量计算"
@@ -724,7 +721,7 @@ export default function TunnelPage() {
                       ))}
                     </Select>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <Input
                         size="sm" autoComplete="off"
                         label="TCP监听地址"

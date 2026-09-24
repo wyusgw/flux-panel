@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 
 import { Logo } from '@/components/icons';
 import { ThemeSwitch } from '@/components/theme-switch';
-import { siteConfig } from '@/config/site';
+import { siteConfig, getCachedConfigs } from '@/config/site';
 import { primaryNavItems, managementNavItems } from '@/config/nav-items';
 import { safeLogout } from '@/utils/logout';
 import { UserMenu } from '@/components/user-menu';
@@ -18,6 +18,7 @@ export default function H5Layout({
   const navigate = useNavigate();
   const location = useLocation();
   const [isAdmin, setIsAdmin] = useState(false);
+  const [singleTunnelEnabled, setSingleTunnelEnabled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [username] = useState(() => localStorage.getItem('name') || 'Admin');
   const { isOpen, onOpen, onOpenChange } = useDisclosure();
@@ -32,12 +33,18 @@ export default function H5Layout({
       // 补充设置admin字段，避免下次再次判断
       localStorage.setItem('admin', adminFlag.toString());
     }
-    
+
 
     setIsAdmin(adminFlag);
+
+    getCachedConfigs().then((configs) => {
+      setSingleTunnelEnabled(configs.user_device_group_enabled === 'true');
+    }).catch(() => {});
   }, []);
 
-  const filteredPrimaryNavItems = primaryNavItems.filter(item => !item.adminOnly || isAdmin);
+  const filteredPrimaryNavItems = primaryNavItems.filter(item =>
+    (!item.adminOnly || isAdmin) && (item.path !== '/single-tunnel' || singleTunnelEnabled)
+  );
   const filteredManagementNavItems = managementNavItems.filter(item => !item.adminOnly || isAdmin);
 
   const handleMenuNavigate = (path: string) => {

@@ -109,6 +109,10 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     @Resource
     @Lazy
     private TunnelService tunnelService;
+
+    @Resource
+    @Lazy
+    private InviteCodeService inviteCodeService;
     
     @Resource
     @Lazy
@@ -211,6 +215,29 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
             return usernameValidationResult;
         }
 
+        // 3.1 按邀请码注册策略校验邀请码：disabled-不校验，optional-填了才校验，required-必须填且有效
+        ViteConfig invitePolicyConfig = viteConfigService.getOne(new QueryWrapper<ViteConfig>().eq("name", "invite_register_policy"));
+        String invitePolicy = invitePolicyConfig != null ? invitePolicyConfig.getValue() : "disabled";
+        InviteCode inviteCode = null;
+        if ("required".equals(invitePolicy)) {
+            if (StringUtils.isBlank(registerDto.getInviteCode())) {
+                return R.err("请填写邀请码");
+            }
+            inviteCode = inviteCodeService.validateInviteCode(registerDto.getInviteCode());
+            if (inviteCode == null) {
+                return R.err("邀请码无效或已用完");
+            }
+        } else if ("optional".equals(invitePolicy) && StringUtils.isNotBlank(registerDto.getInviteCode())) {
+            inviteCode = inviteCodeService.validateInviteCode(registerDto.getInviteCode());
+            if (inviteCode == null) {
+                return R.err("邀请码无效或已用完");
+            }
+        }
+        // 先扣减再建号：与本项目兑换码的既有处理方式一致（OrderServiceImpl 购买套餐时同样是先扣减兑换码次数）。
+        // 原子条件更新，避免并发下同一个邀请码被多个注册请求同时用完
+        if (inviteCode != null && !inviteCodeService.consumeInviteCode(inviteCode.getId())) {
+            return R.err("邀请码已被使用完，请重试");
+        }
         // 4. 创建普通用户，默认无套餐、无配额，需管理员或后续购买套餐后才能使用转发功能
         User user = new User();
         user.setUser(registerDto.getUsername());
@@ -303,7 +330,13 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         // 4. 构建更新实体并保存
         User updateUser = buildUpdateUserEntity(userUpdateDto);
         boolean result = this.updateById(updateUser);
-        
+
+        // MyBatis-Plus 默认按 NOT_NULL 策略更新，updateById 遇到 null 字段会直接跳过、不会清空数据库里原有的值。
+        // 到期时间允许留空表示"永不过期"，如果这次提交就是要把它清空，必须用条件更新显式把该列写成 NULL
+        if (result && userUpdateDto.getExpTime() == null) {
+            this.update(new UpdateWrapper<User>().eq("id", userUpdateDto.getId()).set("exp_time", null));
+        }
+
         if (result) {
             // 5. 处理到期时间延时任务
             return R.ok(SUCCESS_UPDATE_MSG);

@@ -100,7 +100,8 @@ public class TunnelResolver {
         tunnel.setOutNodeId(outGroup != null ? outGroup.getNodeId() : null);
         tunnel.setOutIp(outNode != null ? outNode.getServerIp() : inNode.getServerIp());
         tunnel.setType(outGroup != null ? 2 : 1); // 2-隧道转发，1-端口转发
-        tunnel.setProtocol("tls");
+        // 协议由出口设备组自身配置决定（未配置时默认 tls）；仅端口转发（无出口组）时该值不会被实际用到
+        tunnel.setProtocol(outGroup != null && outGroup.getProtocol() != null ? outGroup.getProtocol() : "tls");
         tunnel.setTcpListenAddr("0.0.0.0");
         tunnel.setUdpListenAddr("0.0.0.0");
         tunnel.setFlow(2);

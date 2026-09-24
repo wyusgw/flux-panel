@@ -8,6 +8,7 @@ import com.admin.entity.DeviceGroup;
 import com.admin.entity.Node;
 import com.admin.entity.ViteConfig;
 import com.admin.service.DeviceGroupService;
+import com.admin.service.TaskQueueService;
 import com.admin.service.NodeService;
 import com.admin.service.ViteConfigService;
 import com.alibaba.fastjson.JSON;
@@ -47,6 +48,9 @@ public class WebSocketServer extends TextWebSocketHandler {
 
     @Resource
     ViteConfigService viteConfigService;
+
+    @Resource
+    TaskQueueService taskQueueService;
 
     // 设备离线宽限期的延迟检查线程池：节点断线后若配置了宽限期，不立即标记离线，
     // 而是延迟到宽限期结束时才检查——如果期间节点已重连（nodeSessions 里能查到新会话），
@@ -303,6 +307,16 @@ public class WebSocketServer extends TextWebSocketHandler {
                         res.put("data", 1);
                         broadcastMessage(res.toJSONString());
                         notificationUtil.notifyDeviceStatus(node, true);
+
+                        // 节点上线后异步重试该节点相关、之前因离线等原因失败的任务队列项（如转发同步），
+                        // 放到独立线程池执行，避免阻塞当前的 WebSocket 连接建立流程
+                        offlineCheckScheduler.execute(() -> {
+                            try {
+                                taskQueueService.retryByNodeId(nodeId);
+                            } catch (Exception e) {
+                                log.warn("节点 {} 上线后重试任务队列异常: {}", nodeId, e.getMessage(), e);
+                            }
+                        });
                     } else {
                         log.info("节点 {} 状态更新失败", nodeId);
                     }

@@ -81,6 +81,18 @@ public class UserGroupServiceImpl extends ServiceImpl<UserGroupMapper, UserGroup
     }
 
     @Override
+    public R listNames() {
+        List<UserGroup> groups = this.list();
+        List<Map<String, Object>> result = groups.stream().map(group -> {
+            Map<String, Object> item = new HashMap<>();
+            item.put("id", group.getId());
+            item.put("name", group.getName());
+            return item;
+        }).collect(java.util.stream.Collectors.toList());
+        return R.ok(result);
+    }
+
+    @Override
     public R updateUserGroup(UserGroupUpdateDto userGroupUpdateDto) {
         UserGroup userGroup = this.getById(userGroupUpdateDto.getId());
         if (userGroup == null) {

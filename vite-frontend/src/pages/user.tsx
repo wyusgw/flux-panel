@@ -50,7 +50,7 @@ import {
 import { SearchIcon, EditIcon, DeleteIcon, UserIcon, SettingsIcon } from '@/components/icons';
 import { EmptyState } from '@/components/empty-state';
 import { ConfirmDialog } from '@/components/confirm-dialog';
-import { parseDate } from "@internationalized/date";
+import { parseDate, today, getLocalTimeZone } from "@internationalized/date";
 
 
 // 工具函数
@@ -312,7 +312,7 @@ export default function UserPage() {
   };
 
   const handleSubmitUser = async () => {
-    if (!userForm.user || (!userForm.pwd && !isEdit) || !userForm.expTime) {
+    if (!userForm.user || (!userForm.pwd && !isEdit)) {
       toast.error('请填写完整信息');
       return;
     }
@@ -321,7 +321,7 @@ export default function UserPage() {
     try {
       const submitData: any = {
         ...userForm,
-        expTime: userForm.expTime.getTime()
+        expTime: userForm.expTime ? userForm.expTime.getTime() : null
       };
 
       if (isEdit && !submitData.pwd) {
@@ -625,7 +625,7 @@ export default function UserPage() {
       >
         <ModalContent>
           <ModalHeader>
-            {isEdit ? '编辑用户' : '新增用户'}
+            <h2 className="text-lg font-bold">{isEdit ? '编辑用户' : '新增用户'}</h2>
           </ModalHeader>
           <ModalBody>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -695,6 +695,7 @@ export default function UserPage() {
                 size="sm"
                 label="过期时间"
                 value={userForm.expTime ? parseDate(userForm.expTime.toISOString().split('T')[0]) as any : null}
+                placeholderValue={today(getLocalTimeZone())}
                 onChange={(date) => {
                   if (date) {
                     const jsDate = new Date(date.year, date.month - 1, date.day, 23, 59, 59);
@@ -703,7 +704,7 @@ export default function UserPage() {
                     setUserForm(prev => ({ ...prev, expTime: null }));
                   }
                 }}
-                isRequired
+                description="留空表示永不过期"
                 showMonthAndYearPickers
                 className="cursor-pointer"
               />
@@ -791,7 +792,7 @@ export default function UserPage() {
       >
         <ModalContent>
           <ModalHeader>
-            用户 {currentUser?.user} 的隧道权限管理
+            <h2 className="text-lg font-bold">用户 {currentUser?.user} 的隧道权限管理</h2>
           </ModalHeader>
           <ModalBody>
             <div className="space-y-6">

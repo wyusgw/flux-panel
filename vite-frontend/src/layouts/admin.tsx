@@ -8,13 +8,14 @@ import { ThemeSwitch } from '@/components/theme-switch';
 import { UserMenu } from '@/components/user-menu';
 import { ChangePasswordModal } from '@/components/change-password-modal';
 import { safeLogout } from '@/utils/logout';
-import { siteConfig } from '@/config/site';
+import { siteConfig, getCachedConfigs } from '@/config/site';
 
 interface MenuItem {
   path: string;
   label: string;
   icon: React.ReactNode;
   adminOnly?: boolean;
+  hidden?: boolean;
 }
 
 export default function AdminLayout({
@@ -31,6 +32,7 @@ export default function AdminLayout({
   const [managementMenuOpen, setManagementMenuOpen] = useState(true);
   const [username, setUsername] = useState('');
   const [isAdmin, setIsAdmin] = useState(false);
+  const [singleTunnelEnabled, setSingleTunnelEnabled] = useState(false);
 
   // 菜单项配置
   const menuItems: MenuItem[] = [
@@ -87,6 +89,16 @@ export default function AdminLayout({
       icon: (
         <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
           <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
+        </svg>
+      )
+    },
+    {
+      path: '/single-tunnel',
+      label: '单端隧道',
+      hidden: !singleTunnelEnabled,
+      icon: (
+        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+          <path fillRule="evenodd" d="M12.586 4.586a2 2 0 112.828 2.828l-3 3a2 2 0 01-2.828 0 1 1 0 00-1.414 1.414 4 4 0 005.656 0l3-3a4 4 0 00-5.656-5.656l-1.5 1.5a1 1 0 101.414 1.414l1.5-1.5zm-5 5a2 2 0 012.828 0 1 1 0 101.414-1.414 4 4 0 00-5.656 0l-3 3a4 4 0 105.656 5.656l1.5-1.5a1 1 0 10-1.414-1.414l-1.5 1.5a2 2 0 11-2.828-2.828l3-3z" clipRule="evenodd" />
         </svg>
       )
     },
@@ -160,6 +172,17 @@ export default function AdminLayout({
       adminOnly: true
     },
     {
+      path: '/invitecode',
+      label: '邀请码管理',
+      icon: (
+        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+          <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z" />
+          <path fillRule="evenodd" d="M14.5 2a1 1 0 011 1v1.5H17a1 1 0 110 2h-1.5V8a1 1 0 11-2 0V6.5H12a1 1 0 110-2h1.5V3a1 1 0 011-1z" clipRule="evenodd" />
+        </svg>
+      ),
+      adminOnly: true
+    },
+    {
       path: '/order-management',
       label: '订单管理',
       icon: (
@@ -185,6 +208,16 @@ export default function AdminLayout({
       icon: (
         <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
           <path d="M10 2a6 6 0 00-6 6v3.586l-1.707 1.707A1 1 0 003 15h14a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM8.343 17a1.994 1.994 0 003.314 0H8.343z" />
+        </svg>
+      ),
+      adminOnly: true
+    },
+    {
+      path: '/task-queue',
+      label: '队列监控',
+      icon: (
+        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+          <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
         </svg>
       ),
       adminOnly: true
@@ -214,6 +247,10 @@ export default function AdminLayout({
     
     setUsername(name);
     setIsAdmin(adminFlag);
+
+    getCachedConfigs().then((configs) => {
+      setSingleTunnelEnabled(configs.user_device_group_enabled === 'true');
+    }).catch(() => {});
 
     // 响应式检查
     checkMobile();
@@ -248,9 +285,9 @@ export default function AdminLayout({
     }
   };
 
-  // 过滤菜单项（根据权限）
-  const filteredMenuItems = menuItems.filter(item => 
-    !item.adminOnly || isAdmin
+  // 过滤菜单项（根据权限与站点配置开关）
+  const filteredMenuItems = menuItems.filter(item =>
+    (!item.adminOnly || isAdmin) && !item.hidden
   );
   const primaryMenuItems = filteredMenuItems.filter(item => !item.adminOnly);
   const managementMenuItems = filteredMenuItems

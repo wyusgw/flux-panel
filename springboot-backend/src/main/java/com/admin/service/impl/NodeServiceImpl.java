@@ -134,11 +134,19 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
 
             QueryWrapper<DeviceGroup> groupQuery = new QueryWrapper<DeviceGroup>()
                     .eq("hide_in_probe", 0);
-            if (user.getGroupId() != null) {
-                groupQuery.and(w -> w.isNull("user_group_id").or().eq("user_group_id", user.getGroupId()));
-            } else {
-                groupQuery.isNull("user_group_id");
-            }
+            Long userGroupId = user.getGroupId();
+            groupQuery.and(w -> {
+                w.and(w2 -> {
+                    w2.isNull("owner_user_id");
+                    if (userGroupId != null) {
+                        w2.and(w3 -> w3.isNull("user_group_id").or().eq("user_group_id", userGroupId));
+                    } else {
+                        w2.isNull("user_group_id");
+                    }
+                });
+                w.or().eq("owner_user_id", userId);
+                w.or(w2 -> w2.isNotNull("owner_user_id").eq("shared", 1));
+            });
 
             Set<Long> visibleNodeIds = deviceGroupMapper.selectList(groupQuery).stream()
                     .map(DeviceGroup::getNodeId)

@@ -8,6 +8,7 @@ import toast from 'react-hot-toast';
 import axios from 'axios';
 import DefaultLayout from "@/layouts/default";
 import { login, LoginData, checkCaptcha } from "@/api";
+import { getCachedConfigs } from "@/config/site";
 import { UserIcon, LockIcon, EyeIcon, EyeOffIcon } from "@/components/icons";
 import "@/utils/tac.css";
 import "@/utils/tac.min.js";
@@ -50,6 +51,7 @@ export default function IndexPage() {
   const [errors, setErrors] = useState<Partial<LoginForm>>({});
   const [showCaptcha, setShowCaptcha] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [allowRegister, setAllowRegister] = useState(false);
   const navigate = useNavigate();
   const tacInstanceRef = useRef<any>(null);
   const captchaContainerRef = useRef<HTMLDivElement>(null);
@@ -61,6 +63,12 @@ export default function IndexPage() {
         tacInstanceRef.current = null;
       }
     };
+  }, []);
+  // 站点关闭注册时，登录页不显示"前往注册"入口
+  useEffect(() => {
+    getCachedConfigs().then((configs) => {
+      setAllowRegister(configs.allow_register === 'true');
+    }).catch(() => {});
   }, []);
   // 验证表单
   const validateForm = (): boolean => {
@@ -305,9 +313,11 @@ export default function IndexPage() {
                     {loading ? (showCaptcha ? "验证中..." : "登录中...") : "登录"}
                   </Button>
 
-                  <Link to="/register" className="text-primary text-small">
-                    前往注册
-                  </Link>
+                  {allowRegister && (
+                    <Link to="/register" className="text-primary text-small">
+                      前往注册
+                    </Link>
+                  )}
                 </div>
               </div>
             </CardBody>

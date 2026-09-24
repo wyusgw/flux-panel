@@ -83,6 +83,13 @@ const CONFIG_ITEMS: ConfigItem[] = [
     type: 'switch'
   },
   {
+    key: 'user_device_group_enabled',
+    section: 'basic',
+    label: '单端隧道',
+    description: '开启后，普通用户可以自建设备组（入口或出口），把自己的设备接入面板用于转发规则',
+    type: 'switch'
+  },
+  {
     key: 'invite_register_policy',
     section: 'basic',
     label: '邀请码注册策略',
@@ -136,13 +143,6 @@ const CONFIG_ITEMS: ConfigItem[] = [
         description: '拖动滑块完成图片拼接' 
       }
     ]
-  },
-  {
-    key: 'allow_user_custom_exit',
-    section: 'basic',
-    label: '允许用户自带出口',
-    description: '允许用户在创建转发时自行指定出口相关配置',
-    type: 'switch'
   },
   {
     key: 'allow_looking_glass',

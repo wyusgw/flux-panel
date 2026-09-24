@@ -82,4 +82,12 @@ public interface ForwardService extends IService<Forward> {
 
 
     void updateForwardA(Forward forward);
+
+    /**
+     * 重新推送一条转发规则的 gost 配置（用于节点离线补推队列的重试）。
+     * 与 {@link #updateForwardA} 不同的是这里会返回推送结果，供队列判断是否重试成功。
+     * @param forwardId 转发ID
+     * @return 结果（code=0 表示推送成功）
+     */
+    R retrySyncForward(Long forwardId);
 }

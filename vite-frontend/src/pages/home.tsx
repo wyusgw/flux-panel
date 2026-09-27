@@ -1,12 +1,27 @@
 import { Card, CardBody, CardHeader } from "@heroui/card";
+import { Accordion, AccordionItem } from "@heroui/accordion";
 import { useEffect, useState } from "react";
 
-import { getConfigByName } from "@/api";
-import { siteConfig } from "@/config/site";
+import { getConfigByName, getBackendInfo } from "@/api";
+import { siteConfig, getCachedConfigs } from "@/config/site";
+
+interface SiteInfo {
+  title: string;
+  allow_register: boolean;
+  allow_single_tunnel: boolean;
+  allow_looking_glass: boolean;
+}
+
+interface BackendInfo {
+  time: number;
+  version: string;
+}
 
 export default function HomePage() {
   const [announcement, setAnnouncement] = useState('');
   const [loading, setLoading] = useState(true);
+  const [siteInfo, setSiteInfo] = useState<SiteInfo | null>(null);
+  const [backendInfo, setBackendInfo] = useState<BackendInfo | null>(null);
 
   useEffect(() => {
     const loadAnnouncement = async () => {
@@ -22,7 +37,34 @@ export default function HomePage() {
       }
     };
 
+    const loadSiteInfo = async () => {
+      try {
+        const configs = await getCachedConfigs();
+        setSiteInfo({
+          title: configs.app_name || '',
+          allow_register: configs.allow_register === 'true',
+          allow_single_tunnel: configs.user_device_group_enabled === 'true',
+          allow_looking_glass: configs.allow_looking_glass === 'true',
+        });
+      } catch (error) {
+        console.error('获取站点信息失败:', error);
+      }
+    };
+
+    const loadBackendInfo = async () => {
+      try {
+        const response = await getBackendInfo();
+        if (response.code === 0 && response.data) {
+          setBackendInfo(response.data);
+        }
+      } catch (error) {
+        console.error('获取后端信息失败:', error);
+      }
+    };
+
     loadAnnouncement();
+    loadSiteInfo();
+    loadBackendInfo();
     localStorage.setItem('e', '/dashboard');
   }, []);
 
@@ -54,6 +96,21 @@ export default function HomePage() {
           )}
         </CardBody>
       </Card>
+
+      <div className="mt-4">
+        <Accordion variant="bordered" selectionMode="multiple">
+          <AccordionItem key="site-info" title="站点信息">
+            <pre className="text-xs font-mono text-default-600 bg-default-100 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap break-all">
+              {siteInfo ? JSON.stringify(siteInfo, null, 2) : '加载中...'}
+            </pre>
+          </AccordionItem>
+          <AccordionItem key="backend-info" title="后端信息">
+            <pre className="text-xs font-mono text-default-600 bg-default-100 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap break-all">
+              {backendInfo ? JSON.stringify(backendInfo, null, 2) : '加载中...'}
+            </pre>
+          </AccordionItem>
+        </Accordion>
+      </div>
     </div>
   );
 }

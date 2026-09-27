@@ -45,6 +45,9 @@ export const getMySingleTunnelGroupList = () => Network.post("/single-tunnel-gro
 export const updateMySingleTunnelGroup = (data: any) => Network.post("/single-tunnel-group/update", data);
 export const deleteMySingleTunnelGroup = (id: number) => Network.post("/single-tunnel-group/delete", { id });
 
+// Looking Glass 网络诊断（从指定节点发起 TCP ping 或 traceroute）
+export const runLookingGlass = (data: { nodeId: number; type: 'ping' | 'traceroute' | 'mtr' | 'dns' | 'icmp_ping'; target: string }) => Network.post("/looking-glass/run", data);
+
 // 套餐CRUD操作 - 全部使用POST请求
 export const createPackagePlan = (data: any) => Network.post("/package/create", data);
 export const getPackagePlanList = () => Network.post("/package/list");
@@ -162,6 +165,7 @@ export const resetUserFlow = (data: { id: number; type: number }) => Network.pos
 // 网站配置相关接口
 export const getConfigs = () => Network.post("/config/list");
 export const getConfigByName = (name: string) => Network.post("/config/get", { name });
+export const getBackendInfo = () => Network.post("/config/backend-info");
 export const updateConfigs = (configMap: Record<string, string>) => Network.post("/config/update", configMap);
 export const updateConfig = (name: string, value: string) => Network.post("/config/update-single", { name, value });
 

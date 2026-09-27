@@ -15,6 +15,7 @@ import OrdersPage from "@/pages/orders";
 import OrderManagementPage from "@/pages/order-management";
 import AccountCenterPage from "@/pages/account-center";
 import SingleTunnelPage from "@/pages/single-tunnel";
+import LookingGlassPage from "@/pages/looking-glass";
 import RedeemCodePage from "@/pages/redeemcode";
 import InviteCodePage from "@/pages/invitecode";
 import TaskQueuePage from "@/pages/task-queue";
@@ -248,6 +249,14 @@ function App() {
         element={
           <ProtectedRoute useSimpleLayout={true}>
             <SingleTunnelPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/looking-glass"
+        element={
+          <ProtectedRoute useSimpleLayout={true}>
+            <LookingGlassPage />
           </ProtectedRoute>
         }
       />

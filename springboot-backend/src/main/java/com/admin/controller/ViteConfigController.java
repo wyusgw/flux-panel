@@ -6,6 +6,7 @@ import com.admin.common.aop.LogAnnotation;
 import com.admin.common.lang.R;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
@@ -20,6 +21,21 @@ import java.util.Map;
 @CrossOrigin
 @RequestMapping("/api/v1/config")
 public class ViteConfigController extends BaseController {
+
+    /** 后端构建日期（YYYYMMDD），每次发布新版本时更新此常量 */
+    private static final String BACKEND_VERSION = "20260927";
+
+    /**
+     * 获取后端信息（构建版本、当前服务器时间等），供前端「主页 - 后端信息」面板展示
+     */
+    @LogAnnotation
+    @PostMapping("/backend-info")
+    public R getBackendInfo() {
+        Map<String, Object> info = new LinkedHashMap<>();
+        info.put("time", System.currentTimeMillis() / 1000);
+        info.put("version", BACKEND_VERSION);
+        return R.ok(info);
+    }
 
     /**
      * 获取所有网站配置

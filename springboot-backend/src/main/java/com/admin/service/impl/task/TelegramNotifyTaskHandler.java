@@ -44,6 +44,7 @@ public class TelegramNotifyTaskHandler implements TaskHandler {
         JSONObject payload = JSONObject.parseObject(task.getPayload());
         String chatId = payload != null ? payload.getString("chatId") : null;
         String text = payload != null ? payload.getString("text") : null;
+        String parseMode = payload != null ? payload.getString("parseMode") : null;
         if (chatId == null || text == null) {
             return R.err("任务数据缺少 chatId/text");
         }
@@ -52,7 +53,7 @@ public class TelegramNotifyTaskHandler implements TaskHandler {
         if (token == null || token.isEmpty()) {
             return R.err("Telegram Bot Token 未配置");
         }
-        boolean ok = TelegramBotUtil.sendMessage(token, chatId, text);
+        boolean ok = TelegramBotUtil.sendMessage(token, chatId, text, parseMode);
         return ok ? R.ok() : R.err("Telegram 消息发送失败");
     }
 }

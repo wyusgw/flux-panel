@@ -130,6 +130,21 @@ CREATE TABLE `user_daily_raw_flow` (
 -- --------------------------------------------------------
 
 --
+-- 表的结构 `node_daily_raw_flow`：节点按自然日累计的原始流量（不计流量倍率），
+-- 供管理员仪表盘「今日/昨日节点流量排行」展示使用
+--
+
+CREATE TABLE `node_daily_raw_flow` (
+  `id` int(10) NOT NULL,
+  `node_id` bigint(20) NOT NULL,
+  `day` varchar(10) NOT NULL,
+  `raw_bytes` bigint(20) NOT NULL DEFAULT '0',
+  `updated_time` bigint(20) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- --------------------------------------------------------
+
+--
 -- 表的结构 `forward_group`
 --
 
@@ -284,7 +299,11 @@ CREATE TABLE `user` (
   `notify_payment_mode` tinyint(4) NOT NULL DEFAULT '0',
   `notify_device_mode` tinyint(4) NOT NULL DEFAULT '0',
   `notify_device_groups` varchar(500) DEFAULT NULL,
-  `telegram_last_reminder_date` varchar(10) DEFAULT NULL
+  `notify_renew_mode` tinyint(4) NOT NULL DEFAULT '1',
+  `notify_expiry_mode` tinyint(4) NOT NULL DEFAULT '1',
+  `notify_flow_mode` tinyint(4) NOT NULL DEFAULT '1',
+  `telegram_last_expiry_reminder_date` varchar(10) DEFAULT NULL,
+  `telegram_last_flow_reminder_date` varchar(10) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 --
@@ -447,6 +466,25 @@ CREATE TABLE `task_queue_node` (
 -- --------------------------------------------------------
 
 --
+-- 表的结构 `telegram_send_log`
+-- Telegram 通知发送记录：每次尝试发送（无论成功/失败）都登记一条，供管理员查看送达状态；
+-- 与 task_queue 的 TELEGRAM_NOTIFY 类型不同，后者只登记失败后待重试的任务，这里覆盖全部发送历史
+--
+
+CREATE TABLE `telegram_send_log` (
+  `id` int(10) NOT NULL,
+  `user_id` bigint(20) DEFAULT NULL,
+  `chat_id` varchar(64) NOT NULL,
+  `type` varchar(50) NOT NULL,
+  `content` text,
+  `status` varchar(20) NOT NULL,
+  `error` varchar(500) DEFAULT NULL,
+  `created_time` bigint(20) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- --------------------------------------------------------
+
+--
 -- 表的结构 `user_tunnel`
 --
 
@@ -521,6 +559,13 @@ ALTER TABLE `device_group_user_group_relation`
 ALTER TABLE `user_daily_raw_flow`
   ADD PRIMARY KEY (`id`),
   ADD UNIQUE KEY `uniq_user_day` (`user_id`,`day`);
+
+--
+-- 表的索引 `node_daily_raw_flow`
+--
+ALTER TABLE `node_daily_raw_flow`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uniq_node_day` (`node_id`,`day`);
 
 --
 -- 表的索引 `node`
@@ -634,6 +679,14 @@ ALTER TABLE `task_queue`
   ADD KEY `idx_task_queue_status` (`status`,`completed_time`);
 
 --
+-- 表的索引 `telegram_send_log`
+--
+ALTER TABLE `telegram_send_log`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_telegram_send_log_created` (`created_time`),
+  ADD KEY `idx_telegram_send_log_type_status` (`type`,`status`);
+
+--
 -- 表的索引 `task_queue_node`
 --
 ALTER TABLE `task_queue_node`
@@ -673,6 +726,12 @@ ALTER TABLE `device_group_user_group_relation`
 -- 使用表AUTO_INCREMENT `user_daily_raw_flow`
 --
 ALTER TABLE `user_daily_raw_flow`
+  MODIFY `id` int(10) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=1;
+
+--
+-- 使用表AUTO_INCREMENT `node_daily_raw_flow`
+--
+ALTER TABLE `node_daily_raw_flow`
   MODIFY `id` int(10) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=1;
 
 --
@@ -781,6 +840,12 @@ ALTER TABLE `task_queue`
 -- 使用表AUTO_INCREMENT `task_queue_node`
 --
 ALTER TABLE `task_queue_node`
+  MODIFY `id` int(10) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=1;
+
+--
+-- 使用表AUTO_INCREMENT `telegram_send_log`
+--
+ALTER TABLE `telegram_send_log`
   MODIFY `id` int(10) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=1;
 COMMIT;
 

@@ -6,12 +6,19 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LabelList } from "recharts";
 
-import { getAllUsers, getNodeList, getOrderList, getTaskQueueList } from "@/api";
+import { getAllUsers, getNodeList, getAdminOrderList, getTaskQueueList, getDashboardFlowStats } from "@/api";
 
 type Order = { amount?: number; orderStatus?: number; createdTime?: number; paidTime?: number };
 type User = { id: number; user: string; name?: string; inFlow?: number; outFlow?: number };
 type Node = { id: number; name: string; ip?: string; status?: number };
 type TaskQueueItem = { taskTypeLabel: string; status: 'PENDING' | 'SUCCESS'; retryCount: number; createdTime: number };
+type RankRow = { name: string; value: number };
+type FlowStats = {
+  todayTotal: number; yesterdayTotal: number;
+  todayUserRanking: RankRow[]; yesterdayUserRanking: RankRow[];
+  todayNodeRanking: RankRow[]; yesterdayNodeRanking: RankRow[];
+};
+const EMPTY_FLOW_STATS: FlowStats = { todayTotal: 0, yesterdayTotal: 0, todayUserRanking: [], yesterdayUserRanking: [], todayNodeRanking: [], yesterdayNodeRanking: [] };
 
 // 需与后端 TaskQueueServiceImpl.MAX_AUTO_RETRY 保持一致：超过这个次数后不再自动重试，仅供手动处理
 const AUTO_RETRY_LIMIT = 20;
@@ -93,15 +100,19 @@ export default function AdminDashboardPage() {
   const [nodes, setNodes] = useState<Node[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [taskQueueItems, setTaskQueueItems] = useState<TaskQueueItem[]>([]);
+  const [flowStats, setFlowStats] = useState<FlowStats>(EMPTY_FLOW_STATS);
   const [loading, setLoading] = useState(true);
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [userResponse, nodeResponse, orderResponse, taskQueueResponse] = await Promise.all([getAllUsers({ current: 1, size: 1000 }), getNodeList(), getOrderList(), getTaskQueueList()]);
+      const [userResponse, nodeResponse, orderResponse, taskQueueResponse, flowStatsResponse] = await Promise.all([
+        getAllUsers({ current: 1, size: 1000 }), getNodeList(), getAdminOrderList(), getTaskQueueList(), getDashboardFlowStats(),
+      ]);
       if (userResponse.code === 0) setUsers(userResponse.data || []);
       if (nodeResponse.code === 0) setNodes(nodeResponse.data || []);
       if (orderResponse.code === 0) setOrders(orderResponse.data || []);
       if (taskQueueResponse.code === 0) setTaskQueueItems(taskQueueResponse.data || []);
+      if (flowStatsResponse.code === 0) setFlowStats({ ...EMPTY_FLOW_STATS, ...flowStatsResponse.data });
     } finally { setLoading(false); }
   }, []);
   useEffect(() => { loadData(); }, [loadData]);
@@ -126,13 +137,12 @@ export default function AdminDashboardPage() {
   const yesterday = new Date(now); yesterday.setDate(now.getDate() - 1);
   const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const paidAmount = (predicate: (time: number | undefined) => boolean) => orders.filter(order => order.orderStatus === 1 && predicate(order.paidTime || order.createdTime)).reduce((sum, order) => sum + Number(order.amount || 0), 0);
-  const userRanking = [...users].map(user => ({ name: user.name || user.user, value: (user.inFlow || 0) + (user.outFlow || 0) })).filter(item => item.value > 0).sort((a, b) => b.value - a.value).slice(0, 10);
   const onlineNodeCount = nodes.filter(node => node.status === 1).length;
   const cards = [
     ['今日充值', currency(paidAmount(time => isSameDay(time, now)))], ['本月充值', currency(paidAmount(time => isSameMonth(time, now)))],
-    ['今日单向流量', '暂无统计'], ['总用户', String(users.length)],
+    ['今日单向流量', formatFlow(flowStats.todayTotal)], ['总用户', String(users.length)],
     ['昨日充值', currency(paidAmount(time => isSameDay(time, yesterday)))], ['上月充值', currency(paidAmount(time => isSameMonth(time, lastMonth)))],
-    ['昨日单向流量', '暂无统计'], ['在线节点', `${onlineNodeCount} / ${nodes.length}`]
+    ['昨日单向流量', formatFlow(flowStats.yesterdayTotal)], ['在线节点', `${onlineNodeCount} / ${nodes.length}`]
   ];
 
   return <div className="dashboard-home px-4 lg:px-6 py-5 lg:py-6 max-w-[1600px] mx-auto">
@@ -157,6 +167,6 @@ export default function AdminDashboardPage() {
         </div>
       </div>
     </section>
-    <section className="grid grid-cols-1 xl:grid-cols-2 gap-5"><RankTable title="今日用户流量排行" rows={userRanking} kind="flow" /><RankTable title="昨日用户流量排行" rows={[]} kind="flow" /><RankTable title="今日节点流量排行" rows={nodes.map(node => ({ name: node.name || node.ip || `节点 #${node.id}`, value: 0 })).filter(() => false)} kind="node" /><RankTable title="昨日节点流量排行" rows={[]} kind="node" /></section>
+    <section className="grid grid-cols-1 xl:grid-cols-2 gap-5"><RankTable title="今日用户流量排行" rows={flowStats.todayUserRanking} kind="flow" /><RankTable title="昨日用户流量排行" rows={flowStats.yesterdayUserRanking} kind="flow" /><RankTable title="今日节点流量排行" rows={flowStats.todayNodeRanking} kind="node" /><RankTable title="昨日节点流量排行" rows={flowStats.yesterdayNodeRanking} kind="node" /></section>
   </div>;
 }

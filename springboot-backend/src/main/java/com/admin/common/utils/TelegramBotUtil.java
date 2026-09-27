@@ -45,14 +45,25 @@ public class TelegramBotUtil {
     }
 
     /**
-     * 发送文本消息，返回是否发送成功（异常/非 ok 响应均返回 false，不向调用方抛出异常）
+     * 发送纯文本消息（不带格式），返回是否发送成功（异常/非 ok 响应均返回 false，不向调用方抛出异常）
      */
     public static boolean sendMessage(String token, String chatId, String text) {
+        return sendMessage(token, chatId, text, null);
+    }
+
+    /**
+     * 发送消息，可指定 parse_mode（如 "HTML"）以支持粗体/斜体等富文本格式；传 null 则发送纯文本。
+     * 返回是否发送成功（异常/非 ok 响应均返回 false，不向调用方抛出异常）
+     */
+    public static boolean sendMessage(String token, String chatId, String text, String parseMode) {
         if (token == null || token.isEmpty() || chatId == null || chatId.isEmpty()) return false;
         try {
             Map<String, Object> params = new HashMap<>();
             params.put("chat_id", chatId);
             params.put("text", text);
+            if (parseMode != null && !parseMode.isEmpty()) {
+                params.put("parse_mode", parseMode);
+            }
             String resp = HttpUtil.get(API_BASE + token + "/sendMessage", params, TIMEOUT_MS);
             JSONObject json = JSONObject.parseObject(resp);
             return json != null && json.getBooleanValue("ok");

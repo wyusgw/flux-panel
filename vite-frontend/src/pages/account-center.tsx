@@ -39,6 +39,9 @@ interface UserInfo {
   notifyPaymentMode: number;
   notifyDeviceMode: number;
   notifyDeviceGroupIds: number[];
+  notifyRenewMode: number;
+  notifyExpiryMode: number;
+  notifyFlowMode: number;
 }
 
 interface PackagePlanItem {
@@ -112,6 +115,9 @@ export default function AccountCenterPage() {
   const [paymentMode, setPaymentMode] = useState(0);
   const [deviceMode, setDeviceMode] = useState(0);
   const [selectedGroupIds, setSelectedGroupIds] = useState<number[]>([]);
+  const [renewMode, setRenewMode] = useState(1);
+  const [expiryMode, setExpiryMode] = useState(1);
+  const [flowMode, setFlowMode] = useState(1);
   const [pushSaving, setPushSaving] = useState(false);
 
   useEffect(() => {
@@ -140,6 +146,9 @@ export default function AccountCenterPage() {
         setPaymentMode(info.notifyPaymentMode ?? 0);
         setDeviceMode(info.notifyDeviceMode ?? 0);
         setSelectedGroupIds(info.notifyDeviceGroupIds ?? []);
+        setRenewMode(info.notifyRenewMode ?? 1);
+        setExpiryMode(info.notifyExpiryMode ?? 1);
+        setFlowMode(info.notifyFlowMode ?? 1);
         if (notify) toast.success('刷新用户信息成功', { id: 'account-refresh' });
       } else {
         toast.error(userRes.msg || '获取用户信息失败');
@@ -300,7 +309,14 @@ export default function AccountCenterPage() {
   const handleSavePushSettings = async () => {
     setPushSaving(true);
     try {
-      const res = await updateNotifySettings(paymentMode, deviceMode, (deviceMode === 1 || deviceMode === 2) ? selectedGroupIds : []);
+      const res = await updateNotifySettings({
+        paymentMode,
+        deviceMode,
+        deviceGroupIds: (deviceMode === 1 || deviceMode === 2) ? selectedGroupIds : [],
+        renewMode,
+        expiryMode,
+        flowMode,
+      });
       if (res.code === 0) {
         toast.success('推送设置已保存');
         onPushOpenChange();
@@ -484,41 +500,72 @@ export default function AccountCenterPage() {
           <ModalBody className="space-y-4">
             <p className="text-xs text-default-500">通道：Telegram（需先完成账号关联）</p>
 
-            <div className="space-y-2">
-              <p className="text-sm font-medium text-foreground">收款信息</p>
-              <ModePicker
-                value={paymentMode}
-                options={[{ value: 0, label: '不接收' }, { value: 1, label: '接收' }]}
-                onChange={setPaymentMode}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <p className="text-sm font-medium text-foreground">设备离线与恢复</p>
-              <ModePicker
-                value={deviceMode}
-                options={[{ value: 0, label: '不接收' }, { value: 3, label: '全部接收' }, { value: 1, label: '白名单' }, { value: 2, label: '黑名单' }]}
-                onChange={setDeviceMode}
-              />
-              {(deviceMode === 1 || deviceMode === 2) && (
-                <div className="mt-2 max-h-48 overflow-y-auto border border-default-200 rounded-medium p-2 flex flex-col gap-1">
-                  {deviceGroups.length === 0 && <p className="text-xs text-default-400 px-1 py-2">暂无设备组</p>}
-                  {deviceGroups.map((group) => (
-                    <Checkbox
-                      key={group.id}
-                      size="sm"
-                      isSelected={selectedGroupIds.includes(group.id)}
-                      onValueChange={() => toggleGroupSelected(group.id)}
-                    >
-                      <span className="text-sm">{group.name}</span>
-                    </Checkbox>
-                  ))}
-                  <p className="text-xs text-default-400 px-1 pt-1">
-                    {deviceMode === 1 ? '仅勾选的设备组会收到通知' : '除勾选的设备组外，其余都会收到通知'}
-                  </p>
+            {isAdminUser ? (
+              <>
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-foreground">收款信息</p>
+                  <ModePicker
+                    value={paymentMode}
+                    options={[{ value: 0, label: '不接收' }, { value: 1, label: '接收' }]}
+                    onChange={setPaymentMode}
+                  />
                 </div>
-              )}
-            </div>
+
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-foreground">设备离线与恢复</p>
+                  <ModePicker
+                    value={deviceMode}
+                    options={[{ value: 0, label: '不接收' }, { value: 3, label: '全部接收' }, { value: 1, label: '白名单' }, { value: 2, label: '黑名单' }]}
+                    onChange={setDeviceMode}
+                  />
+                  {(deviceMode === 1 || deviceMode === 2) && (
+                    <div className="mt-2 max-h-48 overflow-y-auto border border-default-200 rounded-medium p-2 flex flex-col gap-1">
+                      {deviceGroups.length === 0 && <p className="text-xs text-default-400 px-1 py-2">暂无设备组</p>}
+                      {deviceGroups.map((group) => (
+                        <Checkbox
+                          key={group.id}
+                          size="sm"
+                          isSelected={selectedGroupIds.includes(group.id)}
+                          onValueChange={() => toggleGroupSelected(group.id)}
+                        >
+                          <span className="text-sm">{group.name}</span>
+                        </Checkbox>
+                      ))}
+                      <p className="text-xs text-default-400 px-1 pt-1">
+                        {deviceMode === 1 ? '仅勾选的设备组会收到通知' : '除勾选的设备组外，其余都会收到通知'}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="text-xs text-default-500">
+                  收款信息、设备状态等运维类通知归管理员查看，以下为您可控制的续费类通知：
+                </p>
+                <div className="flex items-center justify-between py-1">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">套餐到期提醒</p>
+                    <p className="mt-0.5 text-xs text-default-500">套餐即将到期时通过 Telegram 提醒您续费</p>
+                  </div>
+                  <Switch size="sm" isSelected={expiryMode === 1} onValueChange={(v) => setExpiryMode(v ? 1 : 0)} />
+                </div>
+                <div className="flex items-center justify-between py-1">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">流量即将用尽提醒</p>
+                    <p className="mt-0.5 text-xs text-default-500">套餐流量用量达到阈值时提醒您</p>
+                  </div>
+                  <Switch size="sm" isSelected={flowMode === 1} onValueChange={(v) => setFlowMode(v ? 1 : 0)} />
+                </div>
+                <div className="flex items-center justify-between py-1">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">自动续费结果</p>
+                    <p className="mt-0.5 text-xs text-default-500">自动续费成功或失败时通知您</p>
+                  </div>
+                  <Switch size="sm" isSelected={renewMode === 1} onValueChange={(v) => setRenewMode(v ? 1 : 0)} />
+                </div>
+              </>
+            )}
           </ModalBody>
           <ModalFooter>
             <Button variant="light" onPress={() => onPushOpenChange()}>取消</Button>

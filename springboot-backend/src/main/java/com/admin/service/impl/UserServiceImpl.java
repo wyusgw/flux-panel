@@ -538,7 +538,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     }
 
     /**
-     * 更新当前登录用户的推送设置（收款信息推送 + 设备离线与恢复推送）
+     * 更新当前登录用户的推送设置（收款信息、设备离线与恢复、自动续费结果、到期提醒、流量提醒）
      *
      * @param notifySettingsDto 推送设置数据传输对象
      * @return 更新结果响应
@@ -552,6 +552,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
 
         Integer paymentMode = notifySettingsDto.getPaymentMode() != null ? notifySettingsDto.getPaymentMode() : 0;
         Integer deviceMode = notifySettingsDto.getDeviceMode() != null ? notifySettingsDto.getDeviceMode() : 0;
+        Integer renewMode = notifySettingsDto.getRenewMode() != null ? notifySettingsDto.getRenewMode() : 1;
+        Integer expiryMode = notifySettingsDto.getExpiryMode() != null ? notifySettingsDto.getExpiryMode() : 1;
+        Integer flowMode = notifySettingsDto.getFlowMode() != null ? notifySettingsDto.getFlowMode() : 1;
         String deviceGroupsJson = (notifySettingsDto.getDeviceGroupIds() != null && !notifySettingsDto.getDeviceGroupIds().isEmpty())
                 ? JSON.toJSONString(notifySettingsDto.getDeviceGroupIds())
                 : null;
@@ -561,6 +564,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
                 .set("notify_payment_mode", paymentMode)
                 .set("notify_device_mode", deviceMode)
                 .set("notify_device_groups", deviceGroupsJson)
+                .set("notify_renew_mode", renewMode)
+                .set("notify_expiry_mode", expiryMode)
+                .set("notify_flow_mode", flowMode)
                 .set("updated_time", System.currentTimeMillis()));
 
         return result ? R.ok() : R.err(ERROR_UPDATE_FAILED);
@@ -986,6 +992,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         userInfo.setNotifyPaymentMode(user.getNotifyPaymentMode() != null ? user.getNotifyPaymentMode() : 0);
         userInfo.setNotifyDeviceMode(user.getNotifyDeviceMode() != null ? user.getNotifyDeviceMode() : 0);
         userInfo.setNotifyDeviceGroupIds(parseDeviceGroupIds(user.getNotifyDeviceGroups()));
+        userInfo.setNotifyRenewMode(user.getNotifyRenewMode() != null ? user.getNotifyRenewMode() : 1);
+        userInfo.setNotifyExpiryMode(user.getNotifyExpiryMode() != null ? user.getNotifyExpiryMode() : 1);
+        userInfo.setNotifyFlowMode(user.getNotifyFlowMode() != null ? user.getNotifyFlowMode() : 1);
 
         if (user.getGroupId() != null) {
             UserGroup group = userGroupService.getById(user.getGroupId());

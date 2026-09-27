@@ -33,22 +33,85 @@ get_docker_compose_url() {
   fi
 }
 
-# 检查 docker-compose 或 docker compose 命令
+# 检查 docker-compose 或 docker compose 命令；未检测到时询问是否自动安装
 check_docker() {
   if command -v docker-compose &> /dev/null; then
     DOCKER_CMD="docker-compose"
-  elif command -v docker &> /dev/null; then
-    if docker compose version &> /dev/null; then
-      DOCKER_CMD="docker compose"
-    else
-      echo "错误：检测到 docker，但不支持 'docker compose' 命令。请安装 docker-compose 或更新 docker 版本。"
-      exit 1
-    fi
-  else
+    echo "检测到 Docker 命令：$DOCKER_CMD"
+    return 0
+  fi
+  if command -v docker &> /dev/null && docker compose version &> /dev/null; then
+    DOCKER_CMD="docker compose"
+    echo "检测到 Docker 命令：$DOCKER_CMD"
+    return 0
+  fi
+
+  echo "未检测到可用的 Docker 环境（docker / docker compose）。"
+
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    echo "错误：macOS 无法自动安装，请手动安装 Docker Desktop：https://www.docker.com/products/docker-desktop"
+    exit 1
+  fi
+
+  read -p "是否自动安装 Docker？(y/N): " install_docker_confirm
+  if [[ ! "$install_docker_confirm" =~ ^[Yy]$ ]]; then
     echo "错误：未检测到 docker 或 docker-compose 命令。请先安装 Docker。"
     exit 1
   fi
+
+  install_docker
+
+  if command -v docker-compose &> /dev/null; then
+    DOCKER_CMD="docker-compose"
+  elif command -v docker &> /dev/null && docker compose version &> /dev/null; then
+    DOCKER_CMD="docker compose"
+  else
+    echo "错误：Docker 自动安装后仍未检测到可用命令，请手动安装后重试。"
+    exit 1
+  fi
+
+  # 刚安装完 docker 时，非 root 用户的 docker 组权限要重新登录才会生效，
+  # 本次脚本后续步骤需要临时加 sudo 才能立即调用 docker
+  if [[ "$DOCKER_NEEDS_SUDO" == "1" ]]; then
+    DOCKER_CMD="sudo $DOCKER_CMD"
+  fi
   echo "检测到 Docker 命令：$DOCKER_CMD"
+}
+
+# 使用 Docker 官方安装脚本自动安装 Docker（含 docker compose 插件），
+# 国内 IP 走官方脚本自带的 Aliyun 镜像加速，与本脚本其他下载项的 CN 判断一致
+install_docker() {
+  echo "正在自动安装 Docker（使用官方安装脚本）..."
+
+  local sudo_cmd=""
+  if [[ $EUID -ne 0 ]]; then
+    sudo_cmd="sudo"
+  fi
+
+  if [ "$COUNTRY" = "CN" ]; then
+    curl -fsSL https://get.docker.com | $sudo_cmd sh -s -- --mirror Aliyun
+  else
+    curl -fsSL https://get.docker.com | $sudo_cmd sh
+  fi
+
+  echo "启动 Docker 服务..."
+  if command -v systemctl &> /dev/null; then
+    $sudo_cmd systemctl enable docker &> /dev/null || true
+    $sudo_cmd systemctl start docker
+  elif command -v service &> /dev/null; then
+    $sudo_cmd service docker start
+  fi
+  sleep 2
+
+  # 非 root 用户刚安装完 docker 组权限要重新登录才会生效，这里把当前用户加进
+  # docker 组供以后使用；DOCKER_NEEDS_SUDO 供 check_docker 给本次脚本剩余步骤加 sudo
+  DOCKER_NEEDS_SUDO=0
+  if [[ -n "$sudo_cmd" ]]; then
+    $sudo_cmd usermod -aG docker "$(whoami)" 2>/dev/null || true
+    DOCKER_NEEDS_SUDO=1
+  fi
+
+  echo "Docker 安装完成"
 }
 
 # 检测系统是否支持 IPv6

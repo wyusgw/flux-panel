@@ -90,7 +90,7 @@ export const primaryNavItems: NavItem[] = [
   }
 ];
 
-// 与 admin.tsx「管理」子菜单展示顺序一致：仪表盘 → 站点设置 → 隧道管理 → 设备管理 → 限速管理 → 用户管理 → 用户组管理 → 套餐管理 → 兑换码管理
+// 与 admin.tsx「管理」子菜单展示顺序一致：仪表盘 → 站点设置 → 隧道管理 → 设备管理 → 节点组管理 → 用户管理 → 用户组管理 → 套餐管理 → 兑换码管理
 export const managementNavItems: NavItem[] = [
   {
     path: '/admin/dashboard',
@@ -139,6 +139,16 @@ export const managementNavItems: NavItem[] = [
     icon: (
       <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
         <path d="M2 5a2 2 0 012-2h12a2 2 0 012 2v2a2 2 0 01-2 2H4a2 2 0 01-2-2V5zM2 13a2 2 0 012-2h12a2 2 0 012 2v2a2 2 0 01-2 2H4a2 2 0 01-2-2v-2z" />
+      </svg>
+    )
+  },
+  {
+    path: '/nodegroup',
+    label: '节点组管理',
+    adminOnly: true,
+    icon: (
+      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+        <path d="M4 4a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2V6a2 2 0 00-2-2H4zM4 12a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2v-2a2 2 0 00-2-2H4zM12 4a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2V6a2 2 0 00-2-2h-2zM12 12a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2v-2a2 2 0 00-2-2h-2z" />
       </svg>
     )
   },

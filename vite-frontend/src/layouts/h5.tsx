@@ -1,11 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 
+import toast from 'react-hot-toast';
+
 import { Logo } from '@/components/icons';
 import { ThemeSwitch } from '@/components/theme-switch';
 import { siteConfig, getCachedConfigs } from '@/config/site';
 import { primaryNavItems, managementNavItems } from '@/config/nav-items';
 import { safeLogout } from '@/utils/logout';
+import { consumePasswordChangePrompt } from '@/utils/auth';
 import { UserMenu } from '@/components/user-menu';
 import { ChangePasswordModal } from '@/components/change-password-modal';
 import { useDisclosure } from '@heroui/modal';
@@ -37,6 +40,13 @@ export default function H5Layout({
 
 
     setIsAdmin(adminFlag);
+
+    // 检测到默认账号密码登录时，登录页会写入这个标记：不阻断使用，正常进入主页后
+    // 弹出"修改密码"弹窗提醒（可关闭），提醒一次即消费掉，不会每次导航都重新弹出
+    if (consumePasswordChangePrompt()) {
+      toast('检测到您使用的是默认账号密码，为了账户安全请尽快修改', { icon: '⚠️', duration: 6000 });
+      onOpen();
+    }
 
     getCachedConfigs().then((configs) => {
       setSingleTunnelEnabled(configs.user_device_group_enabled === 'true');

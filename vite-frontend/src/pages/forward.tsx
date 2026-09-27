@@ -190,6 +190,7 @@ export default function ForwardPage() {
   // 避免 /forward 这个所有人都能访问的自助页面因为 URL 上恰好带了同名参数就被误切换
   const isManagePage = location.pathname === '/user-forward';
   const impersonateUserId = isManagePage && isAdmin() && searchParams.get('userId') ? Number(searchParams.get('userId')) : null;
+  const impersonateUserName = searchParams.get('userName') || '';
   const isImpersonating = impersonateUserId !== null;
   // 当前页面实际归属哪个用户：代管模式下是目标用户，否则是自己；转发规则和分组的过滤、
   // 归属统一用这一个值，避免代管模式下有的地方过滤对了、有的地方漏改还是按自己过滤
@@ -1395,7 +1396,7 @@ export default function ForwardPage() {
               <Button size="sm" variant="flat" onPress={() => navigate('/user')}>← 返回用户管理</Button>
             )}
             <h1 className="text-xl font-bold text-foreground">
-              {isImpersonating ? `用户转发规则 (UID=${impersonateUserId})` : '我的转发规则'}
+              {isImpersonating ? `用户转发规则 (UID=${impersonateUserId}${impersonateUserName ? `，${impersonateUserName}` : ''})` : '我的转发规则'}
             </h1>
           </div>
           <div className="flex items-center gap-2 flex-wrap">

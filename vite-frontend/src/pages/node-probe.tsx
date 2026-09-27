@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@heroui/button';
@@ -59,6 +59,7 @@ export default function NodeProbePage() {
 
   const resolvedIpsRef = useRef<Set<string>>(new Set());
   const socketRef = useRef<WebSocket | null>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -77,6 +78,30 @@ export default function NodeProbePage() {
   }, []);
 
   const closeDetail = () => { setDetailKey(null); setDetailContent(null); setDetailRect(null); setDetailPinned(false); };
+
+  // 移动端窄屏下，弹出的详情卡片若直接贴着触发元素的左边缘定位，很容易超出屏幕右边界被切掉一半，
+  // 这里在卡片实际渲染出尺寸后，按视口边界纠正一次位置（水平不超出左右边界，垂直放不下时改往上弹）
+  useLayoutEffect(() => {
+    if (!detailKey || !detailRect || !popoverRef.current) return;
+    const el = popoverRef.current;
+    const margin = 8;
+    const rect = el.getBoundingClientRect();
+
+    let left = detailRect.left;
+    if (left + rect.width > window.innerWidth - margin) {
+      left = window.innerWidth - rect.width - margin;
+    }
+    if (left < margin) left = margin;
+
+    let top = detailRect.bottom + margin;
+    if (top + rect.height > window.innerHeight - margin) {
+      const above = detailRect.top - rect.height - margin;
+      top = above > margin ? above : margin;
+    }
+
+    el.style.left = `${left}px`;
+    el.style.top = `${top}px`;
+  }, [detailKey, detailRect]);
 
   useEffect(() => {
     if (!detailPinned) return;
@@ -279,34 +304,39 @@ export default function NodeProbePage() {
                             </>
                           );
 
+                          const isOnline = node.connectionStatus === 'online';
+                          // 节点离线时没有实时数据，连接数/CPU/RAM/存储的详情卡片没有意义，
+                          // 只在在线时才可点击查看，离线时不挂载点击/悬停处理器
+                          const onlineOnlyHandlers = (key: string, content: React.ReactNode) => isOnline ? detailHandlers(key, content) : {};
+
                           return (
                             <tr key={node.id}>
                               <td>
-                                <span className={`probe-status probe-clickable ${node.connectionStatus === 'online' ? 'online' : ''}`} {...detailHandlers(`status-${node.id}`, statusContent)}>
-                                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-label={node.connectionStatus === 'online' ? '在线' : '离线'}>
+                                <span className={`probe-status probe-clickable ${isOnline ? 'online' : ''}`} {...detailHandlers(`status-${node.id}`, statusContent)}>
+                                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-label={isOnline ? '在线' : '离线'}>
                                     <circle cx="12" cy="12" r="10" />
-                                    {node.connectionStatus === 'online' ? <path d="M7.8 12.3l2.9 2.9 5.5-5.7" /> : <path d="M9 9l6 6M15 9l-6 6" />}
+                                    {isOnline ? <path d="M7.8 12.3l2.9 2.9 5.5-5.7" /> : <path d="M9 9l6 6M15 9l-6 6" />}
                                   </svg>
                                 </span>
                               </td>
                               <td><RegionCell code={node.ip ? regionCodes[node.ip] : undefined} /></td>
                               <td><RegionCell /></td>
-                              <td className="probe-clickable" {...detailHandlers(`conn-recv-${node.id}`, receiveConnContent)}>{formatSpeed(node.systemInfo?.uploadSpeed)}</td>
-                              <td className="probe-clickable" {...detailHandlers(`conn-send-${node.id}`, sendConnContent)}>{formatSpeed(node.systemInfo?.downloadSpeed)}</td>
+                              <td className={isOnline ? 'probe-clickable' : ''} {...onlineOnlyHandlers(`conn-recv-${node.id}`, receiveConnContent)}>{formatSpeed(node.systemInfo?.uploadSpeed)}</td>
+                              <td className={isOnline ? 'probe-clickable' : ''} {...onlineOnlyHandlers(`conn-send-${node.id}`, sendConnContent)}>{formatSpeed(node.systemInfo?.downloadSpeed)}</td>
                               <td className="probe-uptime">{node.systemInfo ? formatUptime(node.systemInfo.uptime) : ''}</td>
                               <td className="probe-pair"><span>{formatBytes(node.systemInfo?.uploadTraffic)}↑</span><span>{formatBytes(node.systemInfo?.downloadTraffic)}↓</span></td>
                               <td>
-                                <div className={`probe-meter probe-clickable probe-meter-${meterTone(node.systemInfo?.cpuUsage)}`} {...detailHandlers(`cpu-${node.id}`, cpuContent)}>
+                                <div className={`probe-meter probe-meter-${meterTone(node.systemInfo?.cpuUsage)} ${isOnline ? 'probe-clickable' : ''}`} {...onlineOnlyHandlers(`cpu-${node.id}`, cpuContent)}>
                                   <span style={{ width: `${Math.min(node.systemInfo?.cpuUsage || 0, 100)}%` }} /> <b>{node.systemInfo?.cpuUsage === undefined ? '' : `${node.systemInfo.cpuUsage.toFixed(1)}%`}</b>
                                 </div>
                               </td>
                               <td>
-                                <div className={`probe-meter probe-clickable probe-meter-${meterTone(node.systemInfo?.memoryUsage)}`} {...detailHandlers(`ram-${node.id}`, ramContent)}>
+                                <div className={`probe-meter probe-meter-${meterTone(node.systemInfo?.memoryUsage)} ${isOnline ? 'probe-clickable' : ''}`} {...onlineOnlyHandlers(`ram-${node.id}`, ramContent)}>
                                   <span style={{ width: `${Math.min(node.systemInfo?.memoryUsage || 0, 100)}%` }} /> <b>{node.systemInfo?.memoryUsage === undefined ? '' : `${node.systemInfo.memoryUsage.toFixed(1)}%`}</b>
                                 </div>
                               </td>
                               <td>
-                                <div className={`probe-meter probe-clickable probe-meter-${meterTone(node.systemInfo?.storageUsage)}`} {...detailHandlers(`storage-${node.id}`, storageContent)}>
+                                <div className={`probe-meter probe-meter-${meterTone(node.systemInfo?.storageUsage)} ${isOnline ? 'probe-clickable' : ''}`} {...onlineOnlyHandlers(`storage-${node.id}`, storageContent)}>
                                   <span style={{ width: `${Math.min(node.systemInfo?.storageUsage || 0, 100)}%` }} /> <b>{node.systemInfo?.storageUsage === undefined ? '' : `${node.systemInfo.storageUsage.toFixed(1)}%`}</b>
                                 </div>
                               </td>
@@ -325,7 +355,7 @@ export default function NodeProbePage() {
       </div>
 
       {detailKey && detailRect && createPortal(
-        <div className="probe-node-popover open" style={{ position: 'fixed', top: detailRect.bottom + 8, left: detailRect.left }} onClick={(e) => e.stopPropagation()}>
+        <div ref={popoverRef} className="probe-node-popover open" style={{ position: 'fixed', top: detailRect.bottom + 8, left: detailRect.left, maxWidth: 'calc(100vw - 16px)' }} onClick={(e) => e.stopPropagation()}>
           {detailContent}
         </div>,
         document.body

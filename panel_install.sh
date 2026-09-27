@@ -479,26 +479,31 @@ update_panel() {
   # 执行数据库字段变更
   echo "执行数据库结构更新..."
 
-  # 所有資料庫結構更新集中於 database/update.sql。
+  # 所有資料庫結構更新集中於 database/update.sql。每次更新都重新下載覆蓋本地文件——
+  # 之前是"本地已存在就跳过下载"，导致只有第一次更新会真正拉取迁移文件，后续每次
+  # "更新面板"其实都在用第一次下载的旧版本重跑，新加的迁移语句永远不会被执行到。
   local update_sql_file="database/update.sql"
-  if [[ ! -f "$update_sql_file" ]]; then
-    echo "下載資料庫更新檔..."
-    mkdir -p database
-    if [[ -d "$update_sql_file" ]]; then
-      if [[ -z "$(find "$update_sql_file" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]]; then
-        rmdir "$update_sql_file"
-      else
-        echo "路径冲突：$update_sql_file 是非空目录，请先备份并移除该目录后重试。"
-        return 1
-      fi
+  mkdir -p database
+  if [[ -d "$update_sql_file" ]]; then
+    if [[ -z "$(find "$update_sql_file" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]]; then
+      rmdir "$update_sql_file"
+    else
+      echo "路径冲突：$update_sql_file 是非空目录，请先备份并移除该目录后重试。"
+      return 1
     fi
-    local update_sql_tmp="database/.update.sql.download.$$"
-    if ! curl -fL -o "$update_sql_tmp" "$UPDATE_SQL_URL"; then
-      rm -f "$update_sql_tmp"
+  fi
+  echo "下載資料庫更新檔..."
+  local update_sql_tmp="database/.update.sql.download.$$"
+  if ! curl -fL -o "$update_sql_tmp" "$UPDATE_SQL_URL"; then
+    rm -f "$update_sql_tmp"
+    if [[ -f "$update_sql_file" ]]; then
+      echo "下載資料庫更新檔失敗，將使用本地已存在的 $update_sql_file 繼續（可能不是最新版本）"
+    else
       echo "找不到且無法下載資料庫更新檔：$update_sql_file"
       echo "更新終止"
       return 1
     fi
+  else
     mv "$update_sql_tmp" "$update_sql_file"
   fi
 

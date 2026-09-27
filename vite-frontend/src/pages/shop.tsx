@@ -280,17 +280,17 @@ export default function ShopPage() {
                       </div>
                       <div className="flex items-center gap-1.5">
                         <span className="text-tiny text-default-500">最大规则数</span>
-                        <span className="text-tiny font-medium text-foreground">{plan.maxRules}</span>
+                        <span className="text-tiny font-medium text-foreground">{plan.maxRules > 0 ? plan.maxRules : '不限'}</span>
                       </div>
                       <div className="flex items-center gap-1.5">
                         <span className="text-tiny text-default-500">流量</span>
-                        <span className="text-tiny font-medium text-foreground">{plan.traffic.toFixed(2)} GiB</span>
+                        <span className="text-tiny font-medium text-foreground">{plan.traffic > 0 ? `${plan.traffic.toFixed(2)} GiB` : '不限流量'}</span>
                       </div>
                     </div>
                     <Popover isOpen={openPopoverId === plan.id} onOpenChange={(open) => setOpenPopoverId(open ? plan.id : null)} placement="bottom-start">
                       <PopoverTrigger>
                         <Button size="sm" variant="bordered" className="w-full" onPress={() => handleBuyClick(plan)}>
-                          点击购买 （{plan.price} 元）
+                          {plan.price > 0 ? `点击购买 （${plan.price} 元）` : '免费领取'}
                         </Button>
                       </PopoverTrigger>
                       <PopoverContent className="p-0">
@@ -299,7 +299,7 @@ export default function ShopPage() {
                             <WarningIcon />
                             <span className="font-semibold text-foreground">购买</span>
                           </div>
-                          <p className="text-small text-default-600">从余额支付 {plan.price} 元购买此套餐，请确保余额充足。</p>
+                          <p className="text-small text-default-600">{plan.price > 0 ? `从余额支付 ${plan.price} 元购买此套餐，请确保余额充足。` : '该套餐为免费套餐，确认后即可领取。'}</p>
                           <p className="text-small text-default-600 mt-2 font-medium">购买后将覆盖当前套餐</p>
                           <div className="flex justify-end gap-2 mt-3">
                             <Button size="sm" variant="light" onPress={() => setOpenPopoverId(null)}>取消</Button>

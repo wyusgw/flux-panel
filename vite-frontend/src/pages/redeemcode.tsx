@@ -19,6 +19,7 @@ import toast from 'react-hot-toast';
 
 import { EmptyState } from "@/components/empty-state";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { HelpTooltip } from "@/components/help-tooltip";
 import {
   batchCreateRedeemCodes,
   getRedeemCodeList,
@@ -329,14 +330,13 @@ export default function RedeemCodePage() {
                   {form.type === 'discount' && (
                     <Input autoComplete="off"
                       size="sm"
-                      label="折扣比例"
+                      label={<HelpTooltip content="兑换后按该比例支付套餐原价，如 80 表示支付原价的 80%（8折）">折扣比例</HelpTooltip>}
                       type="number"
                       value={form.discountRatio.toString()}
                       onChange={(e) => setForm(prev => ({ ...prev, discountRatio: parseInt(e.target.value) || 0 }))}
                       isInvalid={!!errors.discountRatio}
                       errorMessage={errors.discountRatio}
                       variant="bordered"
-                      description="兑换后按该比例支付套餐原价，如 80 表示支付原价的 80%（8折）"
                       endContent={<span className="px-2 py-0.5 -mr-1 rounded-md bg-default-100 dark:bg-default-50/10 text-default-500 text-xs font-medium">%</span>}
                     />
                   )}
@@ -348,28 +348,26 @@ export default function RedeemCodePage() {
                   {form.type === 'balance' && (
                     <Input autoComplete="off"
                       size="sm"
-                      label="到账金额"
+                      label={<HelpTooltip content="兑换后直接为用户钱包余额加值该金额">到账金额</HelpTooltip>}
                       type="number"
                       value={form.amount}
                       onChange={(e) => setForm(prev => ({ ...prev, amount: e.target.value }))}
                       isInvalid={!!errors.amount}
                       errorMessage={errors.amount}
                       variant="bordered"
-                      description="兑换后直接为用户钱包余额加值该金额"
                       endContent={<span className="px-2 py-0.5 -mr-1 rounded-md bg-default-100 dark:bg-default-50/10 text-default-500 text-xs font-medium">元</span>}
                     />
                   )}
 
                   <Input autoComplete="off"
                     size="sm"
-                    label="可用次数"
+                    label={<HelpTooltip content="每个兑换代码可被使用的次数">可用次数</HelpTooltip>}
                     type="number"
                     value={form.usesRemaining.toString()}
                     onChange={(e) => setForm(prev => ({ ...prev, usesRemaining: parseInt(e.target.value) || 0 }))}
                     isInvalid={!!errors.usesRemaining}
                     errorMessage={errors.usesRemaining}
                     variant="bordered"
-                    description="每个兑换代码可被使用的次数"
                   />
 
                   <Textarea autoComplete="off"

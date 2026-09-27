@@ -201,6 +201,10 @@ td.probe-clickable:hover { text-decoration: underline; text-underline-offset: 2p
 .settings-table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }.payment-channel-table { min-width: 560px; }
 .forward-rail { position: fixed; right: 14px; top: 50%; transform: translateY(-50%); z-index: 30; display: flex; flex-direction: column; gap: 3px; background: #fff; border: 1px solid #e4e4e7; border-radius: 14px; padding: 6px 4px; box-shadow: 0 8px 24px rgb(0 0 0 / 12%); }
 .dark .forward-rail { background: #18181b; border-color: #2e2f33; box-shadow: 0 8px 24px rgb(0 0 0 / 45%); }
+.forward-rail.forward-rail-collapsed { width: 40px; height: 40px; padding: 0; border-radius: 50%; }
+.rail-collapsed-handle { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; border-radius: 50%; color: #71717a; cursor: grab; touch-action: none; }
+.rail-collapsed-handle:active { cursor: grabbing; }
+.dark .rail-collapsed-handle { color: #a1a1aa; }
 .rail-drag-handle { display: flex; align-items: center; justify-content: center; width: 42px; height: 16px; margin: 0 auto 2px; border-radius: 6px; color: #a1a1aa; cursor: grab; touch-action: none; }
 .rail-drag-handle:active { cursor: grabbing; background: #f4f4f5; }
 .dark .rail-drag-handle:active { background: #27272a; }

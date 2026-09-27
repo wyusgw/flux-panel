@@ -8,6 +8,17 @@ import { ThemeSwitch } from '@/components/theme-switch';
 import { isAdmin } from '@/utils/auth';
 import 'flag-icons/css/flag-icons.min.css';
 
+const UploadIcon = ({ className = 'w-4 h-4' }: { className?: string }) => (
+  <svg className={className} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 20 20">
+    <path strokeLinecap="round" strokeLinejoin="round" d="M10 16V4M5 9l5-5 5 5" />
+  </svg>
+);
+const DownloadIcon = ({ className = 'w-4 h-4' }: { className?: string }) => (
+  <svg className={className} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 20 20">
+    <path strokeLinecap="round" strokeLinejoin="round" d="M10 4v12M5 11l5 5 5-5" />
+  </svg>
+);
+
 type Node = {
   id: number; name: string; ip?: string; serverIp?: string; status?: number; version?: string; portSta?: number; portEnd?: number;
   connectionStatus?: 'online' | 'offline';
@@ -127,7 +138,7 @@ const NodeRow = memo(function NodeRow({ node, groupMeta, effectiveAdmin, regionC
       <td className={isOnline ? 'probe-clickable' : ''} {...onlineOnlyHandlers(`conn-recv-${node.id}`, receiveConnContent)}>{formatSpeed(node.systemInfo?.uploadSpeed)}</td>
       <td className={isOnline ? 'probe-clickable' : ''} {...onlineOnlyHandlers(`conn-send-${node.id}`, sendConnContent)}>{formatSpeed(node.systemInfo?.downloadSpeed)}</td>
       <td className="probe-uptime">{node.systemInfo ? formatUptime(node.systemInfo.uptime) : ''}</td>
-      <td className="probe-pair"><span>{formatBytes(node.systemInfo?.uploadTraffic)}↑</span><span>{formatBytes(node.systemInfo?.downloadTraffic)}↓</span></td>
+      <td className="probe-pair"><span>{formatBytes(node.systemInfo?.uploadTraffic)} <UploadIcon className="w-3 h-3 inline-block align-middle" /></span><span>{formatBytes(node.systemInfo?.downloadTraffic)} <DownloadIcon className="w-3 h-3 inline-block align-middle" /></span></td>
       <td>
         <div className={`probe-meter probe-meter-${meterTone(node.systemInfo?.cpuUsage)} ${isOnline ? 'probe-clickable' : ''}`} {...onlineOnlyHandlers(`cpu-${node.id}`, cpuContent)}>
           <span style={{ width: `${Math.min(node.systemInfo?.cpuUsage || 0, 100)}%` }} /> <b>{node.systemInfo?.cpuUsage === undefined ? '' : `${node.systemInfo.cpuUsage.toFixed(1)}%`}</b>
@@ -351,7 +362,7 @@ export default function NodeProbePage() {
                 <section className="probe-group" key={group.id}>
                   <div className="probe-group-head">
                     <span className="probe-title">{group.label}<em> | ID: {group.id || '—'}</em></span>
-                    <div className="probe-totals"><span className="probe-total"><i>↑</i>{formatSpeed(up)}</span><span className="probe-total"><i>↓</i>{formatSpeed(down)}</span></div>
+                    <div className="probe-totals"><span className="probe-total"><UploadIcon />{formatSpeed(up)}</span><span className="probe-total"><DownloadIcon />{formatSpeed(down)}</span></div>
                   </div>
                   <div className="probe-scroll">
                     <table className="probe-table">

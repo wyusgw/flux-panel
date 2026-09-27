@@ -532,7 +532,7 @@ public class WebSocketServer extends TextWebSocketHandler {
      * 真实的收发，让代理/浏览器更快感知到连接已断，从而触发前端已有的断线重连逻辑。
      * </p>
      */
-    @Scheduled(fixedRate = 12000)
+    @Scheduled(fixedRate = 10000)
     public void pingActiveSessions() {
         for (WebSocketSession session : activeSessions) {
             if (!session.isOpen()) {

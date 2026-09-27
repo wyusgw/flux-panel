@@ -567,6 +567,12 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             return R.err("转发不存在");
         }
 
+        // 2.1 规则被暂停/异常时，转发本身没在运行，诊断没有意义，拒绝执行
+        // （前端按钮已经据此禁用，这里是防止绕过前端直接调接口）
+        if (forward.getStatus() == null || forward.getStatus() != FORWARD_STATUS_ACTIVE) {
+            return R.err("转发规则未处于正常状态，暂不能诊断");
+        }
+
         // 3. 获取隧道信息
         Tunnel tunnel = tunnelResolver.resolveTunnel(forward);
         if (tunnel == null) {

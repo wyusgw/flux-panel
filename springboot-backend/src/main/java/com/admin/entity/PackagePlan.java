@@ -39,7 +39,7 @@ public class PackagePlan extends BaseEntity {
     private Long groupId;
 
     /**
-     * 可用流量（GiB）
+     * 可用流量（GiB，0 为不限流量）
      */
     private Long traffic;
 
@@ -49,12 +49,12 @@ public class PackagePlan extends BaseEntity {
     private Integer durationDays;
 
     /**
-     * 规则数
+     * 规则数（0 为不限规则数）
      */
     private Integer maxRules;
 
     /**
-     * 价格（元）
+     * 价格（元，0 为免费）
      */
     private BigDecimal price;
 

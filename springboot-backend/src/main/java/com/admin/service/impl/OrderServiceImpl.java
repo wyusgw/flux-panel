@@ -38,6 +38,11 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
     private static final int ORDER_STATUS_PENDING = 0;
     private static final int ORDER_STATUS_PAID = 1;
     private static final int ORDER_STATUS_CANCELLED = 2;
+    // 套餐流量/规则数填 0 表示不限；User.flow/User.num 现有的"无限"约定用的是 99999 这个哨兵值
+    // （参见 ExpiryReminderAsync/前端 dashboard.tsx 的 formatFlow/formatNumber），这里购买时直接
+    // 把 0 换算成 99999，就能直接复用现有那一整套"无限"展示与到期提醒跳过逻辑，不用另外改枚举点
+    private static final long UNLIMITED_FLOW = 99999L;
+    private static final int UNLIMITED_RULES = 99999;
 
     @Autowired
     @Lazy
@@ -121,10 +126,12 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         // 2. 应用套餐：分配用户组、重置流量与转发数配额、延长/设置到期时间
         updateUser.setGroupId(packagePlan.getGroupId());
         updateUser.setPackageId(packagePlan.getId());
-        updateUser.setFlow(packagePlan.getTraffic() != null ? packagePlan.getTraffic() : 0L);
+        Long planTraffic = packagePlan.getTraffic();
+        updateUser.setFlow(planTraffic == null || planTraffic <= 0 ? UNLIMITED_FLOW : planTraffic);
         updateUser.setInFlow(0L);
         updateUser.setOutFlow(0L);
-        updateUser.setNum(packagePlan.getMaxRules() != null ? packagePlan.getMaxRules() : 0);
+        Integer planMaxRules = packagePlan.getMaxRules();
+        updateUser.setNum(planMaxRules == null || planMaxRules <= 0 ? UNLIMITED_RULES : planMaxRules);
 
         long baseExpTime = (user.getExpTime() != null && user.getExpTime() > currentTime) ? user.getExpTime() : currentTime;
         if (packagePlan.getDurationDays() != null && packagePlan.getDurationDays() > 0) {

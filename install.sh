@@ -22,14 +22,32 @@ build_download_url() {
     echo "https://github.com/wyusgw/flux-panel/releases/latest/download/gost-${ARCH}"
 }
 
+# GitHub 加速镜像列表，按顺序依次尝试，全部失败则回退到 GitHub 原始地址
+MIRROR_PREFIXES=("https://ghfast.top/" "https://gh-proxy.com/" "https://ghproxy.net/")
+
 # 下载地址
-DOWNLOAD_URL=$(build_download_url)
+RAW_DOWNLOAD_URL=$(build_download_url)
 INSTALL_DIR="/etc/gost"
 COUNTRY=$(curl -s https://ipinfo.io/country)
-if [ "$COUNTRY" = "CN" ]; then
-    # 拼接 URL
-    DOWNLOAD_URL="https://ghfast.top/${DOWNLOAD_URL}"
-fi
+
+# 依次尝试镜像/原始地址下载，某个地址下载成功即停止
+download_with_fallback() {
+  local output="$1"
+  local candidates=()
+
+  if [ "$COUNTRY" = "CN" ]; then
+    for prefix in "${MIRROR_PREFIXES[@]}"; do
+      candidates+=("${prefix}${RAW_DOWNLOAD_URL}")
+    done
+  fi
+  candidates+=("$RAW_DOWNLOAD_URL")
+
+  for url in "${candidates[@]}"; do
+    echo "尝试从以下地址下载: $url"
+    curl -fL "$url" -o "$output" && [[ -s "$output" ]] && return 0
+  done
+  return 1
+}
 
 
 
@@ -176,8 +194,7 @@ install_gost() {
 
   # 下载 gost
   echo "下载 gost 中..."
-  curl -L "$DOWNLOAD_URL" -o "$INSTALL_DIR/gost"
-  if [[ ! -f "$INSTALL_DIR/gost" || ! -s "$INSTALL_DIR/gost" ]]; then
+  if ! download_with_fallback "$INSTALL_DIR/gost"; then
     echo "下载失败，请检查网络或下载链接。"
     exit 1
   fi
@@ -253,15 +270,12 @@ update_gost() {
     return 1
   fi
   
-  echo "使用下载地址: $DOWNLOAD_URL"
-  
   # 检查并安装 tcpkill
   check_and_install_tcpkill
-  
+
   # 先下载新版本
   echo "下载最新版本..."
-  curl -L "$DOWNLOAD_URL" -o "$INSTALL_DIR/gost.new"
-  if [[ ! -f "$INSTALL_DIR/gost.new" || ! -s "$INSTALL_DIR/gost.new" ]]; then
+  if ! download_with_fallback "$INSTALL_DIR/gost.new"; then
     echo "下载失败。"
     return 1
   fi

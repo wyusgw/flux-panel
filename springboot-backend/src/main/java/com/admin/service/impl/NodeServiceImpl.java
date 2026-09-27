@@ -9,11 +9,15 @@ import com.admin.common.lang.R;
 import com.admin.common.utils.JwtUtil;
 import com.admin.common.utils.WebSocketServer;
 import com.admin.entity.DeviceGroup;
+import com.admin.entity.DeviceGroupUserGroupRelation;
 import com.admin.entity.Node;
+import com.admin.entity.NodeGroupRelation;
 import com.admin.entity.Tunnel;
 import com.admin.entity.User;
 import com.admin.entity.ViteConfig;
 import com.admin.mapper.DeviceGroupMapper;
+import com.admin.mapper.DeviceGroupUserGroupRelationMapper;
+import com.admin.mapper.NodeGroupRelationMapper;
 import com.admin.mapper.NodeMapper;
 import com.admin.mapper.TunnelMapper;
 import com.admin.mapper.UserMapper;
@@ -31,6 +35,7 @@ import org.springframework.stereotype.Service;
 import javax.annotation.Resource;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -84,6 +89,12 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
     private DeviceGroupMapper deviceGroupMapper;
 
     @Resource
+    private NodeGroupRelationMapper nodeGroupRelationMapper;
+
+    @Resource
+    private DeviceGroupUserGroupRelationMapper deviceGroupUserGroupRelationMapper;
+
+    @Resource
     private UserMapper userMapper;
 
     @Resource
@@ -106,6 +117,10 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
     public R createNode(NodeDto nodeDto) {
         Node node = buildNewNode(nodeDto);
         boolean result = this.save(node);
+        if (result && nodeDto.getNodeGroupIds() != null) {
+            syncNodeGroupRelations(node.getId(), nodeDto.getNodeGroupIds());
+            node.setNodeGroupIds(nodeDto.getNodeGroupIds());
+        }
         return result ? R.ok(node) : R.err(ERROR_CREATE_MSG);
     }
 
@@ -136,19 +151,34 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
                     .eq("hide_in_probe", 0);
             Long userGroupId = user.getGroupId();
             groupQuery.and(w -> {
-                w.and(w2 -> {
-                    w2.isNull("owner_user_id");
-                    if (userGroupId != null) {
-                        w2.and(w3 -> w3.isNull("user_group_id").or().eq("user_group_id", userGroupId));
-                    } else {
-                        w2.isNull("user_group_id");
-                    }
-                });
+                w.and(w2 -> w2.isNull("owner_user_id"));
                 w.or().eq("owner_user_id", userId);
                 w.or(w2 -> w2.isNotNull("owner_user_id").eq("shared", 1));
             });
+            List<DeviceGroup> candidateGroups = deviceGroupMapper.selectList(groupQuery);
 
-            Set<Long> visibleNodeIds = deviceGroupMapper.selectList(groupQuery).stream()
+            // 管理员建立的设备组（owner_user_id 为空）按其绑定的用户组列表过滤：
+            // 未绑定任何用户组表示对所有人可见，否则要求当前用户所在用户组在列表内；
+            // 单端隧道设备组（owner_user_id 非空）已经按拥有者/共享条件过滤过，不受用户组限制
+            List<Long> adminGroupIds = candidateGroups.stream()
+                    .filter(g -> g.getOwnerUserId() == null)
+                    .map(DeviceGroup::getId)
+                    .collect(Collectors.toList());
+            Map<Long, List<Long>> userGroupIdsByGroup = adminGroupIds.isEmpty() ? Collections.emptyMap()
+                    : deviceGroupUserGroupRelationMapper.selectList(
+                            new QueryWrapper<DeviceGroupUserGroupRelation>().in("device_group_id", adminGroupIds))
+                        .stream()
+                        .collect(Collectors.groupingBy(DeviceGroupUserGroupRelation::getDeviceGroupId,
+                                Collectors.mapping(DeviceGroupUserGroupRelation::getUserGroupId, Collectors.toList())));
+
+            Set<Long> visibleNodeIds = candidateGroups.stream()
+                    .filter(g -> {
+                        if (g.getOwnerUserId() != null) {
+                            return true;
+                        }
+                        List<Long> allowed = userGroupIdsByGroup.getOrDefault(g.getId(), Collections.emptyList());
+                        return allowed.isEmpty() || (userGroupId != null && allowed.contains(userGroupId));
+                    })
                     .map(DeviceGroup::getNodeId)
                     .filter(Objects::nonNull)
                     .collect(Collectors.toSet());
@@ -156,6 +186,7 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
                     ? Collections.emptyList()
                     : this.list(new QueryWrapper<Node>().in("id", visibleNodeIds));
         }
+        attachNodeGroupIds(nodeList);
         hideNodeSecrets(nodeList);
         return R.ok(nodeList);
     }
@@ -201,6 +232,11 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
         Node updateNode = buildUpdateNode(nodeUpdateDto);
         boolean result = this.updateById(updateNode);
 
+        // 节点归属的节点组：不传（null）表示不修改现有归属
+        if (result && nodeUpdateDto.getNodeGroupIds() != null) {
+            syncNodeGroupRelations(updateNode.getId(), nodeUpdateDto.getNodeGroupIds());
+        }
+
         // 更新隧道入口ip
         List<Tunnel> inNodeId = tunnelService.list(new QueryWrapper<Tunnel>().eq("in_node_id", updateNode.getId()));
         if (!inNodeId.isEmpty()) {
@@ -245,6 +281,9 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
 
         // 3. 执行删除操作
         boolean result = this.removeById(id);
+        if (result) {
+            nodeGroupRelationMapper.delete(new QueryWrapper<NodeGroupRelation>().eq("node_id", id));
+        }
         return result ? R.ok(SUCCESS_DELETE_MSG) : R.err(ERROR_DELETE_MSG);
     }
 
@@ -317,11 +356,50 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
 
     /**
      * 隐藏节点列表中的密钥信息
-     * 
+     *
      * @param nodeList 节点列表
      */
     private void hideNodeSecrets(List<Node> nodeList) {
         nodeList.forEach(node -> node.setSecret(null));
+    }
+
+    /**
+     * 批量查询并回填节点列表中每个节点所属的节点组ID
+     *
+     * @param nodeList 节点列表
+     */
+    private void attachNodeGroupIds(List<Node> nodeList) {
+        if (nodeList.isEmpty()) {
+            return;
+        }
+        List<Long> nodeIds = nodeList.stream().map(Node::getId).collect(Collectors.toList());
+        List<NodeGroupRelation> relations = nodeGroupRelationMapper.selectList(
+                new QueryWrapper<NodeGroupRelation>().in("node_id", nodeIds));
+        Map<Long, List<Long>> nodeIdToGroupIds = relations.stream()
+                .collect(Collectors.groupingBy(NodeGroupRelation::getNodeId,
+                        Collectors.mapping(NodeGroupRelation::getNodeGroupId, Collectors.toList())));
+        nodeList.forEach(node -> node.setNodeGroupIds(nodeIdToGroupIds.getOrDefault(node.getId(), Collections.emptyList())));
+    }
+
+    /**
+     * 全量覆盖某个节点所属的节点组：先清空该节点的既有关联，再按传入列表重建
+     *
+     * @param nodeId       节点ID
+     * @param nodeGroupIds 节点组ID列表（去重后写入，空列表表示清空归属）
+     */
+    private void syncNodeGroupRelations(Long nodeId, List<Long> nodeGroupIds) {
+        nodeGroupRelationMapper.delete(new QueryWrapper<NodeGroupRelation>().eq("node_id", nodeId));
+        if (nodeGroupIds == null || nodeGroupIds.isEmpty()) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        for (Long groupId : new java.util.LinkedHashSet<>(nodeGroupIds)) {
+            NodeGroupRelation relation = new NodeGroupRelation();
+            relation.setNodeGroupId(groupId);
+            relation.setNodeId(nodeId);
+            relation.setCreatedTime(now);
+            nodeGroupRelationMapper.insert(relation);
+        }
     }
 
 

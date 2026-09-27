@@ -145,6 +145,16 @@ export default function AdminLayout({
       adminOnly: true
     },
     {
+      path: '/nodegroup',
+      label: '节点组管理',
+      icon: (
+        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+          <path d="M4 4a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2V6a2 2 0 00-2-2H4zM4 12a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2v-2a2 2 0 00-2-2H4zM12 4a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2V6a2 2 0 00-2-2h-2zM12 12a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2v-2a2 2 0 00-2-2h-2z" />
+        </svg>
+      ),
+      adminOnly: true
+    },
+    {
       path: '/user',
       label: '用户管理',
       icon: (

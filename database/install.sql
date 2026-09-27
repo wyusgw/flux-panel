@@ -66,7 +66,6 @@ CREATE TABLE `device_group` (
   `node_id` bigint(20) DEFAULT NULL COMMENT '链式出口设备组（direction=chain）没有自己的物理节点，此字段为空',
   `direction` varchar(20) NOT NULL DEFAULT 'inbound',
   `protocol` varchar(20) NOT NULL DEFAULT 'tls' COMMENT '出口协议类型（TLS/WSS/TCP/MTLS/MWSS/MTCP），仅出口/入口＋出口设备组用到',
-  `user_group_id` bigint(20) DEFAULT NULL,
   `owner_user_id` bigint(20) DEFAULT NULL COMMENT '单端隧道用户自建设备组的拥有者用户ID；管理员建立的设备组此字段为空',
   `single_tunnel_group_id` int(10) DEFAULT NULL COMMENT '单端隧道设备所属的单端组ID（用户自建设备时选择），管理员建立的设备组此字段为空',
   `shared` tinyint(1) NOT NULL DEFAULT '0' COMMENT '仅 owner_user_id 非空时有意义：0-仅拥有者自己可用，1-开放给所有用户在添加转发规则时选用',
@@ -96,6 +95,20 @@ CREATE TABLE `device_group_chain_hop` (
   `hop_order` int(10) NOT NULL,
   `target_device_group_id` bigint(20) NOT NULL,
   `mux` tinyint(1) NOT NULL DEFAULT '0',
+  `created_time` bigint(20) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- --------------------------------------------------------
+
+--
+-- 表的结构 `device_group_user_group_relation`
+-- 设备组与用户组的多对多关联：一个设备组可以同时对多个用户组可见
+--
+
+CREATE TABLE `device_group_user_group_relation` (
+  `id` int(10) NOT NULL,
+  `device_group_id` bigint(20) NOT NULL,
+  `user_group_id` bigint(20) NOT NULL,
   `created_time` bigint(20) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -151,6 +164,36 @@ CREATE TABLE `node` (
   `created_time` bigint(20) NOT NULL,
   `updated_time` bigint(20) DEFAULT NULL,
   `status` int(10) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- --------------------------------------------------------
+
+--
+-- 表的结构 `node_group`
+-- 节点组：对节点进行分类，用于分配哪些节点可被套餐/用户组使用
+--
+
+CREATE TABLE `node_group` (
+  `id` int(10) NOT NULL,
+  `name` varchar(200) DEFAULT NULL,
+  `sort` int(10) NOT NULL DEFAULT '0',
+  `created_time` bigint(20) NOT NULL,
+  `updated_time` bigint(20) DEFAULT NULL,
+  `status` int(10) NOT NULL DEFAULT '1'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- --------------------------------------------------------
+
+--
+-- 表的结构 `node_group_relation`
+-- 节点与节点组的多对多关联，一个节点可以同时属于多个节点组
+--
+
+CREATE TABLE `node_group_relation` (
+  `id` int(10) NOT NULL,
+  `node_group_id` bigint(20) NOT NULL,
+  `node_id` bigint(20) NOT NULL,
+  `created_time` bigint(20) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- --------------------------------------------------------
@@ -465,6 +508,14 @@ ALTER TABLE `device_group_chain_hop`
   ADD KEY `idx_device_group_id` (`device_group_id`);
 
 --
+-- 表的索引 `device_group_user_group_relation`
+--
+ALTER TABLE `device_group_user_group_relation`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_device_group_user_group_relation_group` (`device_group_id`),
+  ADD KEY `idx_device_group_user_group_relation_user_group` (`user_group_id`);
+
+--
 -- 表的索引 `user_daily_raw_flow`
 --
 ALTER TABLE `user_daily_raw_flow`
@@ -476,6 +527,20 @@ ALTER TABLE `user_daily_raw_flow`
 --
 ALTER TABLE `node`
   ADD PRIMARY KEY (`id`);
+
+--
+-- 表的索引 `node_group`
+--
+ALTER TABLE `node_group`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- 表的索引 `node_group_relation`
+--
+ALTER TABLE `node_group_relation`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_node_group_relation_group` (`node_group_id`),
+  ADD KEY `idx_node_group_relation_node` (`node_id`);
 
 --
 -- 表的索引 `speed_limit`
@@ -599,6 +664,12 @@ ALTER TABLE `device_group_chain_hop`
   MODIFY `id` int(10) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=1;
 
 --
+-- 使用表AUTO_INCREMENT `device_group_user_group_relation`
+--
+ALTER TABLE `device_group_user_group_relation`
+  MODIFY `id` int(10) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=1;
+
+--
 -- 使用表AUTO_INCREMENT `user_daily_raw_flow`
 --
 ALTER TABLE `user_daily_raw_flow`
@@ -608,6 +679,18 @@ ALTER TABLE `user_daily_raw_flow`
 -- 使用表AUTO_INCREMENT `node`
 --
 ALTER TABLE `node`
+  MODIFY `id` int(10) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=1;
+
+--
+-- 使用表AUTO_INCREMENT `node_group`
+--
+ALTER TABLE `node_group`
+  MODIFY `id` int(10) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=1;
+
+--
+-- 使用表AUTO_INCREMENT `node_group_relation`
+--
+ALTER TABLE `node_group_relation`
   MODIFY `id` int(10) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=1;
 
 --

@@ -9,11 +9,13 @@ import com.admin.common.lang.R;
 import com.admin.common.utils.JwtUtil;
 import com.admin.entity.DeviceGroup;
 import com.admin.entity.DeviceGroupChainHop;
+import com.admin.entity.DeviceGroupUserGroupRelation;
 import com.admin.entity.Forward;
 import com.admin.entity.Node;
 import com.admin.entity.User;
 import com.admin.mapper.DeviceGroupChainHopMapper;
 import com.admin.mapper.DeviceGroupMapper;
+import com.admin.mapper.DeviceGroupUserGroupRelationMapper;
 import com.admin.entity.SingleTunnelGroup;
 import com.admin.service.DeviceGroupService;
 import com.admin.service.ForwardService;
@@ -30,7 +32,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -70,6 +74,9 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
     @Autowired
     private DeviceGroupChainHopMapper chainHopMapper;
 
+    @Autowired
+    private DeviceGroupUserGroupRelationMapper userGroupRelationMapper;
+
     @Override
     @Transactional
     public R createDeviceGroup(DeviceGroupDto dto) {
@@ -95,7 +102,6 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
         group.setNodeId(isChain ? null : dto.getNodeId());
         group.setDirection(normalizeDirection(dto.getDirection()));
         group.setProtocol(dto.getProtocol() != null && !dto.getProtocol().isEmpty() ? dto.getProtocol() : "tls");
-        group.setUserGroupId(dto.getUserGroupId());
         group.setRatio(dto.getRatio() != null ? dto.getRatio() : BigDecimal.ONE);
         group.setHideInProbe(dto.getHideInProbe() != null ? dto.getHideInProbe() : 0);
         group.setRemark(dto.getRemark());
@@ -110,6 +116,8 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
         if (!result) {
             return R.err(ERROR_CREATE_FAILED);
         }
+
+        syncUserGroupRelations(group.getId(), dto.getUserGroupIds());
 
         if (isChain) {
             saveChainHops(group.getId(), dto.getChainHops());
@@ -183,25 +191,39 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
             User user = userService.getById(userId);
             Long userGroupId = user != null ? user.getGroupId() : null;
 
-            // 可见范围：管理员建立、按用户组规则对自己可见的设备组；或自己名下的单端隧道设备组；
+            // 可见范围：管理员建立的设备组（按用户组多对多关系再过滤一次）；或自己名下的单端隧道设备组；
             // 或他人名下、已设为公开共享的单端隧道设备组
             QueryWrapper<DeviceGroup> query = new QueryWrapper<DeviceGroup>().orderByAsc("sort");
             query.and(w -> {
-                w.and(w2 -> {
-                    w2.isNull("owner_user_id");
-                    if (userGroupId != null) {
-                        w2.and(w3 -> w3.isNull("user_group_id").or().eq("user_group_id", userGroupId));
-                    } else {
-                        w2.isNull("user_group_id");
-                    }
-                });
+                w.and(w2 -> w2.isNull("owner_user_id"));
                 w.or().eq("owner_user_id", userId);
                 w.or(w2 -> w2.isNotNull("owner_user_id").eq("shared", 1));
             });
             // 普通用户不应看到对所有人隐藏的设备组
             query.ne("hide_in_probe", 2);
-            groups = this.list(query);
+            List<DeviceGroup> candidates = this.list(query);
+
+            // 管理员建立的设备组（owner_user_id 为空）按其绑定的用户组列表过滤：
+            // 未绑定任何用户组表示对所有人可见，否则要求当前用户所在用户组在列表内；
+            // 单端隧道设备组（owner_user_id 非空）已经按拥有者/共享条件过滤过，不受用户组限制
+            List<Long> adminGroupIds = candidates.stream()
+                    .filter(g -> g.getOwnerUserId() == null)
+                    .map(DeviceGroup::getId)
+                    .collect(Collectors.toList());
+            Map<Long, List<Long>> userGroupIdsByGroup = loadUserGroupIds(adminGroupIds);
+            final Long effectiveUserGroupId = userGroupId;
+            groups = candidates.stream()
+                    .filter(g -> {
+                        if (g.getOwnerUserId() != null) {
+                            return true;
+                        }
+                        List<Long> allowed = userGroupIdsByGroup.getOrDefault(g.getId(), Collections.emptyList());
+                        return allowed.isEmpty() || (effectiveUserGroupId != null && allowed.contains(effectiveUserGroupId));
+                    })
+                    .collect(Collectors.toList());
         }
+
+        attachUserGroupIds(groups);
 
         Map<Long, Node> nodeMap = new HashMap<>();
         for (DeviceGroup group : groups) {
@@ -255,7 +277,7 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
             } else if (!"chain".equals(group.getDirection())) {
                 item.put("nodeName", "未知节点");
             }
-            item.put("userGroupId", group.getUserGroupId());
+            item.put("userGroupIds", group.getUserGroupIds());
             item.put("ratio", group.getRatio());
             item.put("hideInProbe", group.getHideInProbe());
             item.put("sort", group.getSort());
@@ -292,6 +314,11 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
     }
 
     @Override
+    public List<Long> getUserGroupIds(Long deviceGroupId) {
+        return loadUserGroupIds(Collections.singletonList(deviceGroupId)).getOrDefault(deviceGroupId, Collections.emptyList());
+    }
+
+    @Override
     @Transactional
     public R updateDeviceGroup(DeviceGroupUpdateDto dto) {
         DeviceGroup group = this.getById(dto.getId());
@@ -322,7 +349,6 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
         group.setNodeId(isChain ? null : dto.getNodeId());
         group.setDirection(normalizeDirection(dto.getDirection()));
         group.setProtocol(dto.getProtocol() != null && !dto.getProtocol().isEmpty() ? dto.getProtocol() : "tls");
-        group.setUserGroupId(dto.getUserGroupId());
         group.setRatio(dto.getRatio() != null ? dto.getRatio() : BigDecimal.ONE);
         group.setHideInProbe(dto.getHideInProbe() != null ? dto.getHideInProbe() : 0);
         group.setRemark(dto.getRemark());
@@ -335,6 +361,8 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
         if (!result) {
             return R.err(ERROR_UPDATE_FAILED);
         }
+
+        syncUserGroupRelations(group.getId(), dto.getUserGroupIds());
 
         if (isChain) {
             saveChainHops(group.getId(), dto.getChainHops());
@@ -391,6 +419,7 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
         }
 
         chainHopMapper.delete(new QueryWrapper<DeviceGroupChainHop>().eq("device_group_id", id));
+        userGroupRelationMapper.delete(new QueryWrapper<DeviceGroupUserGroupRelation>().eq("device_group_id", id));
 
         // 若该节点不再被其他设备组引用，则一并删除节点本身，避免残留成需要"补全配置"的孤儿节点
         // （链式出口设备组没有自己的物理节点，nodeId 为空时无需处理）
@@ -640,6 +669,56 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
             return Integer.valueOf(value.toString());
         } catch (NumberFormatException e) {
             return null;
+        }
+    }
+
+    /**
+     * 批量查询一批设备组各自绑定的用户组ID列表
+     *
+     * @param deviceGroupIds 设备组ID列表
+     * @return 设备组ID -> 用户组ID列表
+     */
+    private Map<Long, List<Long>> loadUserGroupIds(List<Long> deviceGroupIds) {
+        if (deviceGroupIds == null || deviceGroupIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<DeviceGroupUserGroupRelation> relations = userGroupRelationMapper.selectList(
+                new QueryWrapper<DeviceGroupUserGroupRelation>().in("device_group_id", deviceGroupIds));
+        return relations.stream().collect(Collectors.groupingBy(DeviceGroupUserGroupRelation::getDeviceGroupId,
+                Collectors.mapping(DeviceGroupUserGroupRelation::getUserGroupId, Collectors.toList())));
+    }
+
+    /**
+     * 批量查询并回填设备组列表中每个设备组绑定的用户组ID
+     *
+     * @param groups 设备组列表
+     */
+    private void attachUserGroupIds(List<DeviceGroup> groups) {
+        if (groups.isEmpty()) {
+            return;
+        }
+        Map<Long, List<Long>> map = loadUserGroupIds(groups.stream().map(DeviceGroup::getId).collect(Collectors.toList()));
+        groups.forEach(g -> g.setUserGroupIds(map.getOrDefault(g.getId(), Collections.emptyList())));
+    }
+
+    /**
+     * 全量覆盖某个设备组绑定的用户组：先清空该设备组的既有关联，再按传入列表重建
+     *
+     * @param deviceGroupId 设备组ID
+     * @param userGroupIds  用户组ID列表（去重后写入，空列表表示对所有人可见）
+     */
+    private void syncUserGroupRelations(Long deviceGroupId, List<Long> userGroupIds) {
+        userGroupRelationMapper.delete(new QueryWrapper<DeviceGroupUserGroupRelation>().eq("device_group_id", deviceGroupId));
+        if (userGroupIds == null || userGroupIds.isEmpty()) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        for (Long userGroupId : new LinkedHashSet<>(userGroupIds)) {
+            DeviceGroupUserGroupRelation relation = new DeviceGroupUserGroupRelation();
+            relation.setDeviceGroupId(deviceGroupId);
+            relation.setUserGroupId(userGroupId);
+            relation.setCreatedTime(now);
+            userGroupRelationMapper.insert(relation);
         }
     }
 

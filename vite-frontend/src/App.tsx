@@ -20,6 +20,7 @@ import RedeemCodePage from "@/pages/redeemcode";
 import InviteCodePage from "@/pages/invitecode";
 import TaskQueuePage from "@/pages/task-queue";
 import DeviceGroupPage from "@/pages/devicegroup";
+import NodeGroupPage from "@/pages/nodegroup";
 import UserGroupPage from "@/pages/usergroup";
 import PackagePlanPage from "@/pages/package";
 import ConfigPage from "@/pages/config";
@@ -297,6 +298,14 @@ function App() {
         element={
           <ProtectedRoute useSimpleLayout={true}>
             <UserGroupPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/nodegroup"
+        element={
+          <ProtectedRoute useSimpleLayout={true}>
+            <NodeGroupPage />
           </ProtectedRoute>
         }
       />

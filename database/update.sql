@@ -1106,3 +1106,71 @@ SET @sql = (
 PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
+
+-- 创建 node_group 表（如果不存在）：节点组，对节点进行分类，用于分配哪些节点可被套餐/用户组使用
+CREATE TABLE IF NOT EXISTS `node_group` (
+  `id` int(10) NOT NULL AUTO_INCREMENT,
+  `name` varchar(200) DEFAULT NULL,
+  `sort` int(10) NOT NULL DEFAULT 0,
+  `created_time` bigint(20) NOT NULL,
+  `updated_time` bigint(20) DEFAULT NULL,
+  `status` int(10) NOT NULL DEFAULT 1,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 创建 node_group_relation 表（如果不存在）：节点与节点组的多对多关联，一个节点可以同时属于多个节点组
+CREATE TABLE IF NOT EXISTS `node_group_relation` (
+  `id` int(10) NOT NULL AUTO_INCREMENT,
+  `node_group_id` bigint(20) NOT NULL,
+  `node_id` bigint(20) NOT NULL,
+  `created_time` bigint(20) NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_node_group_relation_group` (`node_group_id`),
+  KEY `idx_node_group_relation_node` (`node_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 创建 device_group_user_group_relation 表（如果不存在）：设备组与用户组的多对多关联，
+-- 一个设备组可以同时对多个用户组可见，取代原本 device_group.user_group_id 单一字段
+CREATE TABLE IF NOT EXISTS `device_group_user_group_relation` (
+  `id` int(10) NOT NULL AUTO_INCREMENT,
+  `device_group_id` bigint(20) NOT NULL,
+  `user_group_id` bigint(20) NOT NULL,
+  `created_time` bigint(20) NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_device_group_user_group_relation_group` (`device_group_id`),
+  KEY `idx_device_group_user_group_relation_user_group` (`user_group_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- device_group 表：把既有的 user_group_id 单值迁移进 device_group_user_group_relation，再删除该列。
+-- 用 @device_group_user_group_id_exists 记录列是否原本就存在，确保数据搬迁只在这次真正做了迁移时
+-- 执行一次，往后重复执行 update.sql 不会因为列已删除而报错，也不会重复插入关联记录
+SET @device_group_user_group_id_exists = (
+  SELECT COUNT(*)
+  FROM information_schema.COLUMNS
+  WHERE table_schema = DATABASE()
+    AND table_name = 'device_group'
+    AND column_name = 'user_group_id'
+);
+
+SET @sql = IF(@device_group_user_group_id_exists > 0,
+  'INSERT INTO `device_group_user_group_relation` (`device_group_id`, `user_group_id`, `created_time`)
+   SELECT `id`, `user_group_id`, UNIX_TIMESTAMP() * 1000
+   FROM `device_group`
+   WHERE `user_group_id` IS NOT NULL
+     AND NOT EXISTS (
+       SELECT 1 FROM `device_group_user_group_relation` r
+       WHERE r.device_group_id = `device_group`.`id` AND r.user_group_id = `device_group`.`user_group_id`
+     );',
+  'SELECT "device_group.user_group_id already migrated or does not exist, skip data copy";'
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @sql = IF(@device_group_user_group_id_exists > 0,
+  'ALTER TABLE `device_group` DROP COLUMN `user_group_id`;',
+  'SELECT "Column `user_group_id` already removed from `device_group`";'
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;

@@ -55,7 +55,7 @@ interface GroupForm {
   name: string;
   direction: 'inbound' | 'outbound';
   serverIp: string;
-  entryIp: string;
+  entryIps: string[];
   portSta: number;
   portEnd: number;
   protocol: string;
@@ -74,13 +74,22 @@ const DEFAULT_FORM: GroupForm = {
   name: '',
   direction: 'outbound',
   serverIp: '',
-  entryIp: '',
+  entryIps: [''],
   portSta: 1000,
   portEnd: 65535,
   protocol: 'tls',
   singleTunnelGroupId: null,
   shared: false
 };
+
+const MAX_ENTRY_IPS = 5;
+
+// 入口 IP/域名 存进后端时是逗号拼接的单个字符串，这里负责跟表单里"一行一个输入框"的字符串数组互相转换
+const parseEntryIps = (value?: string | null): string[] => {
+  const parts = (value || '').split(',').map(s => s.trim()).filter(Boolean);
+  return parts.length > 0 ? parts : [''];
+};
+const joinEntryIps = (values: string[]): string => values.map(v => v.trim()).filter(Boolean).join(',');
 
 const DockIcon = ({ className }: { className?: string }) => (
   <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -238,7 +247,7 @@ export default function SingleTunnelPage() {
       name: group.name,
       direction: group.direction,
       serverIp: group.serverIp || '',
-      entryIp: group.entryIp || '',
+      entryIps: parseEntryIps(group.entryIp),
       portSta: group.portSta || 1000,
       portEnd: group.portEnd || 65535,
       protocol: group.protocol || 'tls',
@@ -253,7 +262,7 @@ export default function SingleTunnelPage() {
     const newErrors: { [key: string]: string } = {};
     if (!form.name.trim()) newErrors.name = '请输入名称';
     if (!form.serverIp.trim()) newErrors.serverIp = '请输入服务器 IP 或域名';
-    if (!form.entryIp.trim()) newErrors.entryIp = '请输入入口 IP 或域名';
+    if (!form.entryIps.some(ip => ip.trim())) newErrors.entryIp = '请至少输入一个入口 IP 或域名';
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -262,9 +271,11 @@ export default function SingleTunnelPage() {
     if (!validateForm()) return;
     setSubmitLoading(true);
     try {
+      const { entryIps, ...rest } = form;
+      const submitData = { ...rest, entryIp: joinEntryIps(entryIps) };
       const res = isEdit
-        ? await updateUserDeviceGroup(form)
-        : await createUserDeviceGroup(form);
+        ? await updateUserDeviceGroup(submitData)
+        : await createUserDeviceGroup(submitData);
       if (res.code === 0) {
         toast.success(isEdit ? '更新成功' : '添加成功');
         setModalOpen(false);
@@ -499,7 +510,42 @@ export default function SingleTunnelPage() {
 
                   <Input size="sm" autoComplete="off" label="服务器 IP / 域名" placeholder="例如：203.0.113.10 或 node.example.com" value={form.serverIp} onChange={(e) => setForm(prev => ({ ...prev, serverIp: e.target.value }))} isInvalid={!!errors.serverIp} errorMessage={errors.serverIp} variant="bordered" />
 
-                  <Input size="sm" autoComplete="off" label="入口 IP / 域名" placeholder="用户连接使用的 IP 或域名" value={form.entryIp} onChange={(e) => setForm(prev => ({ ...prev, entryIp: e.target.value }))} isInvalid={!!errors.entryIp} errorMessage={errors.entryIp} variant="bordered" />
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-foreground">入口 IP / 域名</span>
+                      <span className="text-xs text-default-400">{form.entryIps.length} / {MAX_ENTRY_IPS}</span>
+                    </div>
+                    {errors.entryIp && <p className="text-xs text-danger">{errors.entryIp}</p>}
+                    <div className="space-y-2">
+                      {form.entryIps.map((ip, index) => (
+                        <div key={index} className="flex items-center gap-2">
+                          <Input
+                            size="sm" autoComplete="off"
+                            placeholder="用户连接使用的 IP 或域名"
+                            value={ip}
+                            onChange={(e) => setForm(prev => ({ ...prev, entryIps: prev.entryIps.map((v, i) => i === index ? e.target.value : v) }))}
+                            variant="bordered"
+                            className="flex-1"
+                          />
+                          <Button
+                            isIconOnly size="sm" variant="light" color="danger"
+                            isDisabled={form.entryIps.length <= 1}
+                            onPress={() => setForm(prev => ({ ...prev, entryIps: prev.entryIps.filter((_, i) => i !== index) }))}
+                            title="删除这一行"
+                          >
+                            <DeleteIcon className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                    <Button
+                      size="sm" variant="flat" className="w-full"
+                      isDisabled={form.entryIps.length >= MAX_ENTRY_IPS}
+                      onPress={() => setForm(prev => ({ ...prev, entryIps: [...prev.entryIps, ''] }))}
+                    >
+                      + 添加一行（{form.entryIps.length} / {MAX_ENTRY_IPS}）
+                    </Button>
+                  </div>
 
                   <div className="grid grid-cols-2 gap-3">
                     <Input size="sm" autoComplete="off" label="起始端口" type="number" value={form.portSta.toString()} onChange={(e) => setForm(prev => ({ ...prev, portSta: Number(e.target.value) || 1000 }))} variant="bordered" />

@@ -122,8 +122,8 @@ export default function UserPage() {
     user: '',
     pwd: '',
     status: 1,
-    flow: 100,
-    num: 10,
+    flow: 0,
+    num: 0,
     expTime: null,
     flowResetTime: 0,
     groupId: null,
@@ -259,8 +259,8 @@ export default function UserPage() {
       user: '',
       pwd: '',
       status: 1,
-      flow: 100,
-      num: 10,
+      flow: 0,
+      num: 0,
       expTime: null,
       flowResetTime: 0,
       groupId: null,
@@ -648,27 +648,27 @@ export default function UserPage() {
               />
               <Input
                 size="sm" autoComplete="off"
-                label="流量限制(GB)"
+                label={<HelpTooltip content="0 为无配额，用户需要购买套餐后才能使用转发功能">流量限制(GB)</HelpTooltip>}
                 type="number"
                 value={userForm.flow.toString()}
                 onChange={(e) => {
-                  const value = Math.min(Math.max(Number(e.target.value) || 0, 1), 99999);
+                  const value = Math.min(Math.max(Number(e.target.value) || 0, 0), 99999);
                   setUserForm(prev => ({ ...prev, flow: value }));
                 }}
-                min="1"
+                min="0"
                 max="99999"
                 isRequired
               />
               <Input
                 size="sm" autoComplete="off"
-                label="转发数量"
+                label={<HelpTooltip content="0 为无配额，用户需要购买套餐后才能使用转发功能">转发数量</HelpTooltip>}
                 type="number"
                 value={userForm.num.toString()}
                 onChange={(e) => {
-                  const value = Math.min(Math.max(Number(e.target.value) || 0, 1), 99999);
+                  const value = Math.min(Math.max(Number(e.target.value) || 0, 0), 99999);
                   setUserForm(prev => ({ ...prev, num: value }));
                 }}
-                min="1"
+                min="0"
                 max="99999"
                 isRequired
               />

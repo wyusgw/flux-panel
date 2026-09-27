@@ -130,6 +130,21 @@ CREATE TABLE `user_daily_raw_flow` (
 -- --------------------------------------------------------
 
 --
+-- 表的结构 `node_daily_raw_flow`：节点按自然日累计的原始流量（不计流量倍率），
+-- 供管理员仪表盘「今日/昨日节点流量排行」展示使用
+--
+
+CREATE TABLE `node_daily_raw_flow` (
+  `id` int(10) NOT NULL,
+  `node_id` bigint(20) NOT NULL,
+  `day` varchar(10) NOT NULL,
+  `raw_bytes` bigint(20) NOT NULL DEFAULT '0',
+  `updated_time` bigint(20) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- --------------------------------------------------------
+
+--
 -- 表的结构 `forward_group`
 --
 
@@ -546,6 +561,13 @@ ALTER TABLE `user_daily_raw_flow`
   ADD UNIQUE KEY `uniq_user_day` (`user_id`,`day`);
 
 --
+-- 表的索引 `node_daily_raw_flow`
+--
+ALTER TABLE `node_daily_raw_flow`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uniq_node_day` (`node_id`,`day`);
+
+--
 -- 表的索引 `node`
 --
 ALTER TABLE `node`
@@ -704,6 +726,12 @@ ALTER TABLE `device_group_user_group_relation`
 -- 使用表AUTO_INCREMENT `user_daily_raw_flow`
 --
 ALTER TABLE `user_daily_raw_flow`
+  MODIFY `id` int(10) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=1;
+
+--
+-- 使用表AUTO_INCREMENT `node_daily_raw_flow`
+--
+ALTER TABLE `node_daily_raw_flow`
   MODIFY `id` int(10) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=1;
 
 --

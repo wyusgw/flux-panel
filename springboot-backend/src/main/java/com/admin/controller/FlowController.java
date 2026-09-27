@@ -75,6 +75,9 @@ public class FlowController extends BaseController {
     @Resource
     com.admin.service.UserDailyRawFlowService userDailyRawFlowService;
 
+    @Resource
+    com.admin.service.NodeDailyRawFlowService nodeDailyRawFlowService;
+
     /**
      * 加密消息包装器
      */
@@ -148,8 +151,9 @@ public class FlowController extends BaseController {
     @RequestMapping("/upload")
     @LogAnnotation
     public String uploadFlowData(@RequestBody String rawData, String secret) {
-        // 1. 验证节点权限
-        if (!isValidNode(secret)) {
+        // 1. 验证节点权限，顺带取出上报节点本身（用于按节点维度记录当日原始流量）
+        Node reportingNode = nodeService.getOne(new QueryWrapper<Node>().eq("secret", secret));
+        if (reportingNode == null) {
             return SUCCESS_RESPONSE;
         }
 
@@ -165,7 +169,7 @@ public class FlowController extends BaseController {
         // 记录日志
         log.info("节点上报流量数据{}", flowDataList);
         // 4. 处理流量数据
-        return processFlowData(flowDataList);
+        return processFlowData(flowDataList, reportingNode.getId());
     }
 
     /**
@@ -222,7 +226,7 @@ public class FlowController extends BaseController {
     /**
      * 处理流量数据的核心逻辑
      */
-    private String processFlowData(FlowDto flowDataList) {
+    private String processFlowData(FlowDto flowDataList, Long reportingNodeId) {
         String[] serviceIds = parseServiceName(flowDataList.getN());
         if (serviceIds.length < 3) {
             // 节点上可能还存在非转发业务的服务（如内置/临时监听），其上报的服务名不符合
@@ -236,9 +240,9 @@ public class FlowController extends BaseController {
 
         Forward forward = forwardService.getById(forwardId);
 
-        // 记录原始（不计流量倍率）流量到当日累计，供"统计数据"弹窗展示；
+        // 记录原始（不计流量倍率）流量到当日累计，供管理员仪表盘/"统计数据"弹窗展示；
         // 必须在 filterFlowData 按倍率改写 flowDataList 之前取值，否则拿到的就不是原始数据了
-        recordRawDailyFlow(userId, flowDataList);
+        recordRawDailyFlow(userId, reportingNodeId, flowDataList);
 
         // 获取流量计费类型
         int flowType = getFlowType(forward);
@@ -340,13 +344,14 @@ public class FlowController extends BaseController {
     }
 
     /**
-     * 记录本次上报的原始（未按流量倍率调整）流量到该用户当日累计
+     * 记录本次上报的原始（未按流量倍率调整）流量到该用户、该上报节点各自的当日累计
      */
-    private void recordRawDailyFlow(String userId, FlowDto rawFlowDto) {
+    private void recordRawDailyFlow(String userId, Long reportingNodeId, FlowDto rawFlowDto) {
         try {
             long raw = (rawFlowDto.getD() != null ? rawFlowDto.getD() : 0L) + (rawFlowDto.getU() != null ? rawFlowDto.getU() : 0L);
             if (raw <= 0) return;
             userDailyRawFlowService.recordRaw(Integer.valueOf(userId), raw);
+            nodeDailyRawFlowService.recordRaw(reportingNodeId, raw);
         } catch (Exception e) {
             log.info("记录原始每日流量失败: {}", e.getMessage());
         }
@@ -429,11 +434,6 @@ public class FlowController extends BaseController {
 
     private Object getForwardLock(String forwardId) {
         return FORWARD_LOCKS.computeIfAbsent(forwardId, k -> new Object());
-    }
-
-    private boolean isValidNode(String secret) {
-        int nodeCount = nodeService.count(new QueryWrapper<Node>().eq("secret", secret));
-        return nodeCount > 0;
     }
 
     private String[] parseServiceName(String serviceName) {

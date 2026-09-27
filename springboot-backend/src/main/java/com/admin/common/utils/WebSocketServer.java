@@ -522,6 +522,13 @@ public class WebSocketServer extends TextWebSocketHandler {
 
 
     public static GostDto send_msg(Long node_id, Object msg, String type) {
+        return send_msg(node_id, msg, type, 10);
+    }
+
+    /**
+     * @param timeoutSeconds 等待节点响应的最长时间；耗时较长的诊断命令（如 Traceroute）需要比默认 10 秒更长的窗口
+     */
+    public static GostDto send_msg(Long node_id, Object msg, String type, int timeoutSeconds) {
         WebSocketSession nodeSession = nodeSessions.get(node_id);
 
         if (nodeSession == null) {
@@ -556,7 +563,7 @@ public class WebSocketServer extends TextWebSocketHandler {
             data.put("data", msg);
             data.put("requestId", requestId);
             sendToUser(nodeSession, data.toJSONString(), nodeSecret);
-            GostDto result = future.get(10, TimeUnit.SECONDS);
+            GostDto result = future.get(timeoutSeconds, TimeUnit.SECONDS);
             
             log.info("成功发送消息到节点 {} 并收到响应: {}", node_id, result.getMsg());
             return result;

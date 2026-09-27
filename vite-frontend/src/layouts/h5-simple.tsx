@@ -20,6 +20,7 @@ export default function H5SimpleLayout({
   const location = useLocation();
   const [isAdmin, setIsAdmin] = useState(false);
   const [singleTunnelEnabled, setSingleTunnelEnabled] = useState(false);
+  const [lookingGlassEnabled, setLookingGlassEnabled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [username] = useState(() => localStorage.getItem('name') || 'Admin');
   const { isOpen, onOpen, onOpenChange } = useDisclosure();
@@ -36,11 +37,14 @@ export default function H5SimpleLayout({
 
     getCachedConfigs().then((configs) => {
       setSingleTunnelEnabled(configs.user_device_group_enabled === 'true');
+      setLookingGlassEnabled(configs.allow_looking_glass === 'true');
     }).catch(() => {});
   }, []);
 
   const filteredPrimaryNavItems = primaryNavItems.filter(item =>
-    (!item.adminOnly || isAdmin) && (item.path !== '/single-tunnel' || singleTunnelEnabled)
+    (!item.adminOnly || isAdmin) &&
+    (item.path !== '/single-tunnel' || singleTunnelEnabled) &&
+    (item.path !== '/looking-glass' || lookingGlassEnabled)
   );
   const filteredManagementNavItems = managementNavItems.filter(item => !item.adminOnly || isAdmin);
 

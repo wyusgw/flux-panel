@@ -6,9 +6,11 @@ import com.admin.common.lang.R;
 import com.admin.common.utils.JwtUtil;
 import com.admin.entity.Forward;
 import com.admin.entity.ForwardGroup;
+import com.admin.entity.User;
 import com.admin.mapper.ForwardGroupMapper;
 import com.admin.service.ForwardGroupService;
 import com.admin.service.ForwardService;
+import com.admin.service.UserService;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
@@ -30,18 +32,36 @@ public class ForwardGroupServiceImpl extends ServiceImpl<ForwardGroupMapper, For
     private static final String ERROR_UPDATE_FAILED = "分组更新失败";
     private static final String SUCCESS_UPDATE_MSG = "分组更新成功";
     private static final String SUCCESS_DELETE_MSG = "分组删除成功";
+    private static final int ADMIN_ROLE_ID = 0;
 
     @Autowired
     @Lazy
     private ForwardService forwardService;
 
+    @Autowired
+    @Lazy
+    private UserService userService;
+
     @Override
     public R createForwardGroup(ForwardGroupDto forwardGroupDto) {
         Integer userId = JwtUtil.getUserIdFromToken();
+        Integer roleId = JwtUtil.getRoleIdFromToken();
+
+        // 管理员可通过 userId 指定代哪个用户创建分组（转发规则页"管理转发规则"入口）；
+        // 非管理员忽略该字段，分组归属始终是自己
+        Integer effectiveUserId = userId;
+        if (roleId != null && roleId == ADMIN_ROLE_ID && forwardGroupDto.getUserId() != null
+                && !forwardGroupDto.getUserId().equals(userId)) {
+            User targetUser = userService.getById(forwardGroupDto.getUserId());
+            if (targetUser == null) {
+                return R.err("目标用户不存在");
+            }
+            effectiveUserId = targetUser.getId().intValue();
+        }
 
         ForwardGroup group = new ForwardGroup();
         group.setName(forwardGroupDto.getName());
-        group.setUserId(userId);
+        group.setUserId(effectiveUserId);
 
         long currentTime = System.currentTimeMillis();
         group.setCreatedTime(currentTime);
@@ -73,6 +93,7 @@ public class ForwardGroupServiceImpl extends ServiceImpl<ForwardGroupMapper, For
             item.put("id", group.getId());
             item.put("name", group.getName());
             item.put("sort", group.getSort());
+            item.put("userId", group.getUserId());
             item.put("ruleCount", countMap.getOrDefault(group.getId(), 0L));
             return item;
         }).collect(Collectors.toList());

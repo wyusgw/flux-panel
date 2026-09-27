@@ -92,7 +92,21 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         // 1. 获取当前用户信息
         UserInfo currentUser = getCurrentUserInfo();
 
-        // 1.1 校验隧道选择方式：显式隧道 或 入口/出口设备组，二选一
+        // 1.0 管理员可通过 userId 指定代哪个用户创建转发规则（用户管理页"管理转发规则"入口）；
+        // 非管理员忽略该字段，规则归属始终是自己。管理员代用户创建时，规则的权限/额度校验按该用户
+        // 自己的额度进行（与编辑他人转发时的既有规则一致），而不是套用管理员自身不受限的权限
+        UserInfo effectiveUser = currentUser;
+        if (currentUser.getRoleId() == ADMIN_ROLE_ID && forwardDto.getUserId() != null
+                && !forwardDto.getUserId().equals(currentUser.getUserId())) {
+            User targetUser = userService.getById(forwardDto.getUserId());
+            if (targetUser == null) {
+                return R.err("目标用户不存在");
+            }
+            effectiveUser = new UserInfo(targetUser.getId().intValue(), targetUser.getRoleId(), targetUser.getUser());
+        }
+
+        // 1.1 校验隧道选择方式：显式隧道 或 入口/出口设备组，二选一（沿用发起请求者本人的身份校验，
+        // 管理员可自由选择任意设备组，不受目标用户所在用户组限制）
         R modeCheck = validateDeviceGroupSelection(forwardDto.getTunnelId(), forwardDto.getInDeviceGroupId(),
                 forwardDto.getOutDeviceGroupId(), currentUser);
         if (modeCheck.getCode() != 0) {
@@ -108,9 +122,9 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             return R.err("隧道已禁用，无法创建转发");
         }
 
-        // 3. 普通用户权限和限制检查
-        UserTunnel userTunnel = tunnelResolver.resolveUserTunnel(currentUser.getUserId(), forwardDto.getTunnelId(), forwardDto.getInDeviceGroupId());
-        UserPermissionResult permissionResult = checkUserPermissions(currentUser, tunnel, userTunnel, null);
+        // 3. 权限和限制检查（按规则归属者 effectiveUser 校验，管理员创建自己的规则时两者相同）
+        UserTunnel userTunnel = tunnelResolver.resolveUserTunnel(effectiveUser.getUserId(), forwardDto.getTunnelId(), forwardDto.getInDeviceGroupId());
+        UserPermissionResult permissionResult = checkUserPermissions(effectiveUser, tunnel, userTunnel, null);
         if (permissionResult.isHasError()) {
             return R.err(permissionResult.getErrorMessage());
         }
@@ -121,8 +135,8 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             return R.err(portAllocation.getErrorMessage());
         }
 
-        // 5. 创建并保存Forward对象
-        Forward forward = createForwardEntity(forwardDto, currentUser, portAllocation);
+        // 5. 创建并保存Forward对象（归属 effectiveUser，即目标用户）
+        Forward forward = createForwardEntity(forwardDto, effectiveUser, portAllocation);
         if (!this.save(forward)) {
             return R.err("端口转发创建失败");
         }

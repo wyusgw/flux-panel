@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Button } from "@heroui/button";
 import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Input } from "@heroui/input";
@@ -105,6 +106,7 @@ const calculateTunnelUsedFlow = (tunnel: UserTunnel): number => {
 };
 
 export default function UserPage() {
+  const navigate = useNavigate();
   // 状态管理
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(false);
@@ -343,6 +345,12 @@ export default function UserPage() {
     } finally {
       setUserFormLoading(false);
     }
+  };
+
+  // 跳转到独立的"管理转发规则"页（/user-forward，与普通用户自己使用的 /forward 是两个页面），
+  // 代该用户查看/新增/编辑/删除转发规则
+  const handleManageForwards = (user: User) => {
+    navigate(`/user-forward?userId=${user.id}&userName=${encodeURIComponent(user.user)}`);
   };
 
   // 隧道权限管理操作
@@ -592,6 +600,11 @@ export default function UserPage() {
                       <TableCell className="whitespace-nowrap">{(user.walletBalance ?? 0).toFixed(2)} 元</TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1">
+                          <Button isIconOnly size="sm" variant="flat" onPress={() => handleManageForwards(user)} isDisabled={user.roleId === 0} title="管理转发规则">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M4 7h13M17 7l-3-3M17 7l-3 3M20 17H7M7 17l3-3M7 17l3 3" />
+                            </svg>
+                          </Button>
                           <Button isIconOnly size="sm" variant="flat" onPress={() => handleManageTunnels(user)} title="隧道权限">
                             <SettingsIcon className="w-4 h-4" />
                           </Button>

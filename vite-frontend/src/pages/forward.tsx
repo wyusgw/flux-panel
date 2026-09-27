@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import { Card, CardBody } from "@heroui/card";
 import { Button } from "@heroui/button";
 import { Input } from "@heroui/input";
@@ -35,6 +36,7 @@ import {
   getForwardDailyFlow
 } from "@/api";
 import { JwtUtil } from "@/utils/jwt";
+import { isAdmin } from "@/utils/auth";
 
 // ========== 图标（转发规则页专用的一批简单线性小图标） ==========
 const IconSearch = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" /><path strokeLinecap="round" d="M21 21l-4.3-4.3" /></svg>;
@@ -125,6 +127,7 @@ interface ForwardGroup {
   id: number;
   name: string;
   ruleCount: number;
+  userId: number;
 }
 
 interface DeviceGroupOption {
@@ -178,6 +181,20 @@ interface DiagnosisResult {
 }
 
 export default function ForwardPage() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
+  // 本组件同时挂载在两个独立路由下：/forward 是每个用户自己的"我的转发规则"，
+  // /user-forward 是管理员从"用户管理"页点击"管理转发规则"进入的专属页面，带 ?userId=&userName=，
+  // 用来代该用户查看/新增/编辑/删除转发规则。只有落在 /user-forward 这个专属页面时才会进入代管模式，
+  // 避免 /forward 这个所有人都能访问的自助页面因为 URL 上恰好带了同名参数就被误切换
+  const isManagePage = location.pathname === '/user-forward';
+  const impersonateUserId = isManagePage && isAdmin() && searchParams.get('userId') ? Number(searchParams.get('userId')) : null;
+  const isImpersonating = impersonateUserId !== null;
+  // 当前页面实际归属哪个用户：代管模式下是目标用户，否则是自己；转发规则和分组的过滤、
+  // 归属统一用这一个值，避免代管模式下有的地方过滤对了、有的地方漏改还是按自己过滤
+  const scopeUserId = isImpersonating ? impersonateUserId : JwtUtil.getUserIdFromToken();
+
   const [loading, setLoading] = useState(true);
   const [forwards, setForwards] = useState<Forward[]>([]);
   const [tunnels, setTunnels] = useState<Tunnel[]>([]);
@@ -428,7 +445,7 @@ export default function ForwardPage() {
     try {
       const res = groupEditingId
         ? await updateForwardGroup({ id: groupEditingId, name: groupNameInput })
-        : await createForwardGroup({ name: groupNameInput });
+        : await createForwardGroup({ name: groupNameInput, ...(isImpersonating ? { userId: impersonateUserId } : {}) });
       if (res.code === 0) {
         toast.success(groupEditingId ? '修改成功' : '创建成功');
         setGroupNameInput('');
@@ -692,9 +709,11 @@ export default function ForwardPage() {
         };
         res = await updateForward(updateData);
       } else {
-        // 创建时不需要id和userId（后端会自动设置）
+        // 创建时不需要id和userId（后端会自动设置为当前登录用户）；
+        // 管理员代用户创建时（isImpersonating）需显式带上目标用户ID
         const createData = {
           name: form.name,
+          ...(isImpersonating ? { userId: impersonateUserId } : {}),
           ...entryFields,
           inPort: form.inPort,
           remoteAddr: processedRemoteAddr,
@@ -1228,11 +1247,11 @@ export default function ForwardPage() {
   const getSortedForwards = (): Forward[] => {
     if (!forwards || forwards.length === 0) return [];
 
-    // 只显示当前登录用户自己的转发（管理员查看其他用户的转发走用户管理，不在本页）
+    // 默认只显示当前登录用户自己的转发；管理员带 ?userId= 进入时（用户管理页"管理转发规则"），
+    // 改为只显示该目标用户的转发
     let filteredForwards = forwards;
-    const currentUserId = JwtUtil.getUserIdFromToken();
-    if (currentUserId !== null) {
-      filteredForwards = forwards.filter(forward => forward.userId === currentUserId);
+    if (scopeUserId !== null) {
+      filteredForwards = forwards.filter(forward => forward.userId === scopeUserId);
     }
 
     // 按分组过滤：null=全部，-1=未分组，否则按分组ID过滤
@@ -1360,7 +1379,8 @@ export default function ForwardPage() {
   }
 
   const myForwards = getSortedForwards();
-  const myForwardsAll = forwards.filter(f => f.userId === JwtUtil.getUserIdFromToken());
+  const myForwardsAll = forwards.filter(f => f.userId === scopeUserId);
+  const scopedForwardGroups = forwardGroups.filter(g => g.userId === scopeUserId);
   const selectedIds = getSelectedIds();
   const GB = 1024 * 1024 * 1024;
   const usedGiB = ((packageInfo?.inFlow || 0) + (packageInfo?.outFlow || 0)) / GB;
@@ -1370,21 +1390,34 @@ export default function ForwardPage() {
       <div className="px-3 lg:px-6 py-8 forward-page">
         {/* 页面头部 */}
         <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
-          <h1 className="text-xl font-bold text-foreground">我的转发规则</h1>
+          <div className="flex items-center gap-2 flex-wrap">
+            {isImpersonating && (
+              <Button size="sm" variant="flat" onPress={() => navigate('/user')}>← 返回用户管理</Button>
+            )}
+            <h1 className="text-xl font-bold text-foreground">
+              {isImpersonating ? `用户转发规则 (UID=${impersonateUserId})` : '我的转发规则'}
+            </h1>
+          </div>
           <div className="flex items-center gap-2 flex-wrap">
             <Button size="sm" variant="flat" startContent={<IconSearch />} onPress={() => setSearchModalOpen(true)}>搜索规则</Button>
             <Button size="sm" variant="flat" startContent={<IconRefresh />} isLoading={loading} onPress={() => loadData()}>刷新</Button>
-            <Button size="sm" variant="flat" startContent={<IconStats />} onPress={openStats}>统计数据</Button>
+            {!isImpersonating && <Button size="sm" variant="flat" startContent={<IconStats />} onPress={openStats}>统计数据</Button>}
           </div>
         </div>
 
-        {/* 信息 / 分组筛选条 */}
+        {/* 信息 / 分组筛选条：管理员代管其他用户规则时，账号级流量/到期时间是当前登录管理员自己的数据，
+            跟目标用户无关，容易造成误解，这里不展示；分组是按 scopeUserId（目标用户）过滤好的数据，
+            管理分组、按分组筛选、未分组数量在代管模式下同样可用 */}
         <div className="flex flex-wrap items-center gap-2 mb-3">
-          <Chip variant="flat" size="sm">流量: {usedGiB.toFixed(2)} GiB / {(packageInfo?.flow ?? 0).toFixed(2)} GiB</Chip>
-          {packageInfo?.expTime && (
-            <Chip variant="flat" size="sm">到期: {new Date(packageInfo.expTime).toLocaleString('zh-CN')}</Chip>
+          {!isImpersonating && (
+            <>
+              <Chip variant="flat" size="sm">流量: {usedGiB.toFixed(2)} GiB / {(packageInfo?.flow ?? 0).toFixed(2)} GiB</Chip>
+              {packageInfo?.expTime && (
+                <Chip variant="flat" size="sm">到期: {new Date(packageInfo.expTime).toLocaleString('zh-CN')}</Chip>
+              )}
+              <Chip variant="flat" size="sm">规则数: {myForwardsAll.length} / {packageInfo?.num ?? '-'}</Chip>
+            </>
           )}
-          <Chip variant="flat" size="sm">规则数: {myForwardsAll.length} / {packageInfo?.num ?? '-'}</Chip>
           <Button size="sm" variant="flat" startContent={<IconGroup />} onPress={() => setGroupManageModalOpen(true)}>管理分组</Button>
           <Chip
             size="sm"
@@ -1404,7 +1437,7 @@ export default function ForwardPage() {
           >
             未分组 ({myForwardsAll.filter(f => !f.groupId).length})
           </Chip>
-          {forwardGroups.map(group => (
+          {scopedForwardGroups.map(group => (
             <Chip
               key={group.id}
               size="sm"
@@ -1747,7 +1780,7 @@ export default function ForwardPage() {
                       }}
                       variant="bordered"
                     >
-                      {forwardGroups.map(group => (
+                      {scopedForwardGroups.map(group => (
                         <SelectItem key={group.id.toString()}>{group.name}</SelectItem>
                       ))}
                     </Select>
@@ -2328,10 +2361,10 @@ export default function ForwardPage() {
                     )}
                   </div>
                   <div className="space-y-2 mt-2 max-h-64 overflow-y-auto">
-                    {forwardGroups.length === 0 && (
+                    {scopedForwardGroups.length === 0 && (
                       <p className="text-small text-default-500">暂无分组</p>
                     )}
-                    {forwardGroups.map(group => (
+                    {scopedForwardGroups.map(group => (
                       <div key={group.id} className="flex items-center justify-between p-2 rounded-lg bg-default-100">
                         <span className="text-small text-foreground">{group.name}（{group.ruleCount} 条规则）</span>
                         <div className="flex gap-2">

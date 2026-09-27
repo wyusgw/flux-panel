@@ -17,7 +17,9 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.web.socket.CloseStatus;
+import org.springframework.web.socket.PingMessage;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
@@ -516,6 +518,39 @@ public class WebSocketServer extends TextWebSocketHandler {
     public static void broadcastMessage(String message) {
         for (WebSocketSession session : activeSessions) {
             sendToUser(session, message);
+        }
+    }
+
+    /**
+     * 定时给所有管理端（网页）连接发一个 WebSocket Ping 帧。
+     * <p>
+     * 管理端连接大多经过 nginx 等反向代理，代理通常有几十秒的空闲超时——如果这段时间内双向都没有
+     * 数据流动，代理会直接把底层 TCP 连接悄悄断掉，浏览器这边既收不到 close 事件也不会报错，
+     * WebSocket 对象会一直"看起来还开着"，页面就停在断线前最后一次收到的节点状态，只有手动刷新
+     * （重新拉取数据、建立新连接）才会恢复。定时发送 Ping：一是维持连接不被代理判定为空闲，
+     * 二是如果连接其实已经死了，发送会立即抛异常，借此机会尽快清理失效会话；同时给底层连接制造一次
+     * 真实的收发，让代理/浏览器更快感知到连接已断，从而触发前端已有的断线重连逻辑。
+     * </p>
+     */
+    @Scheduled(fixedRate = 25000)
+    public void pingActiveSessions() {
+        for (WebSocketSession session : activeSessions) {
+            if (!session.isOpen()) {
+                cleanupSession(session);
+                continue;
+            }
+            String sessionId = session.getId();
+            Object lock = sessionLocks.computeIfAbsent(sessionId, k -> new Object());
+            synchronized (lock) {
+                try {
+                    if (session.isOpen()) {
+                        session.sendMessage(new PingMessage());
+                    }
+                } catch (Exception e) {
+                    log.info("发送心跳失败，清理会话 [sessionId={}]: {}", sessionId, e.getMessage());
+                    cleanupSession(session);
+                }
+            }
         }
     }
 

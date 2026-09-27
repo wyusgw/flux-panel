@@ -18,4 +18,13 @@ public class NotifySettingsDto {
 
     /** 设备离线推送范围（设备组ID，仅白名单/黑名单模式下生效） */
     private List<Long> deviceGroupIds;
+
+    /** 自动续费成功/失败推送模式（0-不接收，1-接收） */
+    private Integer renewMode;
+
+    /** 套餐到期提醒推送模式（0-不接收，1-接收） */
+    private Integer expiryMode;
+
+    /** 流量即将用尽提醒推送模式（0-不接收，1-接收） */
+    private Integer flowMode;
 }

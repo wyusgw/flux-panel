@@ -63,4 +63,9 @@ public class UserDailyRawFlowServiceImpl extends ServiceImpl<UserDailyRawFlowMap
                 yesterdayRecord != null && yesterdayRecord.getRawBytes() != null ? yesterdayRecord.getRawBytes() : 0L
         };
     }
+
+    @Override
+    public java.util.List<UserDailyRawFlow> listByDay(String day) {
+        return this.list(new QueryWrapper<UserDailyRawFlow>().eq("day", day));
+    }
 }

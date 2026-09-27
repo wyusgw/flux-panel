@@ -86,6 +86,12 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
     @Lazy
     private TaskQueueService taskQueueService;
 
+    /**
+     * 端口分配 -> 落库 这段临界区的互斥锁：避免并发创建/更新转发规则时，
+     * 两个请求都在对方尚未提交端口占用记录前查到"端口空闲"，进而对同一物理端口
+     * 各自向节点下发监听，导致 gost 侧出现 "address already in use"。
+     */
+    private final Object portAllocationLock = new Object();
 
     @Override
     public R createForward(ForwardDto forwardDto) {
@@ -129,16 +135,21 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             return R.err(permissionResult.getErrorMessage());
         }
 
-        // 4. 分配端口
-        PortAllocation portAllocation = allocatePorts(tunnel, forwardDto.getInPort());
-        if (portAllocation.isHasError()) {
-            return R.err(portAllocation.getErrorMessage());
-        }
+        // 4~5. 分配端口并落库：加锁保证"查端口是否空闲"与"落库占用该端口"是原子的，
+        // 否则并发的两个创建/更新请求可能都读到端口空闲，各自往同一物理端口下发监听
+        Forward forward;
+        synchronized (portAllocationLock) {
+            // 4. 分配端口
+            PortAllocation portAllocation = allocatePorts(tunnel, forwardDto.getInPort());
+            if (portAllocation.isHasError()) {
+                return R.err(portAllocation.getErrorMessage());
+            }
 
-        // 5. 创建并保存Forward对象（归属 effectiveUser，即目标用户）
-        Forward forward = createForwardEntity(forwardDto, effectiveUser, portAllocation);
-        if (!this.save(forward)) {
-            return R.err("端口转发创建失败");
+            // 5. 创建并保存Forward对象（归属 effectiveUser，即目标用户）
+            forward = createForwardEntity(forwardDto, effectiveUser, portAllocation);
+            if (!this.save(forward)) {
+                return R.err("端口转发创建失败");
+            }
         }
 
         // 6. 获取所需的节点信息
@@ -304,45 +315,49 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             return R.err("你没有该隧道权限");
         }
 
-        // 6. 更新Forward对象
-        Forward updatedForward = updateForwardEntity(forwardUpdateDto, existForward, tunnel);
+        // 6~9. 更新Forward对象、下发Gost配置、落库：与创建共用同一把锁，避免并发的创建/更新
+        // 请求都读到目标端口空闲、各自往同一物理端口下发监听（见 portAllocationLock 上的说明）
+        synchronized (portAllocationLock) {
+            // 6. 更新Forward对象
+            Forward updatedForward = updateForwardEntity(forwardUpdateDto, existForward, tunnel);
 
-        // 7. 获取所需的节点信息
-        NodeInfo nodeInfo = getRequiredNodes(tunnel);
-        if (nodeInfo.isHasError()) {
-            return R.err(nodeInfo.getErrorMessage());
-        }
-
-        // 8. 调用Gost服务更新转发
-        R gostResult;
-        if (tunnelChanged) {
-            // 隧道变化时：先删除原配置，再创建新配置
-            gostResult = updateGostServicesWithTunnelChange(existForward, updatedForward, tunnel, permissionResult != null ? permissionResult.getLimiter() : null, nodeInfo, userTunnel);
-        } else {
-            // 隧道未变化时：直接更新配置
-            gostResult = updateGostServices(updatedForward, tunnel, permissionResult != null ? permissionResult.getLimiter() : null, nodeInfo, userTunnel);
-        }
-
-        if (gostResult.getCode() != 0) {
-            if (isNodeOfflineFailure(gostResult)) {
-                // 节点当前离线：更新内容正常保存，只是暂时无法把配置推送到节点，不应因此阻止保存。
-                // 隧道未发生变化的情况下才登记重试队列（隧道变更+离线的场景更复杂，暂不自动重试，走原有手动兜底）。
-                log.warn("转发 {} 更新成功，但目标节点当前离线，配置暂未同步：{}", updatedForward.getId(), gostResult.getMsg());
-                updatedForward.setStatus(1);
-                boolean savedOffline = this.updateById(updatedForward);
-                if (savedOffline && !tunnelChanged) {
-                    enqueueForwardSyncTask(updatedForward, tunnel, gostResult.getMsg());
-                }
-                return savedOffline
-                        ? okWithMsg("端口转发已更新，但目标节点当前离线，已加入同步重试队列，节点上线后会自动补推配置")
-                        : R.err("端口转发更新失败");
+            // 7. 获取所需的节点信息
+            NodeInfo nodeInfo = getRequiredNodes(tunnel);
+            if (nodeInfo.isHasError()) {
+                return R.err(nodeInfo.getErrorMessage());
             }
-            return gostResult;
+
+            // 8. 调用Gost服务更新转发
+            R gostResult;
+            if (tunnelChanged) {
+                // 隧道变化时：先删除原配置，再创建新配置
+                gostResult = updateGostServicesWithTunnelChange(existForward, updatedForward, tunnel, permissionResult != null ? permissionResult.getLimiter() : null, nodeInfo, userTunnel);
+            } else {
+                // 隧道未变化时：直接更新配置
+                gostResult = updateGostServices(updatedForward, tunnel, permissionResult != null ? permissionResult.getLimiter() : null, nodeInfo, userTunnel);
+            }
+
+            if (gostResult.getCode() != 0) {
+                if (isNodeOfflineFailure(gostResult)) {
+                    // 节点当前离线：更新内容正常保存，只是暂时无法把配置推送到节点，不应因此阻止保存。
+                    // 隧道未发生变化的情况下才登记重试队列（隧道变更+离线的场景更复杂，暂不自动重试，走原有手动兜底）。
+                    log.warn("转发 {} 更新成功，但目标节点当前离线，配置暂未同步：{}", updatedForward.getId(), gostResult.getMsg());
+                    updatedForward.setStatus(1);
+                    boolean savedOffline = this.updateById(updatedForward);
+                    if (savedOffline && !tunnelChanged) {
+                        enqueueForwardSyncTask(updatedForward, tunnel, gostResult.getMsg());
+                    }
+                    return savedOffline
+                            ? okWithMsg("端口转发已更新，但目标节点当前离线，已加入同步重试队列，节点上线后会自动补推配置")
+                            : R.err("端口转发更新失败");
+                }
+                return gostResult;
+            }
+            updatedForward.setStatus(1);
+            // 9. 保存更新
+            boolean result = this.updateById(updatedForward);
+            return result ? R.ok("端口转发更新成功") : R.err("端口转发更新失败");
         }
-        updatedForward.setStatus(1);
-        // 9. 保存更新
-        boolean result = this.updateById(updatedForward);
-        return result ? R.ok("端口转发更新成功") : R.err("端口转发更新失败");
     }
 
     @Override

@@ -8,12 +8,12 @@ import { Switch } from "@heroui/switch";
 import { Select, SelectItem } from "@heroui/select";
 import { Modal, ModalBody, ModalContent, ModalFooter, ModalHeader, useDisclosure } from "@heroui/modal";
 import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from "@heroui/table";
-import { Tooltip } from "@heroui/tooltip";
 import toast from 'react-hot-toast';
 import { updateConfigs } from '@/api';
 
 import { isAdmin } from '@/utils/auth';
 import { getCachedConfigs, clearConfigCache, updateSiteConfig } from '@/config/site';
+import { HelpTooltip } from '@/components/help-tooltip';
 
 interface ConfigItem {
   key: string;
@@ -43,13 +43,6 @@ const PAYMENT_TYPES: { label: string; value: PaymentChannel['type'] }[] = [
   { label: 'Cryptomus', value: 'cryptomus' }
 ];
 
-const HelpIcon = () => (
-  <svg className="w-3.5 h-3.5 text-default-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <circle cx="12" cy="12" r="9" strokeWidth={1.5} />
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.5 9a2.5 2.5 0 114.096 1.929c-.596.487-1.096 1.054-1.096 1.821V13" />
-    <circle cx="12" cy="16.5" r="0.9" fill="currentColor" stroke="none" />
-  </svg>
-);
 
 const CONFIG_SECTIONS = [
   { key: 'basic', title: '基本设置', description: '站点名称、注册权限与主题展示策略' },
@@ -685,7 +678,7 @@ export default function ConfigPage() {
                 </div>
                 <Input
                   size="sm" autoComplete="off"
-                  label={<span className="inline-flex items-center gap-1 leading-none">URL<Tooltip content="支付服务商提供的 API 接口地址"><span className="inline-flex items-center"><HelpIcon /></span></Tooltip></span>}
+                  label={<HelpTooltip content="支付服务商提供的 API 接口地址">URL</HelpTooltip>}
                   value={configuringChannel?.config?.url || ''}
                   onChange={(event) => setConfiguringChannel(channel => channel ? { ...channel, config: { ...channel.config, url: event.target.value } } : null)}
                 />
@@ -712,7 +705,7 @@ export default function ConfigPage() {
                 />
                 <Input
                   size="sm" autoComplete="off"
-                  label={<span className="inline-flex items-center gap-1 leading-none">费率<Tooltip content="该支付渠道收取的手续费比例"><span className="inline-flex items-center"><HelpIcon /></span></Tooltip></span>}
+                  label={<HelpTooltip content="该支付渠道收取的手续费比例">费率</HelpTooltip>}
                   type="number"
                   value={configuringChannel?.config?.feeRate ?? '0.0'}
                   onChange={(event) => setConfiguringChannel(channel => channel ? { ...channel, config: { ...channel.config, feeRate: event.target.value } } : null)}

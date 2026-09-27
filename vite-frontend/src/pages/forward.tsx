@@ -11,6 +11,7 @@ import { Spinner } from "@heroui/spinner";
 import { Accordion, AccordionItem } from "@heroui/accordion";
 import { Tooltip } from "@heroui/tooltip";
 import toast from 'react-hot-toast';
+import { copyText } from '@/utils/clipboard';
 import { EmptyState } from "@/components/empty-state";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { ToastWarningIcon } from "@/components/toast-icons";
@@ -972,8 +973,12 @@ export default function ForwardPage() {
   // 复制到剪贴板
   const copyToClipboard = async (text: string, label: string = '内容') => {
     try {
-      await navigator.clipboard.writeText(text);
-      toast.success(`已复制${label}`);
+      const success = await copyText(text);
+      if (success) {
+        toast.success(`已复制${label}`);
+      } else {
+        toast.error('复制失败');
+      }
     } catch (error) {
       toast.error('复制失败');
     }

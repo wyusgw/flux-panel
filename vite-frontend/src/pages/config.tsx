@@ -183,9 +183,7 @@ const CONFIG_ITEMS: ConfigItem[] = [
     label: '透明主题背景图 URL（横屏）',
     placeholder: 'https://example.com/background-landscape.jpg',
     description: '建议使用宽幅图片，适用于桌面与横屏设备',
-    type: 'input',
-    dependsOn: 'transparent_theme_enabled',
-    dependsValue: 'true'
+    type: 'input'
   },
   {
     key: 'transparent_theme_portrait_url',
@@ -193,9 +191,7 @@ const CONFIG_ITEMS: ConfigItem[] = [
     label: '透明主题背景图 URL（竖屏）',
     placeholder: 'https://example.com/background-portrait.jpg',
     description: '建议使用直幅图片，适用于手机竖屏设备',
-    type: 'input',
-    dependsOn: 'transparent_theme_enabled',
-    dependsValue: 'true'
+    type: 'input'
   },
   {
     key: 'site_announcement',
@@ -562,6 +558,11 @@ export default function ConfigPage() {
               const items = CONFIG_ITEMS.filter(item => item.section === section.key && shouldShowItem(item));
               if (items.length === 0) return null;
               const sectionHasChanges = items.some(item => configs[item.key] !== originalConfigs[item.key]);
+              // 透明主题背景图 URL 两项不再作为独立的顶层配置行渲染，
+              // 而是收进「透明主题」开关下方的抽屉里，跟随开关一起展开/收起
+              const visibleItems = items.filter(item => item.key !== 'transparent_theme_landscape_url' && item.key !== 'transparent_theme_portrait_url');
+              const transparentThemeChildren = CONFIG_ITEMS.filter(item => item.key === 'transparent_theme_landscape_url' || item.key === 'transparent_theme_portrait_url');
+              const transparentThemeOn = configs.transparent_theme_enabled === 'true';
 
               return (
                 <section key={section.key} className="settings-section">
@@ -619,16 +620,32 @@ export default function ConfigPage() {
                     </div>
                   ) : (
                     <>
-                      {items.map((item, index) => (
+                      {visibleItems.map((item, index) => (
                         <div
                           key={item.key}
-                          className={`grid grid-cols-1 lg:grid-cols-[minmax(260px,0.75fr)_minmax(360px,1.25fr)] gap-3 lg:gap-8 px-4 py-5 lg:px-5 ${index < items.length - 1 ? 'border-b border-default-100' : ''}`}
+                          className={`grid grid-cols-1 lg:grid-cols-[minmax(260px,0.75fr)_minmax(360px,1.25fr)] gap-3 lg:gap-8 px-4 py-5 lg:px-5 ${index < visibleItems.length - 1 ? 'border-b border-default-100' : ''}`}
                         >
                           <div className="pt-1">
                             <label className="text-sm font-medium text-foreground">{item.label}</label>
                             {item.description && <p className="mt-1 text-xs leading-5 text-default-500 max-w-md">{item.description}</p>}
                           </div>
                           <div className="w-full max-w-2xl lg:justify-self-end">{renderConfigItem(item)}</div>
+
+                          {item.key === 'transparent_theme_enabled' && (
+                            <div className={`lg:col-span-2 grid transition-[grid-template-rows] duration-300 ease-in-out ${transparentThemeOn ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
+                              <div className="overflow-hidden">
+                                <div className="space-y-4 pt-4 pl-4 border-l-2 border-default-200">
+                                  {transparentThemeChildren.map(child => (
+                                    <div key={child.key}>
+                                      <label className="text-sm font-medium text-foreground">{child.label}</label>
+                                      {child.description && <p className="mt-1 text-xs leading-5 text-default-500 max-w-md">{child.description}</p>}
+                                      <div className="mt-2 max-w-2xl">{renderConfigItem(child)}</div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       ))}
                     </>

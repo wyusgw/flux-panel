@@ -13,7 +13,13 @@ public class ForwardDto {
 
     @NotBlank(message = "转发名称不能为空")
     private String name;
-    
+
+    /**
+     * 目标用户ID：仅管理员可用，代该用户创建转发规则（用户管理页"管理转发规则"入口）；
+     * 普通用户忽略该字段，规则归属始终是自己
+     */
+    private Integer userId;
+
     // 隧道ID：与 inDeviceGroupId 二选一（提供入口/出口设备组时，由后台自动解析/创建隧道）
     private Integer tunnelId;
 

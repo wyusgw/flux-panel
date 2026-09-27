@@ -175,6 +175,11 @@ export default function DeviceGroupPage() {
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
 
   const [dockLoadingNodeId, setDockLoadingNodeId] = useState<number | null>(null);
+  // 对接安装信息按节点缓存：点击对接图标时提前拉取，让后续在下拉菜单里点“复制”能在
+  // 同一个点击事件栈里同步执行复制——HTTP 站点降级用的 document.execCommand('copy')
+  // 要求紧跟用户操作、中间不能有 await 网络请求，否则会静默失败（仍返回 true，但实际
+  // 没有复制到剪贴板），提前取好数据能避开这个坑
+  const [installInfoCache, setInstallInfoCache] = useState<Record<number, InstallInfo>>({});
   const [configModalOpen, setConfigModalOpen] = useState(false);
   const [configTarget, setConfigTarget] = useState<{ node: NodeItem | null; group: DeviceGroupItem | null }>({ node: null, group: null });
   const [offlineModalOpen, setOfflineModalOpen] = useState(false);
@@ -195,8 +200,16 @@ export default function DeviceGroupPage() {
   const [batchDeleteLoading, setBatchDeleteLoading] = useState(false);
   const draggedGroupIdRef = useRef<number | null>(null);
 
+  // “自动探测线路”当前的国家/地区代码；用于决定复制命令时是否加 CN 加速镜像。
+  // 在页面加载时就查一次（而不是点击复制时才查），这样点“复制”时结果已经缓存好，
+  // 复制动作能同步执行，避免 execCommand('copy') 因为中间插了一次 await 网络请求而失败
+  const [userCountry, setUserCountry] = useState<string | null>(null);
+
   useEffect(() => {
     loadData();
+    fetch('https://ipwho.is/').then(res => res.json()).then(data => {
+      if (data?.success && data.country_code) setUserCountry(String(data.country_code).toUpperCase());
+    }).catch(() => {});
   }, []);
 
   const loadData = async () => {
@@ -474,6 +487,12 @@ export default function DeviceGroupPage() {
       if (res.code === 0) {
         toast.success('Token 已重置，请重新复制安装命令并在节点上重新配置');
         setResetModalOpen(false);
+        // 安装命令里带有 Token，重置后旧命令已失效，清掉缓存避免复制出过期命令
+        setInstallInfoCache(prev => {
+          const next = { ...prev };
+          delete next[resetTargetId];
+          return next;
+        });
       } else {
         toast.error(res.msg || '重置失败');
       }
@@ -484,15 +503,40 @@ export default function DeviceGroupPage() {
     }
   };
 
+  // 点击对接图标（打开下拉菜单）时提前拉取并缓存，见 installInfoCache 上的注释
+  const prefetchInstallInfo = async (nodeId: number) => {
+    if (installInfoCache[nodeId]) return;
+    try {
+      const res = await getNodeInstallCommand(nodeId);
+      if (res.code === 0) {
+        setInstallInfoCache(prev => ({ ...prev, [nodeId]: res.data as InstallInfo }));
+      }
+    } catch {
+      // 静默失败即可，handleDockAction 里没有命中缓存时会自己重新拉取
+    }
+  };
+
+  // “自动探测线路”：只有确认是中国大陆网络（userCountry === 'CN'）才用镜像加速，
+  // 检测失败/未知时不加镜像——跟安装脚本自身的 COUNTRY 判断逻辑保持一致
+  const pickAutoCommand = (info: InstallInfo) => userCountry === 'CN' ? info.commandAuto : info.commandOverseas;
+
   const handleDockAction = async (nodeId: number, action: string, title: string) => {
     if (action === 'view-config') { handleViewConfig(nodeId); return; }
+
+    const cached = installInfoCache[nodeId];
+    if (cached) {
+      if (action === 'copy-auto') { copyToClipboard(pickAutoCommand(cached), '已复制在线安装命令（自动探测线路）'); return; }
+      if (action === 'copy-overseas') { copyToClipboard(cached.commandOverseas, '已复制在线安装命令（海外主线路）'); return; }
+      if (action === 'offline') { setOfflineInfo(cached); setOfflineTitle(title); setOfflineModalOpen(true); return; }
+    }
 
     setDockLoadingNodeId(nodeId);
     try {
       const res = await getNodeInstallCommand(nodeId);
       if (res.code !== 0) { toast.error(res.msg || '获取安装信息失败'); return; }
       const info = res.data as InstallInfo;
-      if (action === 'copy-auto') await copyToClipboard(info.commandAuto, '已复制在线安装命令（自动探测线路）');
+      setInstallInfoCache(prev => ({ ...prev, [nodeId]: info }));
+      if (action === 'copy-auto') await copyToClipboard(pickAutoCommand(info), '已复制在线安装命令（自动探测线路）');
       else if (action === 'copy-overseas') await copyToClipboard(info.commandOverseas, '已复制在线安装命令（海外主线路）');
       else if (action === 'offline') { setOfflineInfo(info); setOfflineTitle(title); setOfflineModalOpen(true); }
     } catch (error) {
@@ -505,7 +549,7 @@ export default function DeviceGroupPage() {
   const renderDockMenu = (nodeId: number, title: string) => (
     <Dropdown placement="bottom-end">
       <DropdownTrigger>
-        <Button isIconOnly size="sm" variant="flat" isLoading={dockLoadingNodeId === nodeId} title="对接">
+        <Button isIconOnly size="sm" variant="flat" isLoading={dockLoadingNodeId === nodeId} title="对接" onPress={() => prefetchInstallInfo(nodeId)}>
           <DockIcon className="w-4 h-4" />
         </Button>
       </DropdownTrigger>

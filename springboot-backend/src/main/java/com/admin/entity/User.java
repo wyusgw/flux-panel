@@ -102,7 +102,7 @@ public class User extends BaseEntity {
     private Integer notifyPaymentMode;
 
     /**
-     * 设备离线与恢复推送模式（0-不接收，1-白名单，2-黑名单）
+     * 设备离线与恢复推送模式（0-不接收，1-白名单，2-黑名单，3-全部接收）
      */
     private Integer notifyDeviceMode;
 

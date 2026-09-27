@@ -300,7 +300,7 @@ export default function AccountCenterPage() {
   const handleSavePushSettings = async () => {
     setPushSaving(true);
     try {
-      const res = await updateNotifySettings(paymentMode, deviceMode, deviceMode === 0 ? [] : selectedGroupIds);
+      const res = await updateNotifySettings(paymentMode, deviceMode, (deviceMode === 1 || deviceMode === 2) ? selectedGroupIds : []);
       if (res.code === 0) {
         toast.success('推送设置已保存');
         onPushOpenChange();
@@ -497,10 +497,10 @@ export default function AccountCenterPage() {
               <p className="text-sm font-medium text-foreground">设备离线与恢复</p>
               <ModePicker
                 value={deviceMode}
-                options={[{ value: 0, label: '不接收' }, { value: 1, label: '白名单' }, { value: 2, label: '黑名单' }]}
+                options={[{ value: 0, label: '不接收' }, { value: 3, label: '全部接收' }, { value: 1, label: '白名单' }, { value: 2, label: '黑名单' }]}
                 onChange={setDeviceMode}
               />
-              {deviceMode !== 0 && (
+              {(deviceMode === 1 || deviceMode === 2) && (
                 <div className="mt-2 max-h-48 overflow-y-auto border border-default-200 rounded-medium p-2 flex flex-col gap-1">
                   {deviceGroups.length === 0 && <p className="text-xs text-default-400 px-1 py-2">暂无设备组</p>}
                   {deviceGroups.map((group) => (

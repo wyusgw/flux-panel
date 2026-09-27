@@ -8,10 +8,10 @@ import { Select, SelectItem } from "@heroui/select";
 import { Spinner } from "@heroui/spinner";
 import { Switch } from "@heroui/switch";
 import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from "@heroui/table";
-import { Tooltip } from "@heroui/tooltip";
 import toast from 'react-hot-toast';
 import { getConfigs, updateConfigs, testTelegramNotify, getDeviceGroupList, updateDeviceGroupOfflineConfig, getTelegramSendLogs } from '@/api';
 import { isAdmin } from '@/utils/auth';
+import { HelpTooltip } from '@/components/help-tooltip';
 
 interface TemplateMeta {
   key: string;
@@ -52,14 +52,6 @@ interface TelegramLogRow {
   error: string | null;
   createdTime: number;
 }
-
-const HelpIcon = () => (
-  <svg className="w-3.5 h-3.5 text-default-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <circle cx="12" cy="12" r="9" strokeWidth={1.5} />
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.5 9a2.5 2.5 0 114.096 1.929c-.596.487-1.096 1.054-1.096 1.821V13" />
-    <circle cx="12" cy="16.5" r="0.9" fill="currentColor" stroke="none" />
-  </svg>
-);
 
 const InfoIcon = () => (
   <svg className="w-5 h-5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
@@ -307,8 +299,9 @@ export default function PushNotificationPage() {
       <Card className="settings-panel">
         <CardHeader className="flex flex-row items-center justify-between gap-4 p-4 border-b border-default-100">
           <div className="flex items-center gap-1.5">
-            <h1 className="text-base font-semibold text-foreground">Telegram Bot 推送通道</h1>
-            <Tooltip content="用于向用户 / 管理员发送充值到账、设备上下线等推送通知，采用长轮询方式接收 Telegram 消息，无需公网 HTTPS 入口"><span className="inline-flex items-center"><HelpIcon /></span></Tooltip>
+            <h1 className="text-base font-semibold text-foreground">
+              <HelpTooltip content="用于向用户 / 管理员发送充值到账、设备上下线等推送通知，采用长轮询方式接收 Telegram 消息，无需公网 HTTPS 入口">Telegram Bot 推送通道</HelpTooltip>
+            </h1>
           </div>
           <Button size="sm" color="default" onPress={saveTelegramChannel} isLoading={telegramSaving}>保存通道配置</Button>
         </CardHeader>
@@ -323,15 +316,13 @@ export default function PushNotificationPage() {
           </div>
           <div className="grid grid-cols-1 lg:grid-cols-[minmax(260px,0.75fr)_minmax(360px,1.25fr)] gap-3 lg:gap-8 items-start">
             <label className="text-sm font-medium text-foreground pt-2 inline-flex items-center gap-1 leading-none">
-              Bot 用户名
-              <Tooltip content="保存 Bot Token 后自动校验并回填，用于生成绑定跳转链接，无需手动填写"><span className="inline-flex items-center"><HelpIcon /></span></Tooltip>
+              <HelpTooltip content="保存 Bot Token 后自动校验并回填，用于生成绑定跳转链接，无需手动填写">Bot 用户名</HelpTooltip>
             </label>
             <Input size="sm" autoComplete="off" isReadOnly placeholder="保存 Bot Token 后自动填充" value={telegramUsername} variant="bordered" className="w-full max-w-2xl lg:justify-self-end" />
           </div>
           <div className="grid grid-cols-1 lg:grid-cols-[minmax(260px,0.75fr)_minmax(360px,1.25fr)] gap-3 lg:gap-8 items-start">
             <label className="text-sm font-medium text-foreground pt-2 inline-flex items-center gap-1 leading-none">
-              Webhook URL
-              <Tooltip content="可选。不填则使用长轮询（Poller）模式拉取消息；填写后 Telegram 会改为主动推送到此地址，保存时自动向 Telegram 注册/取消注册"><span className="inline-flex items-center"><HelpIcon /></span></Tooltip>
+              <HelpTooltip content="可选。不填则使用长轮询（Poller）模式拉取消息；填写后 Telegram 会改为主动推送到此地址，保存时自动向 Telegram 注册/取消注册">Webhook URL</HelpTooltip>
             </label>
             <Input
               size="sm"
@@ -370,8 +361,9 @@ export default function PushNotificationPage() {
       {/* 设备离线通知 */}
       <Card className="settings-panel">
         <CardHeader className="flex flex-row items-center gap-1.5 p-4 border-b border-default-100">
-          <h1 className="text-base font-semibold text-foreground">设备离线通知</h1>
-          <Tooltip content="控制设备断线后多久才判定离线、离线后最后一次状态信息保留多久"><span className="inline-flex items-center"><HelpIcon /></span></Tooltip>
+          <h1 className="text-base font-semibold text-foreground">
+            <HelpTooltip content="控制设备断线后多久才判定离线、离线后最后一次状态信息保留多久">设备离线通知</HelpTooltip>
+          </h1>
         </CardHeader>
         <CardBody className="p-4 lg:p-5 space-y-5">
           <div className="flex gap-3 p-3 rounded-medium bg-primary-50 dark:bg-primary-500/10 text-primary-700 dark:text-primary-300 text-xs leading-6">
@@ -389,14 +381,14 @@ export default function PushNotificationPage() {
             <h2 className="text-sm font-semibold text-foreground mb-3">全局默认设置</h2>
             <div className="space-y-3">
               <div className="grid grid-cols-1 lg:grid-cols-[minmax(260px,0.75fr)_minmax(360px,1.25fr)] gap-3 lg:gap-8 items-center">
-                <label className="text-sm text-foreground inline-flex items-center gap-1 leading-none">设备离线宽限期<Tooltip content="设备最后一次心跳超过该时间后才标记为离线"><span className="inline-flex items-center"><HelpIcon /></span></Tooltip></label>
+                <label className="text-sm text-foreground inline-flex items-center gap-1 leading-none"><HelpTooltip content="设备最后一次心跳超过该时间后才标记为离线">设备离线宽限期</HelpTooltip></label>
                 <div className="w-full max-w-2xl lg:justify-self-end flex items-center gap-2">
                   <Switch size="sm" isSelected={graceEnabled} onValueChange={setGraceEnabled} />
                   <Input autoComplete="off" type="number" isDisabled={!graceEnabled} value={graceSeconds} onChange={(e) => setGraceSeconds(e.target.value)} variant="bordered" size="sm" endContent={<span className="text-xs text-default-400">秒</span>} className="max-w-[160px]" />
                 </div>
               </div>
               <div className="grid grid-cols-1 lg:grid-cols-[minmax(260px,0.75fr)_minmax(360px,1.25fr)] gap-3 lg:gap-8 items-center">
-                <label className="text-sm text-foreground inline-flex items-center gap-1 leading-none">设备离线保留期<Tooltip content="设备离线后，最后一次状态信息继续保留展示的时长"><span className="inline-flex items-center"><HelpIcon /></span></Tooltip></label>
+                <label className="text-sm text-foreground inline-flex items-center gap-1 leading-none"><HelpTooltip content="设备离线后，最后一次状态信息继续保留展示的时长">设备离线保留期</HelpTooltip></label>
                 <div className="w-full max-w-2xl lg:justify-self-end flex items-center gap-2">
                   <Switch size="sm" isSelected={retainEnabled} onValueChange={setRetainEnabled} />
                   <Input autoComplete="off" type="number" isDisabled={!retainEnabled} value={retainSeconds} onChange={(e) => setRetainSeconds(e.target.value)} variant="bordered" size="sm" endContent={<span className="text-xs text-default-400">秒</span>} className="max-w-[160px]" />
@@ -450,8 +442,9 @@ export default function PushNotificationPage() {
       <Card className="settings-panel">
         <CardHeader className="flex flex-row items-center justify-between gap-4 p-4 border-b border-default-100">
           <div className="flex items-center gap-1.5">
-            <h1 className="text-base font-semibold text-foreground">消息模板与提醒设置</h1>
-            <Tooltip content="自定义各类 Telegram 通知的正文内容，以及到期/流量提醒的阈值与每日推送时间；标题（含图标）由系统固定生成"><span className="inline-flex items-center"><HelpIcon /></span></Tooltip>
+            <h1 className="text-base font-semibold text-foreground">
+              <HelpTooltip content="自定义各类 Telegram 通知的正文内容，以及到期/流量提醒的阈值与每日推送时间；标题由系统固定生成">消息模板与提醒设置</HelpTooltip>
+            </h1>
           </div>
           <Button size="sm" color="default" onPress={saveTemplates} isLoading={templatesSaving}>保存模板与设置</Button>
         </CardHeader>
@@ -467,8 +460,7 @@ export default function PushNotificationPage() {
             </div>
             <div>
               <label className="text-xs font-medium text-foreground mb-1 block inline-flex items-center gap-1">
-                每日推送时间（小时）
-                <Tooltip content="0-23 的整数，例如 9 表示每天 9:00 左右检查并推送到期/流量提醒"><span className="inline-flex items-center"><HelpIcon /></span></Tooltip>
+                <HelpTooltip content="0-23 的整数，例如 9 表示每天 9:00 左右检查并推送到期/流量提醒">每日推送时间（小时）</HelpTooltip>
               </label>
               <Input autoComplete="off" type="number" size="sm" variant="bordered" value={reminderHour} onChange={(e) => setReminderHour(e.target.value)} />
             </div>
@@ -506,8 +498,9 @@ export default function PushNotificationPage() {
       <Card className="settings-panel">
         <CardHeader className="flex flex-row items-center justify-between gap-4 p-4 border-b border-default-100 flex-wrap">
           <div className="flex items-center gap-1.5">
-            <h1 className="text-base font-semibold text-foreground">发送记录</h1>
-            <Tooltip content="每次尝试发送 Telegram 通知（无论成功/失败）的历史记录，最多展示最近 100 条；记录保留 30 天"><span className="inline-flex items-center"><HelpIcon /></span></Tooltip>
+            <h1 className="text-base font-semibold text-foreground">
+              <HelpTooltip content="每次尝试发送 Telegram 通知（无论成功/失败）的历史记录，最多展示最近 100 条；记录保留 30 天">发送记录</HelpTooltip>
+            </h1>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <Select

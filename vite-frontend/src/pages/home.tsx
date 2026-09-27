@@ -71,9 +71,7 @@ export default function HomePage() {
   return (
     <div className="dashboard-home px-4 lg:px-6 py-5 lg:py-6 max-w-[1200px] mx-auto">
       <section className="mb-5 lg:mb-6">
-        <p className="text-xs font-medium tracking-[0.16em] text-blue-400 uppercase">Welcome</p>
-        <h1 className="mt-1 text-xl font-semibold tracking-tight text-foreground">欢迎使用 {siteConfig.name}</h1>
-        <p className="mt-1 text-sm text-default-500">面板版本 v{siteConfig.version}</p>
+        <h1 className="text-xl font-semibold tracking-tight text-foreground">欢迎使用 {siteConfig.name}</h1>
       </section>
 
       <Card className="dashboard-panel">

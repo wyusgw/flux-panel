@@ -314,10 +314,13 @@ export default function AdminLayout({
     });
 
   useEffect(() => {
+    // managementMenuItems 每次渲染都是新数组引用，不能放进依赖数组——
+    // 否则用户手动点击收起后，这里会在下一次渲染时又把它强制打开
     if (managementMenuItems.some(item => item.path === location.pathname)) {
       setManagementMenuOpen(true);
     }
-  }, [location.pathname, managementMenuItems]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname]);
 
   return (
           <div className={`admin-shell flex ${isMobile ? 'min-h-screen' : 'h-screen'} bg-gray-100 dark:bg-black`}>

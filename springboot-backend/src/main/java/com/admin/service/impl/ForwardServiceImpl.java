@@ -51,6 +51,11 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
     private static final int FORWARD_STATUS_ERROR = -1;
     private static final int TUNNEL_STATUS_ACTIVE = 1;
 
+    // 转发规则「诊断」功能：每个目标做几次 TCP 连接尝试（参考 ping 命令逐次列出结果），
+    // 以及等待节点侧跑完这些尝试的超时时间（要盖过节点侧的最坏情况耗时，见 performTcpPingDiagnosis）
+    private static final int TCP_PING_COUNT = 5;
+    private static final int TCP_PING_WAIT_TIMEOUT_SECONDS = 20;
+
     private static final long BYTES_TO_GB = 1024L * 1024L * 1024L;
 
     @Resource
@@ -776,15 +781,17 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
      */
     private DiagnosisResult performTcpPingDiagnosis(Node node, String targetIp, int port, String description, String leg, Long groupId) {
         try {
-            // 构建TCP ping请求数据
+            // 构建TCP ping请求数据：5次连接尝试，参考 ping 命令的展示方式逐次列出结果
             JSONObject tcpPingData = new JSONObject();
             tcpPingData.put("ip", targetIp);
             tcpPingData.put("port", port);
-            tcpPingData.put("count", 2);
-            tcpPingData.put("timeout", 3000); // 5秒超时
+            tcpPingData.put("count", TCP_PING_COUNT);
+            tcpPingData.put("timeout", 3000); // 每次连接尝试的超时时间（毫秒）
 
-            // 发送TCP ping命令到节点
-            GostDto gostResult = WebSocketServer.send_msg(node.getId(), tcpPingData, "TcpPing");
+            // 发送TCP ping命令到节点；节点侧最坏情况耗时 = count * timeout + (count-1) * 100ms 尝试间隔，
+            // 这里的等待超时要盖过这个最坏情况，否则目标真的不可达时，会在节点侧还没跑完 5 次尝试时
+            // 就被这里提前判定为"请求超时"，掩盖掉本该拿到的"5次全部失败"这个真实诊断结果
+            GostDto gostResult = WebSocketServer.send_msg(node.getId(), tcpPingData, "TcpPing", TCP_PING_WAIT_TIMEOUT_SECONDS);
 
             DiagnosisResult result = new DiagnosisResult();
             result.setNodeId(node.getId());

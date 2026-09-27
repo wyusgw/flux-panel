@@ -29,9 +29,9 @@ public class DeviceGroupDto {
     private String protocol;
 
     /**
-     * 可见用户组ID（为空表示所有用户可见）
+     * 可见用户组ID列表（为空表示所有用户可见）
      */
-    private Long userGroupId;
+    private List<Long> userGroupIds;
 
     private BigDecimal ratio;
 

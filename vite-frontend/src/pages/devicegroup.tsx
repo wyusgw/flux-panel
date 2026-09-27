@@ -24,6 +24,7 @@ import {
   updateNode,
   deleteNode,
   getUserGroupList,
+  getNodeGroupList,
   getNodeInstallCommand,
   resetNodeSecret
 } from "@/api";
@@ -72,7 +73,7 @@ interface DeviceGroupItem {
   name: string;
   nodeId: number | null;
   nodeName?: string;
-  userGroupId: number | null;
+  userGroupIds: number[];
   ratio: number;
   hideInProbe: number;
   direction?: 'inbound' | 'outbound' | 'monitor' | 'both' | 'chain';
@@ -92,9 +93,15 @@ interface NodeItem {
   http?: number;
   tls?: number;
   socks?: number;
+  nodeGroupIds?: number[];
 }
 
 interface UserGroupItem {
+  id: number;
+  name: string;
+}
+
+interface NodeGroupItem {
   id: number;
   name: string;
 }
@@ -118,34 +125,45 @@ interface DeviceGroupForm {
   name: string;
   nodeId: number | null;
   serverIp: string;
-  entryIp: string;
+  entryIps: string[];
   portSta: number;
   portEnd: number;
-  userGroupId: number | null;
+  userGroupIds: number[];
   ratio: number;
   hideInProbe: number;
   direction: 'inbound' | 'outbound' | 'monitor' | 'both' | 'chain';
   protocol: string;
   remark: string;
   chainHops: ChainHopForm[];
+  nodeGroupIds: number[];
 }
 
 const MAX_CHAIN_HOPS = 3;
+const MAX_ENTRY_IPS = 5;
+
+// 入口 IP/域名 存进后端时是逗号拼接的单个字符串（跟转发规则的目标地址是同一套约定），
+// 这里负责跟表单里"一行一个输入框"的字符串数组互相转换
+const parseEntryIps = (value?: string | null): string[] => {
+  const parts = (value || '').split(',').map(s => s.trim()).filter(Boolean);
+  return parts.length > 0 ? parts : [''];
+};
+const joinEntryIps = (values: string[]): string => values.map(v => v.trim()).filter(Boolean).join(',');
 
 const DEFAULT_FORM: DeviceGroupForm = {
   name: '',
   nodeId: null,
   serverIp: '',
-  entryIp: '',
+  entryIps: [''],
   portSta: 1000,
   portEnd: 65535,
-  userGroupId: null,
+  userGroupIds: [],
   ratio: 1,
   hideInProbe: 0,
   direction: 'inbound',
   protocol: 'tls',
   remark: '',
-  chainHops: []
+  chainHops: [],
+  nodeGroupIds: []
 };
 
 const HIDE_OPTIONS = [
@@ -160,6 +178,7 @@ export default function DeviceGroupPage() {
   const [nodes, setNodes] = useState<NodeItem[]>([]);
   const [orphanNodes, setOrphanNodes] = useState<NodeItem[]>([]);
   const [userGroups, setUserGroups] = useState<UserGroupItem[]>([]);
+  const [nodeGroups, setNodeGroups] = useState<NodeGroupItem[]>([]);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [isEdit, setIsEdit] = useState(false);
@@ -188,7 +207,7 @@ export default function DeviceGroupPage() {
 
   const [advancedModalOpen, setAdvancedModalOpen] = useState(false);
   const [advancedTarget, setAdvancedTarget] = useState<NodeItem | null>(null);
-  const [advancedForm, setAdvancedForm] = useState({ http: 0, tls: 0, socks: 0 });
+  const [advancedForm, setAdvancedForm] = useState<{ http: number; tls: number; socks: number; nodeGroupIds: number[] }>({ http: 0, tls: 0, socks: 0, nodeGroupIds: [] });
   const [advancedLoading, setAdvancedLoading] = useState(false);
 
   const [resetModalOpen, setResetModalOpen] = useState(false);
@@ -215,10 +234,11 @@ export default function DeviceGroupPage() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [groupsRes, nodesRes, userGroupsRes] = await Promise.all([
+      const [groupsRes, nodesRes, userGroupsRes, nodeGroupsRes] = await Promise.all([
         getDeviceGroupList(),
         getNodeList(),
-        getUserGroupList()
+        getUserGroupList(),
+        getNodeGroupList()
       ]);
 
       if (groupsRes.code === 0) {
@@ -236,6 +256,10 @@ export default function DeviceGroupPage() {
 
       if (userGroupsRes.code === 0) {
         setUserGroups(userGroupsRes.data || []);
+      }
+
+      if (nodeGroupsRes.code === 0) {
+        setNodeGroups(nodeGroupsRes.data || []);
       }
     } catch (error) {
       console.error('加载数据失败:', error);
@@ -259,15 +283,16 @@ export default function DeviceGroupPage() {
       name: group.name,
       nodeId: group.nodeId,
       serverIp: nodes.find(node => node.id === group.nodeId)?.serverIp || '',
-      entryIp: nodes.find(node => node.id === group.nodeId)?.ip || '',
+      entryIps: parseEntryIps(nodes.find(node => node.id === group.nodeId)?.ip),
       portSta: nodes.find(node => node.id === group.nodeId)?.portSta || 1000,
       portEnd: nodes.find(node => node.id === group.nodeId)?.portEnd || 65535,
-      userGroupId: group.userGroupId,
+      userGroupIds: group.userGroupIds || [],
       ratio: group.ratio,
       hideInProbe: group.hideInProbe,
       direction: group.direction || 'inbound',
       protocol: group.protocol || 'tls',
       remark: group.remark || '',
+      nodeGroupIds: nodes.find(node => node.id === group.nodeId)?.nodeGroupIds || [],
       chainHops: (group.chainHops || [])
         .slice()
         .sort((a, b) => a.hopOrder - b.hopOrder)
@@ -288,7 +313,7 @@ export default function DeviceGroupPage() {
       }
     } else {
       if (!form.serverIp.trim()) newErrors.serverIp = '请输入服务器 IP 或域名';
-      if (!form.entryIp.trim()) newErrors.entryIp = '请输入入口 IP 或域名';
+      if (!form.entryIps.some(ip => ip.trim())) newErrors.entryIp = '请至少输入一个入口 IP 或域名';
     }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -305,7 +330,7 @@ export default function DeviceGroupPage() {
           id: form.id,
           name: form.name,
           direction: form.direction,
-          userGroupId: form.userGroupId,
+          userGroupIds: form.userGroupIds,
           ratio: form.ratio,
           hideInProbe: form.hideInProbe,
           remark: form.remark,
@@ -323,12 +348,12 @@ export default function DeviceGroupPage() {
       }
 
       let nodeId = form.nodeId;
-      const nodeData = { name: form.name, ip: form.entryIp, serverIp: form.serverIp, portSta: form.portSta, portEnd: form.portEnd };
-      if (isEdit && nodeId) {
+      const joinedEntryIp = joinEntryIps(form.entryIps);
+      const nodeData = { name: form.name, ip: joinedEntryIp, serverIp: form.serverIp, portSta: form.portSta, portEnd: form.portEnd, nodeGroupIds: form.nodeGroupIds };
+      if (nodeId) {
+        // 编辑已有设备组，或补全一个已存在但尚未建立设备组的节点，都是更新同一个节点记录
         const nodeRes = await updateNode({ id: nodeId, ...nodeData });
         if (nodeRes.code !== 0) { toast.error(nodeRes.msg || '更新设备失败'); return; }
-      } else if (nodeId) {
-        // 已有设备节点但尚未建立设备组：直接补建设备组，不再重复创建节点。
       } else {
         const nodeRes = await createNode(nodeData);
         if (nodeRes.code !== 0) { toast.error(nodeRes.msg || '创建设备失败'); return; }
@@ -337,7 +362,7 @@ export default function DeviceGroupPage() {
         if (!nodeId) {
           const listRes = await getNodeList();
           if (listRes.code === 0) {
-            const candidates = (listRes.data || []).filter((node: NodeItem) => node.name === form.name && node.ip === form.entryIp && node.serverIp === form.serverIp);
+            const candidates = (listRes.data || []).filter((node: NodeItem) => node.name === form.name && node.ip === joinedEntryIp && node.serverIp === form.serverIp);
             nodeId = candidates.sort((a: NodeItem, b: NodeItem) => b.id - a.id)[0]?.id ?? null;
           }
         }
@@ -407,14 +432,14 @@ export default function DeviceGroupPage() {
     }
   };
 
-  const userGroupName = (id: number | null) => {
-    if (!id) return '所有用户可见';
-    return userGroups.find(g => g.id === id)?.name || `#${id}`;
+  const userGroupNames = (ids?: number[]) => {
+    if (!ids || ids.length === 0) return '所有用户可见';
+    return ids.map(id => userGroups.find(g => g.id === id)?.name || `#${id}`).join('、');
   };
 
   const handleConfigureOrphan = (node: NodeItem) => {
     setIsEdit(false);
-    setForm({ ...DEFAULT_FORM, name: node.name, nodeId: node.id, serverIp: node.serverIp || '', entryIp: node.ip || '', portSta: node.portSta || 1000, portEnd: node.portEnd || 65535 });
+    setForm({ ...DEFAULT_FORM, name: node.name, nodeId: node.id, serverIp: node.serverIp || '', entryIps: parseEntryIps(node.ip), portSta: node.portSta || 1000, portEnd: node.portEnd || 65535, nodeGroupIds: node.nodeGroupIds || [] });
     setErrors({});
     setModalOpen(true);
   };
@@ -443,7 +468,7 @@ export default function DeviceGroupPage() {
   const handleAdvancedEdit = (nodeId: number) => {
     const node = nodes.find(n => n.id === nodeId) || orphanNodes.find(n => n.id === nodeId) || null;
     setAdvancedTarget(node);
-    setAdvancedForm({ http: node?.http || 0, tls: node?.tls || 0, socks: node?.socks || 0 });
+    setAdvancedForm({ http: node?.http || 0, tls: node?.tls || 0, socks: node?.socks || 0, nodeGroupIds: node?.nodeGroupIds || [] });
     setAdvancedModalOpen(true);
   };
 
@@ -634,7 +659,7 @@ export default function DeviceGroupPage() {
         <CardBody className="p-0"><Table removeWrapper aria-label="设备列表" selectionMode="multiple" selectedKeys={selectedKeys} onSelectionChange={setSelectedKeys} disabledKeys={orphanNodes.map(node => `node-${node.id}`)} classNames={{ base: "w-full", table: "w-full management-table-selectable", th: "management-table-heading", td: "management-table-cell" }}>
           <TableHeader><TableColumn className="w-16">排序</TableColumn><TableColumn>设备 ID</TableColumn><TableColumn>名称</TableColumn><TableColumn>角色</TableColumn><TableColumn>服务器</TableColumn><TableColumn>可见用户组</TableColumn><TableColumn>倍率</TableColumn><TableColumn>备注</TableColumn><TableColumn align="end">操作</TableColumn></TableHeader>
           <TableBody emptyContent={<EmptyState />}>{[
-            ...groups.map(group => { const isChainGroup = group.direction === 'chain'; return <TableRow key={`group-${group.id}`} onDragOver={(e: React.DragEvent) => e.preventDefault()} onDrop={() => handleGroupRowDrop(group.id)}><TableCell><span draggable className="cursor-grab active:cursor-grabbing inline-flex" onDragStart={() => { draggedGroupIdRef.current = group.id; }}><DragHandleIcon /></span></TableCell><TableCell>#{group.id}</TableCell><TableCell className="font-medium">{group.name}</TableCell><TableCell>{{ inbound: '入口', outbound: '出口', monitor: '监控', both: '入口＋出口', chain: '链式出口' }[group.direction || 'inbound']}</TableCell><TableCell>{isChainGroup ? <span className="text-default-500">{(group.chainHops || []).length} 跳链路</span> : group.nodeName}</TableCell><TableCell>{userGroupName(group.userGroupId)}</TableCell><TableCell>{group.ratio}</TableCell><TableCell>{group.remark || '—'}</TableCell><TableCell><div className="flex justify-end items-center gap-1">{!isChainGroup && group.nodeId && renderDockMenu(group.nodeId, `${group.name} (#${group.id})`)}<Button isIconOnly size="sm" variant="flat" onPress={() => handleEdit(group)} title="编辑"><EditIcon className="w-4 h-4" /></Button>{!isChainGroup && group.nodeId && <Button isIconOnly size="sm" variant="flat" color="default" onPress={() => handleResetSecret(group.nodeId!)} title="重置 Token"><KeyIcon className="w-4 h-4" /></Button>}{!isChainGroup && group.nodeId && <Button isIconOnly size="sm" variant="flat" onPress={() => handleAdvancedEdit(group.nodeId!)} title="高级编辑"><SettingsIcon className="w-4 h-4" /></Button>}<Button isIconOnly size="sm" variant="flat" color="danger" onPress={() => handleDelete(group)} title="删除"><DeleteIcon className="w-4 h-4" /></Button></div></TableCell></TableRow>; }),
+            ...groups.map(group => { const isChainGroup = group.direction === 'chain'; return <TableRow key={`group-${group.id}`} onDragOver={(e: React.DragEvent) => e.preventDefault()} onDrop={() => handleGroupRowDrop(group.id)}><TableCell><span draggable className="cursor-grab active:cursor-grabbing inline-flex" onDragStart={() => { draggedGroupIdRef.current = group.id; }}><DragHandleIcon /></span></TableCell><TableCell>#{group.id}</TableCell><TableCell className="font-medium">{group.name}</TableCell><TableCell>{{ inbound: '入口', outbound: '出口', monitor: '监控', both: '入口＋出口', chain: '链式出口' }[group.direction || 'inbound']}</TableCell><TableCell>{isChainGroup ? <span className="text-default-500">{(group.chainHops || []).length} 跳链路</span> : group.nodeName}</TableCell><TableCell>{userGroupNames(group.userGroupIds)}</TableCell><TableCell>{group.ratio}</TableCell><TableCell>{group.remark || '—'}</TableCell><TableCell><div className="flex justify-end items-center gap-1">{!isChainGroup && group.nodeId && renderDockMenu(group.nodeId, `${group.name} (#${group.id})`)}<Button isIconOnly size="sm" variant="flat" onPress={() => handleEdit(group)} title="编辑"><EditIcon className="w-4 h-4" /></Button>{!isChainGroup && group.nodeId && <Button isIconOnly size="sm" variant="flat" color="default" onPress={() => handleResetSecret(group.nodeId!)} title="重置 Token"><KeyIcon className="w-4 h-4" /></Button>}{!isChainGroup && group.nodeId && <Button isIconOnly size="sm" variant="flat" onPress={() => handleAdvancedEdit(group.nodeId!)} title="高级编辑"><SettingsIcon className="w-4 h-4" /></Button>}<Button isIconOnly size="sm" variant="flat" color="danger" onPress={() => handleDelete(group)} title="删除"><DeleteIcon className="w-4 h-4" /></Button></div></TableCell></TableRow>; }),
             ...orphanNodes.map(node => <TableRow key={`node-${node.id}`}><TableCell>—</TableCell><TableCell>—</TableCell><TableCell className="font-medium">{node.name}</TableCell><TableCell><span className="text-warning">未配置</span></TableCell><TableCell>{node.serverIp || node.ip || '—'}</TableCell><TableCell>—</TableCell><TableCell>—</TableCell><TableCell>此设备尚未建立设备组</TableCell><TableCell><div className="flex justify-end items-center gap-1">{renderDockMenu(node.id, `${node.name} (#${node.id})`)}<Button isIconOnly size="sm" variant="flat" color="default" onPress={() => handleResetSecret(node.id)} title="重置 Token"><KeyIcon className="w-4 h-4" /></Button><Button isIconOnly size="sm" variant="flat" onPress={() => handleAdvancedEdit(node.id)} title="高级编辑"><SettingsIcon className="w-4 h-4" /></Button><Button isIconOnly size="sm" variant="flat" color="danger" onPress={() => handleDeleteNode(node)} title="删除"><DeleteIcon className="w-4 h-4" /></Button><Button size="sm" color="default" onPress={() => handleConfigureOrphan(node)}>补全配置</Button></div></TableCell></TableRow>)
           ]}</TableBody>
         </Table></CardBody>
@@ -748,12 +773,64 @@ export default function DeviceGroupPage() {
                     <>
                       <Input size="sm" autoComplete="off" label="服务器 IP / 域名" placeholder="例如：203.0.113.10 或 node.example.com" value={form.serverIp} onChange={(e) => setForm(prev => ({ ...prev, serverIp: e.target.value }))} isInvalid={!!errors.serverIp} errorMessage={errors.serverIp} variant="bordered" />
 
-                      <Input size="sm" autoComplete="off" label="入口 IP / 域名" placeholder="用户连接使用的 IP 或域名" value={form.entryIp} onChange={(e) => setForm(prev => ({ ...prev, entryIp: e.target.value }))} isInvalid={!!errors.entryIp} errorMessage={errors.entryIp} variant="bordered" />
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium text-foreground">入口 IP / 域名</span>
+                          <span className="text-xs text-default-400">{form.entryIps.length} / {MAX_ENTRY_IPS}</span>
+                        </div>
+                        {errors.entryIp && <p className="text-xs text-danger">{errors.entryIp}</p>}
+                        <div className="space-y-2">
+                          {form.entryIps.map((ip, index) => (
+                            <div key={index} className="flex items-center gap-2">
+                              <Input
+                                size="sm" autoComplete="off"
+                                placeholder="用户连接使用的 IP 或域名"
+                                value={ip}
+                                onChange={(e) => setForm(prev => ({ ...prev, entryIps: prev.entryIps.map((v, i) => i === index ? e.target.value : v) }))}
+                                variant="bordered"
+                                className="flex-1"
+                              />
+                              <Button
+                                isIconOnly size="sm" variant="light" color="danger"
+                                isDisabled={form.entryIps.length <= 1}
+                                onPress={() => setForm(prev => ({ ...prev, entryIps: prev.entryIps.filter((_, i) => i !== index) }))}
+                                title="删除这一行"
+                              >
+                                <DeleteIcon className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                        <Button
+                          size="sm" variant="flat" className="w-full"
+                          isDisabled={form.entryIps.length >= MAX_ENTRY_IPS}
+                          onPress={() => setForm(prev => ({ ...prev, entryIps: [...prev.entryIps, ''] }))}
+                        >
+                          + 添加一行（{form.entryIps.length} / {MAX_ENTRY_IPS}）
+                        </Button>
+                      </div>
 
                       <div className="grid grid-cols-2 gap-4">
                         <Input size="sm" autoComplete="off" label="起始端口" type="number" value={form.portSta.toString()} onChange={(e) => setForm(prev => ({ ...prev, portSta: Number(e.target.value) || 1000 }))} variant="bordered" />
                         <Input size="sm" autoComplete="off" label="结束端口" type="number" value={form.portEnd.toString()} onChange={(e) => setForm(prev => ({ ...prev, portEnd: Number(e.target.value) || 65535 }))} variant="bordered" />
                       </div>
+
+                      <Select
+                        size="sm"
+                        selectionMode="multiple"
+                        label={<HelpTooltip content="该节点所属的节点组，用于分配套餐/用户组可使用的节点范围；一个节点可以同时属于多个节点组">节点组</HelpTooltip>}
+                        placeholder="未归属任何节点组"
+                        selectedKeys={new Set(form.nodeGroupIds.map(String))}
+                        onSelectionChange={(keys) => {
+                          const ids = Array.from(keys as Set<string>).map(Number);
+                          setForm(prev => ({ ...prev, nodeGroupIds: ids }));
+                        }}
+                        variant="bordered"
+                      >
+                        {nodeGroups.map(group => (
+                          <SelectItem key={group.id.toString()}>{group.name || `#${group.id}`}</SelectItem>
+                        ))}
+                      </Select>
 
                       {(form.direction === 'outbound' || form.direction === 'both') && (
                         <Select
@@ -781,12 +858,13 @@ export default function DeviceGroupPage() {
 
                   <Select
                     size="sm"
-                    label={<HelpTooltip content="仅该用户组的用户可在添加转发规则时看到此设备组">用户组ID</HelpTooltip>}
+                    selectionMode="multiple"
+                    label={<HelpTooltip content="仅所选用户组的用户可在添加转发规则时看到此设备组；一个设备组可以同时对多个用户组可见">用户组</HelpTooltip>}
                     placeholder="留空表示所有用户可见"
-                    selectedKeys={form.userGroupId ? [form.userGroupId.toString()] : []}
+                    selectedKeys={new Set(form.userGroupIds.map(String))}
                     onSelectionChange={(keys) => {
-                      const selectedKey = Array.from(keys)[0] as string;
-                      setForm(prev => ({ ...prev, userGroupId: selectedKey ? parseInt(selectedKey) : null }));
+                      const ids = Array.from(keys as Set<string>).map(Number);
+                      setForm(prev => ({ ...prev, userGroupIds: ids }));
                     }}
                     variant="bordered"
                   >
@@ -865,7 +943,7 @@ export default function DeviceGroupPage() {
                   <div className="text-default-500">入口 IP / 域名</div><div className="font-medium">{configTarget.node?.ip || '—'}</div>
                   <div className="text-default-500">端口范围</div><div className="font-medium">{configTarget.node?.portSta || '—'} - {configTarget.node?.portEnd || '—'}</div>
                   <div className="text-default-500">设备角色</div><div className="font-medium">{configTarget.group ? { inbound: '入口', outbound: '出口', monitor: '监控', both: '入口＋出口', chain: '链式出口' }[configTarget.group.direction || 'inbound'] : '未配置设备组'}</div>
-                  <div className="text-default-500">可见用户组</div><div className="font-medium">{configTarget.group ? userGroupName(configTarget.group.userGroupId) : '—'}</div>
+                  <div className="text-default-500">可见用户组</div><div className="font-medium">{configTarget.group ? userGroupNames(configTarget.group.userGroupIds) : '—'}</div>
                   <div className="text-default-500">流量倍率</div><div className="font-medium">{configTarget.group?.ratio ?? '—'}</div>
                   <div className="text-default-500">备注</div><div className="font-medium">{configTarget.group?.remark || '—'}</div>
                 </div>
@@ -953,6 +1031,24 @@ export default function DeviceGroupPage() {
                     ))}
                   </div>
                 </div>
+
+                <Select
+                  size="sm"
+                  className="mt-4"
+                  selectionMode="multiple"
+                  label={<HelpTooltip content="该节点所属的节点组，用于分配套餐/用户组可使用的节点范围；一个节点可以同时属于多个节点组">节点组</HelpTooltip>}
+                  placeholder="未归属任何节点组"
+                  selectedKeys={new Set(advancedForm.nodeGroupIds.map(String))}
+                  onSelectionChange={(keys) => {
+                    const ids = Array.from(keys as Set<string>).map(Number);
+                    setAdvancedForm(prev => ({ ...prev, nodeGroupIds: ids }));
+                  }}
+                  variant="bordered"
+                >
+                  {nodeGroups.map(group => (
+                    <SelectItem key={group.id.toString()}>{group.name || `#${group.id}`}</SelectItem>
+                  ))}
+                </Select>
               </ModalBody>
               <ModalFooter>
                 <Button variant="light" onPress={onClose}>取消</Button>

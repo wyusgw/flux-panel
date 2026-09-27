@@ -32,7 +32,10 @@ public class DeviceGroupUpdateDto {
      */
     private String protocol;
 
-    private Long userGroupId;
+    /**
+     * 可见用户组ID列表（为空表示所有用户可见）
+     */
+    private List<Long> userGroupIds;
 
     private BigDecimal ratio;
 

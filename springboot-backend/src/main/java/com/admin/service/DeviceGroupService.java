@@ -22,6 +22,11 @@ public interface DeviceGroupService extends IService<DeviceGroup> {
 
     R updateDeviceGroup(DeviceGroupUpdateDto deviceGroupUpdateDto);
 
+    /**
+     * 查询某个设备组绑定的用户组ID列表（空列表表示对所有用户可见）
+     */
+    List<Long> getUserGroupIds(Long deviceGroupId);
+
     R deleteDeviceGroup(Long id);
 
     /**

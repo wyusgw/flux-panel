@@ -965,11 +965,12 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             }
             return R.err("无权限使用设备组：" + group.getName());
         }
-        if (group.getUserGroupId() == null) {
+        List<Long> allowedUserGroupIds = deviceGroupService.getUserGroupIds(group.getId());
+        if (allowedUserGroupIds.isEmpty()) {
             return R.ok();
         }
         User user = userService.getById(userId);
-        if (user == null || user.getGroupId() == null || !user.getGroupId().equals(group.getUserGroupId())) {
+        if (user == null || user.getGroupId() == null || !allowedUserGroupIds.contains(user.getGroupId())) {
             return R.err("无权限使用设备组：" + group.getName());
         }
         return R.ok();

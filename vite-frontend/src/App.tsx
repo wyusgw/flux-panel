@@ -171,7 +171,7 @@ function App() {
           </ProtectedRoute>
         } 
       />
-      <Route 
+      <Route
         path="/dashboard" 
         element={
           <ProtectedRoute>

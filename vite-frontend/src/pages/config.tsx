@@ -575,7 +575,7 @@ export default function ConfigPage() {
                       className="flex-shrink-0"
                       color="default"
                       variant={sectionHasChanges ? 'solid' : 'flat'}
-                      onClick={() => handleSave(section.key)}
+                      onPress={() => handleSave(section.key)}
                       isLoading={saving}
                       isDisabled={!sectionHasChanges}
                     >
@@ -606,12 +606,12 @@ export default function ConfigPage() {
                         <Button size="sm" variant="bordered" onPress={addPaymentChannel}>添加支付渠道</Button>
                       </div>
                       <div className="settings-table-scroll">
-                        <Table removeWrapper aria-label="支付渠道列表" classNames={{ th: "management-table-heading", td: "management-table-cell", table: "payment-channel-table" }}>
-                          <TableHeader><TableColumn>排序</TableColumn><TableColumn>类型</TableColumn><TableColumn>名称</TableColumn><TableColumn>是否启用</TableColumn><TableColumn>操作</TableColumn></TableHeader>
+                        <Table removeWrapper aria-label="支付渠道列表" classNames={{ base: "w-full", th: "management-table-heading", td: "management-table-cell", table: "w-full payment-channel-table" }}>
+                          <TableHeader><TableColumn className="w-16">排序</TableColumn><TableColumn className="w-32">类型</TableColumn><TableColumn>名称</TableColumn><TableColumn className="w-28">是否启用</TableColumn><TableColumn align="end" className="w-44 text-right">操作</TableColumn></TableHeader>
                           <TableBody emptyContent="暂无支付渠道">
                             {paymentChannels.map((channel, index) => <TableRow key={channel.id}>
-                              <TableCell>{index + 1}</TableCell><TableCell>{PAYMENT_TYPES.find(type => type.value === channel.type)?.label}</TableCell><TableCell>{channel.name || '未命名渠道'}</TableCell><TableCell>{channel.enabled ? 'True' : 'False'}</TableCell>
-                              <TableCell><div className="flex gap-2"><Button size="sm" variant="flat" onPress={() => openChannelConfig(channel)}>编辑</Button><Button size="sm" variant="light" color="danger" onPress={() => updatePaymentChannels(paymentChannels.filter(item => item.id !== channel.id))}>删除</Button></div></TableCell>
+                              <TableCell>{index + 1}</TableCell><TableCell>{PAYMENT_TYPES.find(type => type.value === channel.type)?.label}</TableCell><TableCell>{channel.name || '未命名渠道'}</TableCell><TableCell>{channel.enabled ? '启用' : '禁用'}</TableCell>
+                              <TableCell><div className="flex justify-end gap-2"><Button size="sm" variant="flat" onPress={() => openChannelConfig(channel)}>编辑</Button><Button size="sm" variant="light" color="danger" onPress={() => updatePaymentChannels(paymentChannels.filter(item => item.id !== channel.id))}>删除</Button></div></TableCell>
                             </TableRow>)}
                           </TableBody>
                         </Table>

@@ -76,11 +76,15 @@ public class Forward extends BaseEntity{
     /**
      * 入口设备组ID（与 tunnelId 二选一；设备组模式在内存中解析等效隧道）
      */
+    @TableField(updateStrategy = FieldStrategy.IGNORED)
     private Long inDeviceGroupId;
 
     /**
-     * 出口设备组ID（可为空，表示直接端口转发，不经过出口设备）
+     * 出口设备组ID（可为空，表示直接端口转发，不经过出口设备）。
+     * 必须显式声明 IGNORED 更新策略：MyBatis-Plus 默认 UPDATE 会跳过 null 字段，
+     * 否则从"入口+出口"改回纯端口转发（出口设为 null）时，数据库里的旧值永远不会被清空。
      */
+    @TableField(updateStrategy = FieldStrategy.IGNORED)
     private Long outDeviceGroupId;
 
     /**

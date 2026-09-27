@@ -16,6 +16,7 @@ import { EmptyState } from "@/components/empty-state";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { ToastWarningIcon } from "@/components/toast-icons";
 import { HelpTooltip } from "@/components/help-tooltip";
+import { DiagnosisResultItem, DispatchStats, DiagnosisLeg, DiagnosisPanelFeedback } from "@/components/tcp-ping-diagnosis";
 
 import {
   createForward,
@@ -148,35 +149,11 @@ interface AddressItem {
   copying: boolean;
 }
 
-interface PingAttempt {
-  seq: number;
-  success: boolean;
-  timeMs?: number;
-  error?: string;
-}
-
-interface DiagnosisResultItem {
-  success: boolean;
-  description: string;
-  nodeName: string;
-  nodeId?: string | number;
-  groupId?: number | null;
-  leg?: 'inbound' | 'outbound';
-  targetIp: string;
-  targetPort?: number;
-  message?: string;
-  averageTime?: number;
-  packetLoss?: number;
-  dispatchFailed?: boolean;
-  recovered?: boolean;
-  attempts?: PingAttempt[];
-}
-
 interface DiagnosisResult {
   forwardId?: number;
   forwardName: string;
   timestamp: number;
-  dispatchStats?: { sent: number; failed: number; recovered: number };
+  dispatchStats?: DispatchStats;
   results: DiagnosisResultItem[];
 }
 
@@ -804,8 +781,12 @@ export default function ForwardPage() {
     }
   };
 
-  // 诊断转发
+  // 诊断转发：规则被暂停/异常时，转发本身没在运行，诊断没有意义，不允许发起
   const handleDiagnose = async (forward: Forward) => {
+    if (forward.status !== 1) {
+      toast.error('转发规则未处于正常状态，暂不能诊断');
+      return;
+    }
     setCurrentDiagnosisForward(forward);
     setDiagnosisModalOpen(true);
     setDiagnosisLoading(true);
@@ -849,66 +830,6 @@ export default function ForwardPage() {
       setDiagnosisLoading(false);
     }
   };
-
-  // 诊断结果里，某一段诊断的逐次连接尝试明细（类似 ping 输出，一行一次）；
-  // 旧版节点 Agent 未返回 attempts 明细时，回退显示汇总消息
-  const renderDiagnosisLines = (result: DiagnosisResultItem) => {
-    const addr = `${result.targetIp}${result.targetPort ? ':' + result.targetPort : ''}`;
-    if (result.attempts && result.attempts.length > 0) {
-      return (
-        <>
-          {result.attempts.map((attempt) => (
-            <div key={attempt.seq} className="font-mono text-xs text-default-400">
-              {attempt.success
-                ? `连接 ${attempt.seq}: 来自 ${addr} 时间=${attempt.timeMs?.toFixed(0)}ms`
-                : `连接 ${attempt.seq}: 来自 ${addr} 失败${attempt.error ? `（${attempt.error}）` : ''}`}
-            </div>
-          ))}
-          {result.recovered && result.success && (
-            <div className="text-xs text-default-500 pt-1">
-              平均延迟 {result.averageTime?.toFixed(0)}ms · 丢包 {result.packetLoss?.toFixed(0)}%
-            </div>
-          )}
-        </>
-      );
-    }
-    if (result.message) {
-      return <div className="text-xs text-default-400">{result.message}</div>;
-    }
-    return <div className="text-xs text-default-400">无数据</div>;
-  };
-
-  // 入口诊断/出口诊断分区：每一段诊断渲染成一张卡片（名称 + GID），内容逐行展示连接明细
-  const renderDiagnosisLeg = (title: string, subtitle: string, results: DiagnosisResultItem[], emptyText: string) => (
-    <div>
-      <h3 className="text-sm font-semibold text-foreground mb-2">
-        {title} <span className="text-default-400 font-normal">({subtitle})</span>
-      </h3>
-      {results.length === 0 ? (
-        <div className="text-xs text-default-400 border border-default-200 rounded-lg px-4 py-3">{emptyText}</div>
-      ) : (
-        <div className="space-y-3">
-          {results.map((result, index) => {
-            const groupName = findDeviceGroup(result.groupId)?.name;
-            return (
-              <Card key={index} className="shadow-sm border border-default-200 overflow-hidden">
-                <div className="flex items-center justify-between px-4 py-2.5 border-b border-default-100">
-                  <span className="font-semibold text-foreground truncate">{groupName || result.nodeName}</span>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    {result.groupId != null && <Chip size="sm" variant="flat" color="primary">GID: {result.groupId}</Chip>}
-                    {!result.success && <Chip size="sm" variant="flat" color="danger">失败</Chip>}
-                  </div>
-                </div>
-                <div className="px-4 py-3 space-y-1">
-                  {renderDiagnosisLines(result)}
-                </div>
-              </Card>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
 
   // 格式化流量
   const formatFlow = (value: number): string => {
@@ -1541,7 +1462,7 @@ export default function ForwardPage() {
                               <Button isIconOnly size="sm" variant="flat" title={forward.serviceRunning ? '暂停' : '启动'} isDisabled={forward.status !== 1 && forward.status !== 0} onPress={() => handleServiceToggle(forward)}>
                                 {forward.serviceRunning ? <IconPause /> : <IconPlay />}
                               </Button>
-                              <Button isIconOnly size="sm" variant="flat" title="诊断" onPress={() => handleDiagnose(forward)}><IconHelp /></Button>
+                              <Button isIconOnly size="sm" variant="flat" title={forward.status === 1 ? '诊断' : '仅正常状态下可诊断'} isDisabled={forward.status !== 1} onPress={() => handleDiagnose(forward)}><IconHelp /></Button>
                               <Button isIconOnly size="sm" variant="flat" title="复制" onPress={() => handleCopyRule(forward)}><IconCopy /></Button>
                               <Button isIconOnly size="sm" variant="flat" title="编辑" onPress={() => handleEdit(forward)}><IconEdit /></Button>
                               <Button isIconOnly size="sm" variant="flat" color="danger" title="删除" onPress={() => handleDelete(forward)}><IconDelete /></Button>
@@ -2231,19 +2152,9 @@ export default function ForwardPage() {
                     </div>
                   ) : diagnosisResult ? (
                     <div className="space-y-5">
-                      {renderDiagnosisLeg('入口诊断', 'Inbound', diagnosisResult.results.filter(r => r.leg !== 'outbound'), '无数据')}
-                      {renderDiagnosisLeg('出口诊断', 'Outbounds', diagnosisResult.results.filter(r => r.leg === 'outbound'), '此转发为直接端口转发，无独立出口节点')}
-
-                      <div>
-                        <h3 className="text-sm font-semibold text-foreground mb-2">
-                          面板反馈 <span className="text-default-400 font-normal">(Backend)</span>
-                        </h3>
-                        <div className="border border-default-200 rounded-lg px-4 py-3 space-y-1 text-sm">
-                          <div className="flex justify-between"><span className="text-default-500">发出任务</span><span className="font-mono text-foreground">{diagnosisResult.dispatchStats?.sent ?? 0}</span></div>
-                          <div className="flex justify-between"><span className="text-default-500">发出失败</span><span className="font-mono text-foreground">{diagnosisResult.dispatchStats?.failed ?? 0}</span></div>
-                          <div className="flex justify-between"><span className="text-default-500">回收任务</span><span className="font-mono text-foreground">{diagnosisResult.dispatchStats?.recovered ?? 0}</span></div>
-                        </div>
-                      </div>
+                      <DiagnosisLeg title="入口诊断" subtitle="Inbound" results={diagnosisResult.results.filter(r => r.leg !== 'outbound')} emptyText="无数据" resolveGroupName={(id) => findDeviceGroup(id)?.name} />
+                      <DiagnosisLeg title="出口诊断" subtitle="Outbounds" results={diagnosisResult.results.filter(r => r.leg === 'outbound')} emptyText="此转发为直接端口转发，无独立出口节点" resolveGroupName={(id) => findDeviceGroup(id)?.name} />
+                      <DiagnosisPanelFeedback stats={diagnosisResult.dispatchStats} />
                     </div>
                   ) : (
                     <EmptyState />

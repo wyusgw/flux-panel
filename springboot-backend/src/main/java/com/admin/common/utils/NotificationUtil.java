@@ -29,9 +29,10 @@ import java.util.stream.Collectors;
  * 所有方法均对异常静默降级，绝不影响调用方的主流程（充值确认、节点连接处理）。
  * <p>
  * 每类通知的正文支持管理员在推送设置页自定义模板（{@code telegram_tpl_*} 配置项，占位符用 {xxx} 表示，
- * 未配置时使用 DEFAULT_TPL_* 常量作为默认值）；标题（含 emoji）固定由代码生成，与正文一起以
- * Telegram HTML 富文本格式（parse_mode=HTML）发送。占位符对应的变量值一律做 HTML 转义，避免用户可控
- * 内容（节点名、失败原因等）破坏消息格式；管理员自己填写的模板文本本身不转义。
+ * 未配置时使用 DEFAULT_TPL_* 常量作为默认值）；标题固定由代码生成（纯文本，不用 emoji——Telegram 的
+ * sendMessage 不支持在文本里内嵌真实图标，emoji 是唯一的图形化选项，这里选择不用，保持纯文字），
+ * 与正文一起以 Telegram HTML 富文本格式（parse_mode=HTML）发送。占位符对应的变量值一律做 HTML 转义，
+ * 避免用户可控内容（节点名、失败原因等）破坏消息格式；管理员自己填写的模板文本本身不转义。
  * </p>
  */
 @Slf4j
@@ -78,7 +79,7 @@ public class NotificationUtil {
             Map<String, String> vars = new LinkedHashMap<>();
             vars.put("amount", escapeHtml(amount.toPlainString()));
             vars.put("balance", escapeHtml(newBalance.toPlainString()));
-            String text = buildMessage("✅ 充值成功", render("telegram_tpl_payment_success", DEFAULT_TPL_PAYMENT_SUCCESS, vars));
+            String text = buildMessage("充值成功", render("telegram_tpl_payment_success", DEFAULT_TPL_PAYMENT_SUCCESS, vars));
             sendWithRetry(user.getId(), user.getTelegramChatId(), text, "PAYMENT_SUCCESS", token);
         } catch (Exception e) {
             log.warn("发送充值通知失败: {}", e.getMessage());
@@ -103,7 +104,7 @@ public class NotificationUtil {
 
             Map<String, String> vars = new LinkedHashMap<>();
             vars.put("name", escapeHtml(node.getName()));
-            String title = online ? "🟢 设备恢复在线" : "🔴 设备离线";
+            String title = online ? "设备恢复在线" : "设备离线";
             String tplKey = online ? "telegram_tpl_device_online" : "telegram_tpl_device_offline";
             String defaultTpl = online ? DEFAULT_TPL_DEVICE_ONLINE : DEFAULT_TPL_DEVICE_OFFLINE;
             String type = online ? "DEVICE_ONLINE" : "DEVICE_OFFLINE";
@@ -120,7 +121,7 @@ public class NotificationUtil {
             List<User> admins = userService.list(new QueryWrapper<User>()
                     .eq("role_id", 0)
                     .isNotNull("telegram_chat_id"));
-            String adminText = buildMessage("🔔 [管理员通知] " + title, body);
+            String adminText = buildMessage("[管理员通知] " + title, body);
             for (User admin : admins) {
                 if (isBlank(admin.getTelegramChatId())) continue;
                 sendWithRetry(admin.getId(), admin.getTelegramChatId(), adminText, type, token);
@@ -141,7 +142,7 @@ public class NotificationUtil {
             if (isBlank(token)) return;
             Map<String, String> vars = new LinkedHashMap<>();
             vars.put("amount", escapeHtml(amount.toPlainString()));
-            String text = buildMessage("🔄 自动续费成功", render("telegram_tpl_renew_success", DEFAULT_TPL_RENEW_SUCCESS, vars));
+            String text = buildMessage("自动续费成功", render("telegram_tpl_renew_success", DEFAULT_TPL_RENEW_SUCCESS, vars));
             sendWithRetry(user.getId(), user.getTelegramChatId(), text, "RENEW_SUCCESS", token);
         } catch (Exception e) {
             log.warn("发送自动续费成功通知失败: {}", e.getMessage());
@@ -159,7 +160,7 @@ public class NotificationUtil {
             if (isBlank(token)) return;
             Map<String, String> vars = new LinkedHashMap<>();
             vars.put("reason", escapeHtml(isBlank(reason) ? "未知错误" : reason));
-            String text = buildMessage("⚠️ 自动续费失败", render("telegram_tpl_renew_failed", DEFAULT_TPL_RENEW_FAILED, vars));
+            String text = buildMessage("自动续费失败", render("telegram_tpl_renew_failed", DEFAULT_TPL_RENEW_FAILED, vars));
             sendWithRetry(user.getId(), user.getTelegramChatId(), text, "RENEW_FAILED", token);
         } catch (Exception e) {
             log.warn("发送自动续费失败通知失败: {}", e.getMessage());
@@ -177,7 +178,7 @@ public class NotificationUtil {
             if (isBlank(token)) return;
             Map<String, String> vars = new LinkedHashMap<>();
             vars.put("days", String.valueOf(Math.max(diffDays, 0)));
-            String text = buildMessage("⏰ 套餐到期提醒", render("telegram_tpl_expiry_reminder", DEFAULT_TPL_EXPIRY_REMINDER, vars));
+            String text = buildMessage("套餐到期提醒", render("telegram_tpl_expiry_reminder", DEFAULT_TPL_EXPIRY_REMINDER, vars));
             sendWithRetry(user.getId(), user.getTelegramChatId(), text, "EXPIRY_REMINDER", token);
         } catch (Exception e) {
             log.warn("发送到期提醒失败: {}", e.getMessage());
@@ -195,7 +196,7 @@ public class NotificationUtil {
             if (isBlank(token)) return;
             Map<String, String> vars = new LinkedHashMap<>();
             vars.put("percent", String.format("%.0f", usedPercent));
-            String text = buildMessage("📊 流量提醒", render("telegram_tpl_flow_reminder", DEFAULT_TPL_FLOW_REMINDER, vars));
+            String text = buildMessage("流量提醒", render("telegram_tpl_flow_reminder", DEFAULT_TPL_FLOW_REMINDER, vars));
             sendWithRetry(user.getId(), user.getTelegramChatId(), text, "FLOW_REMINDER", token);
         } catch (Exception e) {
             log.warn("发送流量提醒失败: {}", e.getMessage());
@@ -209,7 +210,7 @@ public class NotificationUtil {
         if (user == null || isBlank(user.getTelegramChatId())) return false;
         String token = getConfigValue("telegram_bot_token");
         if (isBlank(token)) return false;
-        String text = buildMessage("🔔 测试消息", "这是一条测试消息，收到即代表 Telegram 通知配置正常。");
+        String text = buildMessage("测试消息", "这是一条测试消息，收到即代表 Telegram 通知配置正常。");
         boolean ok = TelegramBotUtil.sendMessage(token, user.getTelegramChatId(), text, PARSE_MODE_HTML);
         telegramSendLogService.record(user.getId(), user.getTelegramChatId(), "TEST", text, ok, ok ? null : "发送失败");
         return ok;
@@ -262,7 +263,7 @@ public class NotificationUtil {
     }
 
     /**
-     * 拼装最终发送的 HTML 消息：粗体标题（代码固定，含 emoji）+ 空行 + 正文
+     * 拼装最终发送的 HTML 消息：粗体标题（代码固定，纯文本不用 emoji）+ 空行 + 正文
      */
     private String buildMessage(String title, String body) {
         return "<b>" + escapeHtml(title) + "</b>\n\n" + body;

@@ -172,11 +172,13 @@ public class NotificationUtil {
     }
 
     /**
-     * 白名单模式：命中所选设备组才通知；黑名单模式：命中所选设备组则不通知，其余都通知
+     * 白名单模式：命中所选设备组才通知；黑名单模式：命中所选设备组则不通知，其余都通知；
+     * 全部接收模式：不看设备组，任何设备上下线都通知
      */
     private boolean shouldNotifyDevice(User user, List<Long> nodeGroupIds) {
         Integer mode = user.getNotifyDeviceMode();
         if (mode == null || mode == 0) return false;
+        if (mode == 3) return true;
         List<Long> scopeIds = parseIds(user.getNotifyDeviceGroups());
         boolean intersects = nodeGroupIds.stream().anyMatch(scopeIds::contains);
         if (mode == 1) return intersects;

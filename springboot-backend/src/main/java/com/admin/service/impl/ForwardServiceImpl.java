@@ -4,9 +4,11 @@ import com.admin.common.dto.ForwardDto;
 import com.admin.common.dto.ForwardUpdateDto;
 import com.admin.common.dto.ForwardWithTunnelDto;
 import com.admin.common.dto.GostDto;
+import com.admin.common.dto.TcpPingDiagnosisResult;
 import com.admin.common.lang.R;
 import com.admin.common.utils.GostUtil;
 import com.admin.common.utils.JwtUtil;
+import com.admin.common.utils.TcpPingDiagnosisUtil;
 import com.admin.common.utils.TunnelResolver;
 import com.admin.common.utils.WebSocketServer;
 import com.admin.entity.*;
@@ -50,11 +52,6 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
     private static final int FORWARD_STATUS_PAUSED = 0;
     private static final int FORWARD_STATUS_ERROR = -1;
     private static final int TUNNEL_STATUS_ACTIVE = 1;
-
-    // 转发规则「诊断」功能：每个目标做几次 TCP 连接尝试（参考 ping 命令逐次列出结果），
-    // 以及等待节点侧跑完这些尝试的超时时间（要盖过节点侧的最坏情况耗时，见 performTcpPingDiagnosis）
-    private static final int TCP_PING_COUNT = 5;
-    private static final int TCP_PING_WAIT_TIMEOUT_SECONDS = 20;
 
     private static final long BYTES_TO_GB = 1024L * 1024L * 1024L;
 
@@ -586,7 +583,7 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         }
 
 
-        List<DiagnosisResult> results = new ArrayList<>();
+        List<TcpPingDiagnosisResult> results = new ArrayList<>();
         String[] remoteAddresses = forward.getRemoteAddr().split(",");
         // 6. 根据隧道类型执行不同的诊断策略
         if (tunnel.getType() == TUNNEL_TYPE_PORT_FORWARD) {
@@ -599,7 +596,7 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
                     return R.err("无法解析目标地址: " + remoteAddress);
                 }
 
-                DiagnosisResult result = performTcpPingDiagnosis(inNode, targetIp, targetPort, "转发->目标", "inbound", forward.getInDeviceGroupId());
+                TcpPingDiagnosisResult result = TcpPingDiagnosisUtil.performTcpPingDiagnosis(inNode, targetIp, targetPort, "转发->目标", "inbound", forward.getInDeviceGroupId());
                 results.add(result);
             }
         } else {
@@ -610,7 +607,7 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             }
 
             // 入口TCP ping出口（使用转发的出口端口）
-            DiagnosisResult inToOutResult = performTcpPingDiagnosis(inNode, outNode.getServerIp(), forward.getOutPort(), "入口->出口", "inbound", forward.getInDeviceGroupId());
+            TcpPingDiagnosisResult inToOutResult = TcpPingDiagnosisUtil.performTcpPingDiagnosis(inNode, outNode.getServerIp(), forward.getOutPort(), "入口->出口", "inbound", forward.getInDeviceGroupId());
             results.add(inToOutResult);
 
             // 出口TCP ping目标
@@ -621,15 +618,15 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
                 if (targetIp == null || targetPort == -1) {
                     return R.err("无法解析目标地址: " + remoteAddress);
                 }
-                DiagnosisResult outToTargetResult = performTcpPingDiagnosis(outNode, targetIp, targetPort, "出口->目标", "outbound", forward.getOutDeviceGroupId());
+                TcpPingDiagnosisResult outToTargetResult = TcpPingDiagnosisUtil.performTcpPingDiagnosis(outNode, targetIp, targetPort, "出口->目标", "outbound", forward.getOutDeviceGroupId());
                 results.add(outToTargetResult);
             }
 
         }
 
         // 7. 构建诊断报告
-        long dispatchFailedCount = results.stream().filter(DiagnosisResult::isDispatchFailed).count();
-        long recoveredCount = results.stream().filter(DiagnosisResult::isRecovered).count();
+        long dispatchFailedCount = results.stream().filter(TcpPingDiagnosisResult::isDispatchFailed).count();
+        long recoveredCount = results.stream().filter(TcpPingDiagnosisResult::isRecovered).count();
         Map<String, Object> dispatchStats = new HashMap<>();
         dispatchStats.put("sent", results.size());
         dispatchStats.put("failed", dispatchFailedCount);
@@ -776,130 +773,6 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         return -1;
     }
 
-    /**
-     * 执行TCP ping诊断
-     *
-     * @param node        执行TCP ping的节点
-     * @param targetIp    目标IP地址
-     * @param port        目标端口
-     * @param description 诊断描述
-     * @return 诊断结果
-     */
-    private DiagnosisResult performTcpPingDiagnosis(Node node, String targetIp, int port, String description, String leg, Long groupId) {
-        try {
-            // 构建TCP ping请求数据：5次连接尝试，参考 ping 命令的展示方式逐次列出结果
-            JSONObject tcpPingData = new JSONObject();
-            tcpPingData.put("ip", targetIp);
-            tcpPingData.put("port", port);
-            tcpPingData.put("count", TCP_PING_COUNT);
-            tcpPingData.put("timeout", 3000); // 每次连接尝试的超时时间（毫秒）
-
-            // 发送TCP ping命令到节点；节点侧最坏情况耗时 = count * timeout + (count-1) * 100ms 尝试间隔，
-            // 这里的等待超时要盖过这个最坏情况，否则目标真的不可达时，会在节点侧还没跑完 5 次尝试时
-            // 就被这里提前判定为"请求超时"，掩盖掉本该拿到的"5次全部失败"这个真实诊断结果
-            GostDto gostResult = WebSocketServer.send_msg(node.getId(), tcpPingData, "TcpPing", TCP_PING_WAIT_TIMEOUT_SECONDS);
-
-            DiagnosisResult result = new DiagnosisResult();
-            result.setNodeId(node.getId());
-            result.setNodeName(node.getName());
-            result.setGroupId(groupId);
-            result.setLeg(leg);
-            result.setTargetIp(targetIp);
-            result.setTargetPort(port);
-            result.setDescription(description);
-            result.setTimestamp(System.currentTimeMillis());
-            result.setRecovered(gostResult != null && "OK".equals(gostResult.getMsg()));
-            result.setDispatchFailed(!result.isRecovered() && isDispatchFailure(gostResult != null ? gostResult.getMsg() : null));
-
-            if (result.isRecovered()) {
-                // 尝试解析TCP ping响应数据
-                try {
-                    if (gostResult.getData() != null) {
-                        JSONObject tcpPingResponse = (JSONObject) gostResult.getData();
-                        boolean success = tcpPingResponse.getBooleanValue("success");
-
-                        result.setSuccess(success);
-                        result.setAttempts(parsePingAttempts(tcpPingResponse));
-                        if (success) {
-                            result.setMessage("TCP连接成功");
-                            result.setAverageTime(tcpPingResponse.getDoubleValue("averageTime"));
-                            result.setPacketLoss(tcpPingResponse.getDoubleValue("packetLoss"));
-                        } else {
-                            result.setMessage(tcpPingResponse.getString("errorMessage"));
-                            result.setAverageTime(-1.0);
-                            result.setPacketLoss(100.0);
-                        }
-                    } else {
-                        // 没有详细数据，使用默认值
-                        result.setSuccess(true);
-                        result.setMessage("TCP连接成功");
-                        result.setAverageTime(0.0);
-                        result.setPacketLoss(0.0);
-                    }
-                } catch (Exception e) {
-                    // 解析响应数据失败，但TCP ping命令本身成功了
-                    result.setSuccess(true);
-                    result.setMessage("TCP连接成功，但无法解析详细数据");
-                    result.setAverageTime(0.0);
-                    result.setPacketLoss(0.0);
-                }
-            } else {
-                result.setSuccess(false);
-                result.setMessage(gostResult != null ? gostResult.getMsg() : "节点无响应");
-                result.setAverageTime(-1.0);
-                result.setPacketLoss(100.0);
-            }
-
-            return result;
-        } catch (Exception e) {
-            DiagnosisResult result = new DiagnosisResult();
-            result.setNodeId(node.getId());
-            result.setNodeName(node.getName());
-            result.setGroupId(groupId);
-            result.setLeg(leg);
-            result.setTargetIp(targetIp);
-            result.setTargetPort(port);
-            result.setDescription(description);
-            result.setSuccess(false);
-            result.setMessage("诊断执行异常: " + e.getMessage());
-            result.setTimestamp(System.currentTimeMillis());
-            result.setAverageTime(-1.0);
-            result.setPacketLoss(100.0);
-            result.setDispatchFailed(true);
-            return result;
-        }
-    }
-
-    /**
-     * 判断消息是否连节点都没能送达（节点离线/连接已断开/发送本身异常），
-     * 区别于"消息已送达节点，但等待响应超时"（不计入发送失败，也不计入回收成功）
-     */
-    private boolean isDispatchFailure(String msg) {
-        if (msg == null) return true;
-        return msg.contains("不在线") || msg.contains("连接已断开") || msg.startsWith("发送消息失败");
-    }
-
-    /**
-     * 解析 TCP ping 响应中的逐次连接尝试明细（attempts 字段），供前端逐行展示；
-     * 旧版节点 Agent 未返回该字段时返回空列表，前端回退为只显示汇总结果
-     */
-    private List<Map<String, Object>> parsePingAttempts(JSONObject tcpPingResponse) {
-        List<Map<String, Object>> attempts = new ArrayList<>();
-        com.alibaba.fastjson.JSONArray rawAttempts = tcpPingResponse.getJSONArray("attempts");
-        if (rawAttempts == null) {
-            return attempts;
-        }
-        for (int i = 0; i < rawAttempts.size(); i++) {
-            JSONObject attempt = rawAttempts.getJSONObject(i);
-            Map<String, Object> item = new HashMap<>();
-            item.put("seq", attempt.getIntValue("seq"));
-            item.put("success", attempt.getBooleanValue("success"));
-            item.put("timeMs", attempt.getDoubleValue("timeMs"));
-            item.put("error", attempt.getString("error"));
-            attempts.add(item);
-        }
-        return attempts;
-    }
 
     /**
      * 获取当前用户信息
@@ -1843,30 +1716,4 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         }
     }
 
-    /**
-     * 诊断结果数据类
-     */
-    @Data
-    public static class DiagnosisResult {
-        private Long nodeId;
-        private String nodeName;
-        /** 该诊断段所属的设备组ID（旧版隧道模式无设备组概念时为空），供前端展示 GID */
-        private Long groupId;
-        /** inbound-入口诊断，outbound-出口诊断，供前端分区展示 */
-        private String leg;
-        private String targetIp;
-        private Integer targetPort;
-        private String description;
-        private boolean success;
-        private String message;
-        private double averageTime;
-        private double packetLoss;
-        private long timestamp;
-        /** 是否连消息都没能发送到节点（节点离线/连接已断开/发送异常），区别于"发送成功但目标不可达" */
-        private boolean dispatchFailed;
-        /** 是否成功收到节点回复（无论 ping 本身是否成功），用于统计"回收任务"数 */
-        private boolean recovered;
-        /** 每一次 TCP 连接尝试的明细：{seq, success, timeMs, error}，供前端逐行展示（类似 ping 输出） */
-        private List<Map<String, Object>> attempts;
-    }
 }

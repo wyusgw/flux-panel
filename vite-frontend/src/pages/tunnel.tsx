@@ -7,11 +7,11 @@ import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter } from "@herou
 import { Chip } from "@heroui/chip";
 import { Spinner } from "@heroui/spinner";
 import { Divider } from "@heroui/divider";
-import { Alert } from "@heroui/alert";
 import toast from 'react-hot-toast';
 import { EmptyState } from "@/components/empty-state";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { HelpTooltip } from "@/components/help-tooltip";
+import { DiagnosisResultItem, DispatchStats, DiagnosisLeg, DiagnosisPanelFeedback } from "@/components/tcp-ping-diagnosis";
 
 
 import { 
@@ -66,17 +66,8 @@ interface DiagnosisResult {
   tunnelName: string;
   tunnelType: string;
   timestamp: number;
-  results: Array<{
-    success: boolean;
-    description: string;
-    nodeName: string;
-    nodeId: string;
-    targetIp: string;
-    targetPort?: number;
-    message?: string;
-    averageTime?: number;
-    packetLoss?: number;
-  }>;
+  dispatchStats?: DispatchStats;
+  results: DiagnosisResultItem[];
 }
 
 export default function TunnelPage() {
@@ -295,8 +286,12 @@ export default function TunnelPage() {
     }
   };
 
-  // 诊断隧道
+  // 诊断隧道：隧道被禁用时没有在跑，诊断没有意义，不允许发起
   const handleDiagnose = async (tunnel: Tunnel) => {
+    if (tunnel.status !== 1) {
+      toast.error('隧道未处于启用状态，暂不能诊断');
+      return;
+    }
     setCurrentDiagnosisTunnel(tunnel);
     setDiagnosisModalOpen(true);
     setDiagnosisLoading(true);
@@ -400,18 +395,6 @@ export default function TunnelPage() {
     }
   };
 
-
-  // 获取连接质量
-  const getQualityDisplay = (averageTime?: number, packetLoss?: number) => {
-    if (averageTime === undefined || packetLoss === undefined) return null;
-    
-    if (averageTime < 30 && packetLoss === 0) return { text: '优秀', color: 'success' };
-    if (averageTime < 50 && packetLoss === 0) return { text: '很好', color: 'success' };
-    if (averageTime < 100 && packetLoss < 1) return { text: '良好', color: 'primary' };
-    if (averageTime < 150 && packetLoss < 2) return { text: '一般', color: 'warning' };
-    if (averageTime < 200 && packetLoss < 5) return { text: '较差', color: 'warning' };
-    return { text: '很差', color: 'danger' };
-  };
 
   if (loading) {
     return (
@@ -554,6 +537,8 @@ export default function TunnelPage() {
                         variant="flat"
                         color="default"
                         onPress={() => handleDiagnose(tunnel)}
+                        isDisabled={tunnel.status !== 1}
+                        title={tunnel.status === 1 ? '诊断' : '仅启用状态下可诊断'}
                         className="flex-1 min-h-8"
                         startContent={
                           <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
@@ -910,77 +895,10 @@ export default function TunnelPage() {
                       </div>
                     </div>
                   ) : diagnosisResult ? (
-                    <div className="space-y-4">
-                      {diagnosisResult.results.map((result, index) => {
-                        const quality = getQualityDisplay(result.averageTime, result.packetLoss);
-                        
-                        return (
-                          <Card key={index} className={`shadow-sm border ${result.success ? 'border-success' : 'border-danger'}`}>
-                            <CardHeader className="pb-2">
-                              <div className="flex items-center justify-between w-full">
-                                <div className="flex items-center gap-3">
-                                  <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                                    result.success ? 'bg-success text-white' : 'bg-danger text-white'
-                                  }`}>
-                                    {result.success ? '✓' : '✗'}
-                                  </div>
-                                  <div>
-                                    <h4 className="font-semibold">{result.description}</h4>
-                                    <p className="text-small text-default-500">{result.nodeName}</p>
-                                  </div>
-                                </div>
-                                <Chip 
-                                  color={result.success ? 'success' : 'danger'} 
-                                  variant="flat"
-                                >
-                                  {result.success ? '成功' : '失败'}
-                                </Chip>
-                              </div>
-                            </CardHeader>
-                            <CardBody className="pt-0">
-                              {result.success ? (
-                                <div className="space-y-3">
-                                  <div className="grid grid-cols-3 gap-4">
-                                    <div className="text-center">
-                                      <div className="text-2xl font-bold text-primary">{result.averageTime?.toFixed(0)}</div>
-                                      <div className="text-small text-default-500">平均延迟(ms)</div>
-                                    </div>
-                                    <div className="text-center">
-                                      <div className="text-2xl font-bold text-warning">{result.packetLoss?.toFixed(1)}</div>
-                                      <div className="text-small text-default-500">丢包率(%)</div>
-                                    </div>
-                                    <div className="text-center">
-                                      {quality && (
-                                        <>
-                                          <Chip color={quality.color as any} variant="flat" size="lg">
-                                            {quality.text}
-                                          </Chip>
-                                          <div className="text-small text-default-500 mt-1">连接质量</div>
-                                        </>
-                                      )}
-                                    </div>
-                                  </div>
-                                  <div className="text-small text-default-500">
-                                    目标地址: <code className="font-mono">{result.targetIp}{result.targetPort ? ':' + result.targetPort : ''}</code>
-                                  </div>
-                                </div>
-                              ) : (
-                                <div className="space-y-2">
-                                  <div className="text-small text-default-500">
-                                    目标地址: <code className="font-mono">{result.targetIp}{result.targetPort ? ':' + result.targetPort : ''}</code>
-                                  </div>
-                                  <Alert
-                                    color="danger"
-                                    variant="flat"
-                                    title="错误详情"
-                                    description={result.message}
-                                  />
-                                </div>
-                              )}
-                            </CardBody>
-                          </Card>
-                        );
-                      })}
+                    <div className="space-y-5">
+                      <DiagnosisLeg title="入口诊断" subtitle="Inbound" results={diagnosisResult.results.filter(r => r.leg !== 'outbound')} emptyText="无数据" />
+                      <DiagnosisLeg title="出口诊断" subtitle="Outbounds" results={diagnosisResult.results.filter(r => r.leg === 'outbound')} emptyText="此隧道为端口转发，无独立出口节点" />
+                      <DiagnosisPanelFeedback stats={diagnosisResult.dispatchStats} />
                     </div>
                   ) : (
                     <EmptyState />

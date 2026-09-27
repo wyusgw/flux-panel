@@ -435,15 +435,29 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
         String processedServerAddr = processServerAddress(viteConfig.getValue());
 
         String scriptUrl = "https://github.com/wyusgw/flux-panel/releases/latest/download/install.sh";
-        // 自动探测路线：通过加速镜像下载安装脚本，适合大陆网络访问 GitHub 受限的服务器
-        String mirrorScriptUrl = "https://ghfast.top/" + scriptUrl;
-        String execArgs = " -o ./install.sh && chmod +x ./install.sh && ./install.sh"
+        // 自动探测路线：依次尝试多个加速镜像下载安装脚本，全部失败则回退到 GitHub 原始地址，
+        // 适合大陆网络访问 GitHub 受限的服务器
+        String[] mirrorPrefixes = {
+                "https://ghfast.top/",
+                "https://gh-proxy.com/",
+                "https://ghproxy.net/"
+        };
+        String chmodAndRun = "chmod +x ./install.sh && ./install.sh"
                 + " -a " + processedServerAddr   // 服务器地址
                 + " -s " + node.getSecret();     // 节点密钥
 
+        StringBuilder candidateUrls = new StringBuilder();
+        for (String prefix : mirrorPrefixes) {
+            candidateUrls.append("\"").append(prefix).append(scriptUrl).append("\" ");
+        }
+        candidateUrls.append("\"").append(scriptUrl).append("\"");
+        String commandAuto = "(for u in " + candidateUrls
+                + "; do curl -fsSL \"$u\" -o ./install.sh && break; done) && " + chmodAndRun;
+        String commandOverseas = "curl -L " + scriptUrl + " -o ./install.sh && " + chmodAndRun;
+
         JSONObject result = new JSONObject();
-        result.put("commandAuto", "curl -L " + mirrorScriptUrl + execArgs);
-        result.put("commandOverseas", "curl -L " + scriptUrl + execArgs);
+        result.put("commandAuto", commandAuto);
+        result.put("commandOverseas", commandOverseas);
         result.put("addr", processedServerAddr);
         result.put("secret", node.getSecret());
 

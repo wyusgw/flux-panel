@@ -188,16 +188,24 @@ function App() {
           </ProtectedRoute>
         } 
       />
-      <Route 
-        path="/forward" 
+      <Route
+        path="/forward"
         element={
           <ProtectedRoute>
             <ForwardPage />
           </ProtectedRoute>
-        } 
+        }
       />
-      <Route 
-        path="/tunnel" 
+      <Route
+        path="/user-forward"
+        element={
+          <ProtectedRoute>
+            <ForwardPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/tunnel"
         element={
           <ProtectedRoute>
             <TunnelPage />

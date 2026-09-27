@@ -12,6 +12,7 @@ import toast from 'react-hot-toast';
 import { EmptyState } from "@/components/empty-state";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { EditIcon, DeleteIcon } from "@/components/icons";
+import { HelpTooltip } from "@/components/help-tooltip";
 import {
   createPackagePlan,
   getPackagePlanList,
@@ -367,12 +368,11 @@ export default function PackagePlanPage() {
 
                   <Input
                     size="sm" autoComplete="off"
-                    label="有效天数"
+                    label={<HelpTooltip content="购买后套餐的有效天数，0 为永久有效">有效天数</HelpTooltip>}
                     type="number"
                     value={form.durationDays.toString()}
                     onChange={(e) => setForm(prev => ({ ...prev, durationDays: parseInt(e.target.value) || 0 }))}
                     variant="bordered"
-                    description="购买后套餐的有效天数，0 为永久有效"
                     endContent={<span className="px-2 py-0.5 -mr-1 rounded-md bg-default-100 dark:bg-default-50/10 text-default-500 text-xs font-medium">天</span>}
                   />
 
@@ -401,12 +401,11 @@ export default function PackagePlanPage() {
 
                   <Input
                     size="sm" autoComplete="off"
-                    label="用户限速"
+                    label={<HelpTooltip content="该套餐用户的限速，0 为不限速，不同转发规则的限速可叠加">用户限速</HelpTooltip>}
                     type="number"
                     value={form.userSpeedLimit.toString()}
                     onChange={(e) => setForm(prev => ({ ...prev, userSpeedLimit: parseInt(e.target.value) || 0 }))}
                     variant="bordered"
-                    description="该套餐用户的限速，0 为不限速，不同转发规则的限速可叠加"
                     endContent={<span className="px-2 py-0.5 -mr-1 rounded-md bg-default-100 dark:bg-default-50/10 text-default-500 text-xs font-medium">Mbps</span>}
                   />
 

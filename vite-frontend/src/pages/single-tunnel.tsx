@@ -25,6 +25,7 @@ import {
   deleteMySingleTunnelGroup
 } from "@/api";
 import { EditIcon, DeleteIcon } from "@/components/icons";
+import { HelpTooltip } from "@/components/help-tooltip";
 import { EmptyState } from "@/components/empty-state";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 
@@ -438,14 +439,13 @@ export default function SingleTunnelPage() {
                   {!isEdit && (
                     <Select
                       size="sm"
-                      label="角色"
+                      label={<HelpTooltip content="该设备在转发规则中充当入口还是出口">角色</HelpTooltip>}
                       selectedKeys={[form.direction]}
                       onSelectionChange={(keys) => {
                         const selectedKey = Array.from(keys)[0] as 'inbound' | 'outbound';
                         setForm(prev => ({ ...prev, direction: selectedKey || 'outbound' }));
                       }}
                       variant="bordered"
-                      description="该设备在转发规则中充当入口还是出口"
                     >
                       <SelectItem key="inbound">入口</SelectItem>
                       <SelectItem key="outbound">出口</SelectItem>
@@ -464,7 +464,7 @@ export default function SingleTunnelPage() {
                   {form.direction === 'outbound' && (
                     <Select
                       size="sm"
-                      label="协议类型"
+                      label={<HelpTooltip content="该设备作为隧道转发出口节点时使用的传输协议">协议类型</HelpTooltip>}
                       selectedKeys={[form.protocol]}
                       onSelectionChange={(keys) => {
                         const selectedKey = Array.from(keys)[0] as string;
@@ -473,7 +473,6 @@ export default function SingleTunnelPage() {
                         }
                       }}
                       variant="bordered"
-                      description="该设备作为隧道转发出口节点时使用的传输协议"
                     >
                       <SelectItem key="tls">TLS</SelectItem>
                       <SelectItem key="wss">WSS</SelectItem>

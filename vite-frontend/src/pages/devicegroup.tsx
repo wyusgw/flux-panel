@@ -28,6 +28,7 @@ import {
   resetNodeSecret
 } from "@/api";
 import { EditIcon, DeleteIcon, SettingsIcon } from "@/components/icons";
+import { HelpTooltip } from "@/components/help-tooltip";
 import { EmptyState } from "@/components/empty-state";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 
@@ -616,14 +617,13 @@ export default function DeviceGroupPage() {
 
                   <Select
                     size="sm"
-                    label="设备角色"
+                    label={<HelpTooltip content="监控设备仅用于观测；入口＋出口可同时用于两种转发角色；链式出口不绑定自己的物理设备，而是把多个已有的出口设备组串成一条多跳链路">设备角色</HelpTooltip>}
                     selectedKeys={[form.direction]}
                     onSelectionChange={(keys) => {
                       const selectedKey = Array.from(keys)[0] as DeviceGroupForm['direction'];
                       setForm(prev => ({ ...prev, direction: selectedKey || 'inbound' }));
                     }}
                     variant="bordered"
-                    description="监控设备仅用于观测；入口＋出口可同时用于两种转发角色；链式出口不绑定自己的物理设备，而是把多个已有的出口设备组串成一条多跳链路"
                   >
                     <SelectItem key="inbound">入口</SelectItem>
                     <SelectItem key="outbound">出口</SelectItem>
@@ -714,7 +714,7 @@ export default function DeviceGroupPage() {
                       {(form.direction === 'outbound' || form.direction === 'both') && (
                         <Select
                           size="sm"
-                          label="协议类型"
+                          label={<HelpTooltip content="该出口设备组作为隧道转发出口节点时使用的传输协议">协议类型</HelpTooltip>}
                           selectedKeys={[form.protocol]}
                           onSelectionChange={(keys) => {
                             const selectedKey = Array.from(keys)[0] as string;
@@ -723,7 +723,6 @@ export default function DeviceGroupPage() {
                             }
                           }}
                           variant="bordered"
-                          description="该出口设备组作为隧道转发出口节点时使用的传输协议"
                         >
                           <SelectItem key="tls">TLS</SelectItem>
                           <SelectItem key="wss">WSS</SelectItem>
@@ -738,7 +737,7 @@ export default function DeviceGroupPage() {
 
                   <Select
                     size="sm"
-                    label="用户组ID"
+                    label={<HelpTooltip content="仅该用户组的用户可在添加转发规则时看到此设备组">用户组ID</HelpTooltip>}
                     placeholder="留空表示所有用户可见"
                     selectedKeys={form.userGroupId ? [form.userGroupId.toString()] : []}
                     onSelectionChange={(keys) => {
@@ -746,7 +745,6 @@ export default function DeviceGroupPage() {
                       setForm(prev => ({ ...prev, userGroupId: selectedKey ? parseInt(selectedKey) : null }));
                     }}
                     variant="bordered"
-                    description="仅该用户组的用户可在添加转发规则时看到此设备组"
                   >
                     {userGroups.map(group => (
                       <SelectItem key={group.id.toString()}>{group.name || `#${group.id}`}</SelectItem>

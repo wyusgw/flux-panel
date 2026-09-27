@@ -11,6 +11,7 @@ import { Alert } from "@heroui/alert";
 import toast from 'react-hot-toast';
 import { EmptyState } from "@/components/empty-state";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { HelpTooltip } from "@/components/help-tooltip";
 
 
 import { 
@@ -724,7 +725,7 @@ export default function TunnelPage() {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <Input
                         size="sm" autoComplete="off"
-                        label="TCP监听地址"
+                        label={<HelpTooltip content="V6或者双栈填写[::],V4填写0.0.0.0。不懂的就去看文档网站内的说明">TCP监听地址</HelpTooltip>}
                         placeholder="请输入TCP监听地址"
                         value={form.tcpListenAddr}
                         onChange={(e) => setForm(prev => ({ ...prev, tcpListenAddr: e.target.value }))}
@@ -740,7 +741,7 @@ export default function TunnelPage() {
 
                       <Input
                         size="sm" autoComplete="off"
-                        label="UDP监听地址"
+                        label={<HelpTooltip content="V6或者双栈填写[::],V4填写0.0.0.0。不懂的就去看文档网站内的说明">UDP监听地址</HelpTooltip>}
                         placeholder="请输入UDP监听地址"
                         value={form.udpListenAddr}
                         onChange={(e) => setForm(prev => ({ ...prev, udpListenAddr: e.target.value }))}
@@ -759,7 +760,7 @@ export default function TunnelPage() {
                     {form.type === 2 && (
                       <Input
                         size="sm" autoComplete="off"
-                        label="出口网卡名或IP"
+                        label={<HelpTooltip content="用于多IP服务器指定使用那个IP和出口服务器通讯，不懂的默认为空就行">出口网卡名或IP</HelpTooltip>}
                         placeholder="请输入出口网卡名或IP"
                         value={form.interfaceName}
                         onChange={(e) => setForm(prev => ({ ...prev, interfaceName: e.target.value }))}
@@ -842,20 +843,6 @@ export default function TunnelPage() {
                       </>
                     )}
 
-                    <Alert
-                        color="primary"
-                        variant="flat"
-                        title="TCP,UDP监听地址"
-                        description="V6或者双栈填写[::],V4填写0.0.0.0。不懂的就去看文档网站内的说明"
-                        className="mt-4"
-                      />
-                      <Alert
-                        color="primary"
-                        variant="flat"
-                        title="出口网卡名或IP"
-                        description="用于多IP服务器指定使用那个IP和出口服务器通讯，不懂的默认为空就行"
-                        className="mt-4"
-                      />
                   </div>
                 </ModalBody>
                 <ModalFooter>

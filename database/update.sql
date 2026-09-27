@@ -1174,3 +1174,124 @@ SET @sql = IF(@device_group_user_group_id_exists > 0,
 PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
+
+-- user 表：补齐自动续费成功/失败、到期提醒、流量提醒这三类通知的用户级开关（此前只有收款/设备状态两类有开关，
+-- 其余三类不受用户控制、只要绑定了 Telegram 就必发）。默认开启（1），保持迁移前"绑定即必发"的既有行为不变
+SET @sql = (
+  SELECT IF(
+    NOT EXISTS (
+      SELECT 1 FROM information_schema.COLUMNS
+      WHERE table_schema = DATABASE() AND table_name = 'user' AND column_name = 'notify_renew_mode'
+    ),
+    'ALTER TABLE `user` ADD COLUMN `notify_renew_mode` tinyint(4) NOT NULL DEFAULT 1 COMMENT "自动续费成功/失败推送（0-不接收，1-接收）";',
+    'SELECT "Column `notify_renew_mode` already exists in `user`";'
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @sql = (
+  SELECT IF(
+    NOT EXISTS (
+      SELECT 1 FROM information_schema.COLUMNS
+      WHERE table_schema = DATABASE() AND table_name = 'user' AND column_name = 'notify_expiry_mode'
+    ),
+    'ALTER TABLE `user` ADD COLUMN `notify_expiry_mode` tinyint(4) NOT NULL DEFAULT 1 COMMENT "套餐到期提醒推送（0-不接收，1-接收）";',
+    'SELECT "Column `notify_expiry_mode` already exists in `user`";'
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @sql = (
+  SELECT IF(
+    NOT EXISTS (
+      SELECT 1 FROM information_schema.COLUMNS
+      WHERE table_schema = DATABASE() AND table_name = 'user' AND column_name = 'notify_flow_mode'
+    ),
+    'ALTER TABLE `user` ADD COLUMN `notify_flow_mode` tinyint(4) NOT NULL DEFAULT 1 COMMENT "流量即将用尽提醒推送（0-不接收，1-接收）";',
+    'SELECT "Column `notify_flow_mode` already exists in `user`";'
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- user 表：把原本共用的 telegram_last_reminder_date 去重字段拆分为到期/流量各自独立的字段，
+-- 避免同一天内两类提醒共用一个去重标记、互相影响（例如当天已发过到期提醒就不再检查流量提醒）。
+-- 用 @telegram_last_reminder_date_exists 记录旧列是否原本存在，确保数据搬迁只在真正做了迁移时执行一次
+SET @telegram_last_reminder_date_exists = (
+  SELECT COUNT(*) FROM information_schema.COLUMNS
+  WHERE table_schema = DATABASE() AND table_name = 'user' AND column_name = 'telegram_last_reminder_date'
+);
+
+SET @sql = (
+  SELECT IF(
+    NOT EXISTS (
+      SELECT 1 FROM information_schema.COLUMNS
+      WHERE table_schema = DATABASE() AND table_name = 'user' AND column_name = 'telegram_last_expiry_reminder_date'
+    ),
+    'ALTER TABLE `user` ADD COLUMN `telegram_last_expiry_reminder_date` varchar(10) DEFAULT NULL;',
+    'SELECT "Column `telegram_last_expiry_reminder_date` already exists in `user`";'
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @sql = (
+  SELECT IF(
+    NOT EXISTS (
+      SELECT 1 FROM information_schema.COLUMNS
+      WHERE table_schema = DATABASE() AND table_name = 'user' AND column_name = 'telegram_last_flow_reminder_date'
+    ),
+    'ALTER TABLE `user` ADD COLUMN `telegram_last_flow_reminder_date` varchar(10) DEFAULT NULL;',
+    'SELECT "Column `telegram_last_flow_reminder_date` already exists in `user`";'
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @sql = IF(@telegram_last_reminder_date_exists > 0,
+  'UPDATE `user` SET `telegram_last_expiry_reminder_date` = `telegram_last_reminder_date` WHERE `telegram_last_reminder_date` IS NOT NULL AND `telegram_last_expiry_reminder_date` IS NULL;',
+  'SELECT "Column `telegram_last_reminder_date` does not exist, skip expiry dedup migration";'
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @sql = IF(@telegram_last_reminder_date_exists > 0,
+  'UPDATE `user` SET `telegram_last_flow_reminder_date` = `telegram_last_reminder_date` WHERE `telegram_last_reminder_date` IS NOT NULL AND `telegram_last_flow_reminder_date` IS NULL;',
+  'SELECT "Column `telegram_last_reminder_date` does not exist, skip flow dedup migration";'
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @sql = IF(@telegram_last_reminder_date_exists > 0,
+  'ALTER TABLE `user` DROP COLUMN `telegram_last_reminder_date`;',
+  'SELECT "Column `telegram_last_reminder_date` already removed from `user`";'
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- 创建 telegram_send_log 表（如果不存在）：Telegram 通知发送记录，每次尝试发送（无论成功/失败）都登记一条，
+-- 供管理员查看送达状态；与 task_queue 的 TELEGRAM_NOTIFY 类型不同，后者只登记失败后待重试的任务，
+-- 这里覆盖全部发送历史
+CREATE TABLE IF NOT EXISTS `telegram_send_log` (
+  `id` int(10) NOT NULL AUTO_INCREMENT,
+  `user_id` bigint(20) DEFAULT NULL,
+  `chat_id` varchar(64) NOT NULL,
+  `type` varchar(50) NOT NULL,
+  `content` text,
+  `status` varchar(20) NOT NULL,
+  `error` varchar(500) DEFAULT NULL,
+  `created_time` bigint(20) NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_telegram_send_log_created` (`created_time`),
+  KEY `idx_telegram_send_log_type_status` (`type`,`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

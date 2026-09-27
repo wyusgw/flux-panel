@@ -112,8 +112,28 @@ public class User extends BaseEntity {
     private String notifyDeviceGroups;
 
     /**
-     * 上次收到到期/流量提醒推送的日期（yyyy-MM-dd），用于每日去重
+     * 自动续费成功/失败推送模式（0-不接收，1-接收）
      */
-    private String telegramLastReminderDate;
+    private Integer notifyRenewMode;
+
+    /**
+     * 套餐到期提醒推送模式（0-不接收，1-接收）
+     */
+    private Integer notifyExpiryMode;
+
+    /**
+     * 流量即将用尽提醒推送模式（0-不接收，1-接收）
+     */
+    private Integer notifyFlowMode;
+
+    /**
+     * 上次收到到期提醒推送的日期（yyyy-MM-dd），用于每日去重
+     */
+    private String telegramLastExpiryReminderDate;
+
+    /**
+     * 上次收到流量提醒推送的日期（yyyy-MM-dd），用于每日去重
+     */
+    private String telegramLastFlowReminderDate;
 
 }

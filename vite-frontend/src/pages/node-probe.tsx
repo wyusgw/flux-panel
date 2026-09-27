@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@heroui/button';
@@ -39,6 +39,114 @@ type DetailHandlers = {
   onClick: (e: React.MouseEvent) => void;
 };
 
+interface NodeRowProps {
+  node: Node;
+  groupMeta?: DeviceGroup;
+  effectiveAdmin: boolean;
+  regionCode?: string;
+  userGroupName: (id?: number | null) => string;
+  detailHandlers: (key: string, content: React.ReactNode) => DetailHandlers;
+}
+
+// 每个节点每 2 秒推送一次系统信息，之前整张表都在一个大 .map() 里内联渲染，
+// 任何一个节点的数据更新都会导致所有行重新渲染，节点一多就会看起来卡顿。
+// 拆成独立的 memo 组件后，某个节点更新时只有它自己这一行会重渲染。
+const NodeRow = memo(function NodeRow({ node, groupMeta, effectiveAdmin, regionCode, userGroupName, detailHandlers }: NodeRowProps) {
+  const isOnline = node.connectionStatus === 'online';
+  // 节点离线时没有实时数据，连接数/CPU/RAM/存储的详情卡片没有意义，
+  // 只在在线时才可点击查看，离线时不挂载点击/悬停处理器
+  const onlineOnlyHandlers = (key: string, content: React.ReactNode) => isOnline ? detailHandlers(key, content) : {};
+
+  const statusContent = effectiveAdmin ? (
+    <>
+      <PopRow><b>{node.name}</b></PopRow>
+      <PopRow>服务器：{node.serverIp || '—'}</PopRow>
+      <PopRow>入口：{node.ip || '—'}</PopRow>
+      <PopRow>端口：{node.portSta ?? '—'} - {node.portEnd ?? '—'}</PopRow>
+      <PopRow>可见用户组：{userGroupName(groupMeta?.userGroupId)}</PopRow>
+      <PopRow>流量倍率：{groupMeta?.ratio ?? '—'}</PopRow>
+      <PopRow>备注：{groupMeta?.remark || '—'}</PopRow>
+    </>
+  ) : (
+    <>
+      <PopRow><b>{node.name}</b></PopRow>
+      <PopRow>服务器：{node.serverIp || '—'}</PopRow>
+      <PopRow>流量倍率：{groupMeta?.ratio ?? '—'}</PopRow>
+      <PopRow>状态：{isOnline ? '在线' : '离线'}</PopRow>
+    </>
+  );
+  const sendConnContent = (
+    <>
+      <PopRow><b>发送当前连接数</b></PopRow>
+      <PopRow>TCP：{node.systemInfo?.outboundTcpConnections ?? '—'}</PopRow>
+      <PopRow>UDP：{node.systemInfo?.outboundUdpConnections ?? '—'}</PopRow>
+    </>
+  );
+  const receiveConnContent = (
+    <>
+      <PopRow><b>接收当前连接数</b></PopRow>
+      <PopRow>TCP：{node.systemInfo?.inboundTcpConnections ?? '—'}</PopRow>
+      <PopRow>UDP：{node.systemInfo?.inboundUdpConnections ?? '—'}</PopRow>
+    </>
+  );
+  const cpuContent = (
+    <>
+      <PopRow><b>CPU</b></PopRow>
+      <PopRow>型号：{node.systemInfo?.cpuModel || '暂无型号信息'}</PopRow>
+      <PopRow>使用率：{node.systemInfo?.cpuUsage !== undefined ? `${node.systemInfo.cpuUsage.toFixed(1)}%` : '—'}</PopRow>
+    </>
+  );
+  const ramContent = (
+    <>
+      <PopRow><b>RAM</b></PopRow>
+      <PopRow>已用：{formatBytes(node.systemInfo?.memoryUsed)}</PopRow>
+      <PopRow>剩余：{formatBytes(node.systemInfo?.memoryAvailable)}</PopRow>
+      <PopRow>总量：{formatBytes(node.systemInfo?.memoryTotal)}</PopRow>
+    </>
+  );
+  const storageContent = (
+    <>
+      <PopRow>已用：{formatBytes(node.systemInfo?.storageUsed)}</PopRow>
+      <PopRow>剩余：{formatBytes(node.systemInfo?.storageFree)}</PopRow>
+      <PopRow>总量：{formatBytes(node.systemInfo?.storageTotal)}</PopRow>
+    </>
+  );
+
+  return (
+    <tr>
+      <td>
+        <span className={`probe-status probe-clickable ${isOnline ? 'online' : ''}`} {...detailHandlers(`status-${node.id}`, statusContent)}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-label={isOnline ? '在线' : '离线'}>
+            <circle cx="12" cy="12" r="10" />
+            {isOnline ? <path d="M7.8 12.3l2.9 2.9 5.5-5.7" /> : <path d="M9 9l6 6M15 9l-6 6" />}
+          </svg>
+        </span>
+      </td>
+      <td><RegionCell code={regionCode} /></td>
+      <td><RegionCell /></td>
+      <td className={isOnline ? 'probe-clickable' : ''} {...onlineOnlyHandlers(`conn-recv-${node.id}`, receiveConnContent)}>{formatSpeed(node.systemInfo?.uploadSpeed)}</td>
+      <td className={isOnline ? 'probe-clickable' : ''} {...onlineOnlyHandlers(`conn-send-${node.id}`, sendConnContent)}>{formatSpeed(node.systemInfo?.downloadSpeed)}</td>
+      <td className="probe-uptime">{node.systemInfo ? formatUptime(node.systemInfo.uptime) : ''}</td>
+      <td className="probe-pair"><span>{formatBytes(node.systemInfo?.uploadTraffic)}↑</span><span>{formatBytes(node.systemInfo?.downloadTraffic)}↓</span></td>
+      <td>
+        <div className={`probe-meter probe-meter-${meterTone(node.systemInfo?.cpuUsage)} ${isOnline ? 'probe-clickable' : ''}`} {...onlineOnlyHandlers(`cpu-${node.id}`, cpuContent)}>
+          <span style={{ width: `${Math.min(node.systemInfo?.cpuUsage || 0, 100)}%` }} /> <b>{node.systemInfo?.cpuUsage === undefined ? '' : `${node.systemInfo.cpuUsage.toFixed(1)}%`}</b>
+        </div>
+      </td>
+      <td>
+        <div className={`probe-meter probe-meter-${meterTone(node.systemInfo?.memoryUsage)} ${isOnline ? 'probe-clickable' : ''}`} {...onlineOnlyHandlers(`ram-${node.id}`, ramContent)}>
+          <span style={{ width: `${Math.min(node.systemInfo?.memoryUsage || 0, 100)}%` }} /> <b>{node.systemInfo?.memoryUsage === undefined ? '' : `${node.systemInfo.memoryUsage.toFixed(1)}%`}</b>
+        </div>
+      </td>
+      <td>
+        <div className={`probe-meter probe-meter-${meterTone(node.systemInfo?.storageUsage)} ${isOnline ? 'probe-clickable' : ''}`} {...onlineOnlyHandlers(`storage-${node.id}`, storageContent)}>
+          <span style={{ width: `${Math.min(node.systemInfo?.storageUsage || 0, 100)}%` }} /> <b>{node.systemInfo?.storageUsage === undefined ? '' : `${node.systemInfo.storageUsage.toFixed(1)}%`}</b>
+        </div>
+      </td>
+    </tr>
+  );
+});
+
 export default function NodeProbePage() {
   const navigate = useNavigate();
   const admin = isAdmin();
@@ -77,7 +185,7 @@ export default function NodeProbePage() {
     }
   }, []);
 
-  const closeDetail = () => { setDetailKey(null); setDetailContent(null); setDetailRect(null); setDetailPinned(false); };
+  const closeDetail = useCallback(() => { setDetailKey(null); setDetailContent(null); setDetailRect(null); setDetailPinned(false); }, []);
 
   // 移动端窄屏下，弹出的详情卡片若直接贴着触发元素的左边缘定位，很容易超出屏幕右边界被切掉一半，
   // 这里在卡片实际渲染出尺寸后，按视口边界纠正一次位置（水平不超出左右边界，垂直放不下时改往上弹）
@@ -111,10 +219,12 @@ export default function NodeProbePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detailPinned]);
 
-  const userGroupName = (id?: number | null) => id ? (userGroups.find(g => g.id === id)?.name || `#${id}`) : '所有用户可见';
+  const userGroupName = useCallback((id?: number | null) => id ? (userGroups.find(g => g.id === id)?.name || `#${id}`) : '所有用户可见', [userGroups]);
 
-  // 生成某个可点击/悬停单元格的事件处理器：桌面端悬停显示，桌面/移动端点击可"钉住"（再点一次关闭）
-  const detailHandlers = (key: string, content: React.ReactNode): DetailHandlers => ({
+  // 生成某个可点击/悬停单元格的事件处理器：桌面端悬停显示，桌面/移动端点击可"钉住"（再点一次关闭）。
+  // 包一层 useCallback，只在 detailPinned/detailKey 真正变化（用户实际交互）时才换新引用，
+  // 避免每个节点每 2 秒推送系统信息时，这个函数引用跟着变化，连带把所有 NodeRow 的 memo 都打破。
+  const detailHandlers = useCallback((key: string, content: React.ReactNode): DetailHandlers => ({
     onMouseEnter: (e) => {
       if (detailPinned) return;
       const rect = e.currentTarget.getBoundingClientRect();
@@ -129,7 +239,8 @@ export default function NodeProbePage() {
       setDetailRect({ top: rect.top, left: rect.left, bottom: rect.bottom });
       setDetailKey(key); setDetailContent(content); setDetailPinned(true);
     }
-  });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [detailPinned, detailKey, closeDetail]);
 
   // 管理端 WebSocket：之前断线后不会自动重连，导致页面停留在断线前的旧数据（例如节点重启后开机时长看起来没变，
   // 实际上只是没再收到新的推送）。这里加上断线自动重连，并在重连前重新拉取一次最新状态。
@@ -197,14 +308,14 @@ export default function NodeProbePage() {
     });
   }, [nodes]);
 
-  const visibleGroups = groups
+  const visibleGroups = useMemo(() => groups
     .filter(group => effectiveAdmin || (group.hideInProbe ?? 0) === 0)
     .map(group => ({
       label: group.ownerUserId != null ? (group.singleTunnelGroupName || '未分组') : userGroupName(group.userGroupId),
       id: group.id,
       meta: group,
       nodes: nodes.filter(node => node.id === group.nodeId)
-    }));
+    })), [groups, nodes, effectiveAdmin, userGroupName]);
 
   return (
     <main className="probe-page min-h-screen">
@@ -248,101 +359,17 @@ export default function NodeProbePage() {
                         <tr><th>状态</th><th>IPv4 地区</th><th>IPv6 地区</th><th>上行</th><th>下行</th><th>开机时长</th><th>流量</th><th>CPU</th><th>RAM</th><th>存储</th></tr>
                       </thead>
                       <tbody>
-                        {group.nodes.map(node => {
-                          const statusContent = effectiveAdmin ? (
-                            <>
-                              <PopRow><b>{node.name}</b></PopRow>
-                              <PopRow>服务器：{node.serverIp || '—'}</PopRow>
-                              <PopRow>入口：{node.ip || '—'}</PopRow>
-                              <PopRow>端口：{node.portSta ?? '—'} - {node.portEnd ?? '—'}</PopRow>
-                              <PopRow>可见用户组：{userGroupName(group.meta?.userGroupId)}</PopRow>
-                              <PopRow>流量倍率：{group.meta?.ratio ?? '—'}</PopRow>
-                              <PopRow>备注：{group.meta?.remark || '—'}</PopRow>
-                            </>
-                          ) : (
-                            <>
-                              <PopRow><b>{node.name}</b></PopRow>
-                              <PopRow>服务器：{node.serverIp || '—'}</PopRow>
-                              <PopRow>流量倍率：{group.meta?.ratio ?? '—'}</PopRow>
-                              <PopRow>状态：{node.connectionStatus === 'online' ? '在线' : '离线'}</PopRow>
-                            </>
-                          );
-                          const sendConnContent = (
-                            <>
-                              <PopRow><b>发送当前连接数</b></PopRow>
-                              <PopRow>TCP：{node.systemInfo?.outboundTcpConnections ?? '—'}</PopRow>
-                              <PopRow>UDP：{node.systemInfo?.outboundUdpConnections ?? '—'}</PopRow>
-                            </>
-                          );
-                          const receiveConnContent = (
-                            <>
-                              <PopRow><b>接收当前连接数</b></PopRow>
-                              <PopRow>TCP：{node.systemInfo?.inboundTcpConnections ?? '—'}</PopRow>
-                              <PopRow>UDP：{node.systemInfo?.inboundUdpConnections ?? '—'}</PopRow>
-                            </>
-                          );
-                          const cpuContent = (
-                            <>
-                              <PopRow><b>CPU</b></PopRow>
-                              <PopRow>型号：{node.systemInfo?.cpuModel || '暂无型号信息'}</PopRow>
-                              <PopRow>使用率：{node.systemInfo?.cpuUsage !== undefined ? `${node.systemInfo.cpuUsage.toFixed(1)}%` : '—'}</PopRow>
-                            </>
-                          );
-                          const ramContent = (
-                            <>
-                              <PopRow><b>RAM</b></PopRow>
-                              <PopRow>已用：{formatBytes(node.systemInfo?.memoryUsed)}</PopRow>
-                              <PopRow>剩余：{formatBytes(node.systemInfo?.memoryAvailable)}</PopRow>
-                              <PopRow>总量：{formatBytes(node.systemInfo?.memoryTotal)}</PopRow>
-                            </>
-                          );
-                          const storageContent = (
-                            <>
-                              <PopRow>已用：{formatBytes(node.systemInfo?.storageUsed)}</PopRow>
-                              <PopRow>剩余：{formatBytes(node.systemInfo?.storageFree)}</PopRow>
-                              <PopRow>总量：{formatBytes(node.systemInfo?.storageTotal)}</PopRow>
-                            </>
-                          );
-
-                          const isOnline = node.connectionStatus === 'online';
-                          // 节点离线时没有实时数据，连接数/CPU/RAM/存储的详情卡片没有意义，
-                          // 只在在线时才可点击查看，离线时不挂载点击/悬停处理器
-                          const onlineOnlyHandlers = (key: string, content: React.ReactNode) => isOnline ? detailHandlers(key, content) : {};
-
-                          return (
-                            <tr key={node.id}>
-                              <td>
-                                <span className={`probe-status probe-clickable ${isOnline ? 'online' : ''}`} {...detailHandlers(`status-${node.id}`, statusContent)}>
-                                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-label={isOnline ? '在线' : '离线'}>
-                                    <circle cx="12" cy="12" r="10" />
-                                    {isOnline ? <path d="M7.8 12.3l2.9 2.9 5.5-5.7" /> : <path d="M9 9l6 6M15 9l-6 6" />}
-                                  </svg>
-                                </span>
-                              </td>
-                              <td><RegionCell code={node.ip ? regionCodes[node.ip] : undefined} /></td>
-                              <td><RegionCell /></td>
-                              <td className={isOnline ? 'probe-clickable' : ''} {...onlineOnlyHandlers(`conn-recv-${node.id}`, receiveConnContent)}>{formatSpeed(node.systemInfo?.uploadSpeed)}</td>
-                              <td className={isOnline ? 'probe-clickable' : ''} {...onlineOnlyHandlers(`conn-send-${node.id}`, sendConnContent)}>{formatSpeed(node.systemInfo?.downloadSpeed)}</td>
-                              <td className="probe-uptime">{node.systemInfo ? formatUptime(node.systemInfo.uptime) : ''}</td>
-                              <td className="probe-pair"><span>{formatBytes(node.systemInfo?.uploadTraffic)}↑</span><span>{formatBytes(node.systemInfo?.downloadTraffic)}↓</span></td>
-                              <td>
-                                <div className={`probe-meter probe-meter-${meterTone(node.systemInfo?.cpuUsage)} ${isOnline ? 'probe-clickable' : ''}`} {...onlineOnlyHandlers(`cpu-${node.id}`, cpuContent)}>
-                                  <span style={{ width: `${Math.min(node.systemInfo?.cpuUsage || 0, 100)}%` }} /> <b>{node.systemInfo?.cpuUsage === undefined ? '' : `${node.systemInfo.cpuUsage.toFixed(1)}%`}</b>
-                                </div>
-                              </td>
-                              <td>
-                                <div className={`probe-meter probe-meter-${meterTone(node.systemInfo?.memoryUsage)} ${isOnline ? 'probe-clickable' : ''}`} {...onlineOnlyHandlers(`ram-${node.id}`, ramContent)}>
-                                  <span style={{ width: `${Math.min(node.systemInfo?.memoryUsage || 0, 100)}%` }} /> <b>{node.systemInfo?.memoryUsage === undefined ? '' : `${node.systemInfo.memoryUsage.toFixed(1)}%`}</b>
-                                </div>
-                              </td>
-                              <td>
-                                <div className={`probe-meter probe-meter-${meterTone(node.systemInfo?.storageUsage)} ${isOnline ? 'probe-clickable' : ''}`} {...onlineOnlyHandlers(`storage-${node.id}`, storageContent)}>
-                                  <span style={{ width: `${Math.min(node.systemInfo?.storageUsage || 0, 100)}%` }} /> <b>{node.systemInfo?.storageUsage === undefined ? '' : `${node.systemInfo.storageUsage.toFixed(1)}%`}</b>
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
+                        {group.nodes.map(node => (
+                          <NodeRow
+                            key={node.id}
+                            node={node}
+                            groupMeta={group.meta}
+                            effectiveAdmin={effectiveAdmin}
+                            regionCode={node.ip ? regionCodes[node.ip] : undefined}
+                            userGroupName={userGroupName}
+                            detailHandlers={detailHandlers}
+                          />
+                        ))}
                         {group.nodes.length === 0 && <tr><td colSpan={10} className="text-center text-default-500 py-8">此设备组没有可用节点</td></tr>}
                       </tbody>
                     </table>

@@ -10,6 +10,7 @@ import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from 
 import { Dropdown, DropdownTrigger, DropdownMenu, DropdownItem, DropdownSection } from "@heroui/dropdown";
 import { Switch } from "@heroui/switch";
 import toast from 'react-hot-toast';
+import { copyText } from '@/utils/clipboard';
 
 import {
   createDeviceGroup,
@@ -406,8 +407,12 @@ export default function DeviceGroupPage() {
 
   const copyToClipboard = async (text: string, successMsg: string) => {
     try {
-      await navigator.clipboard.writeText(text);
-      toast.success(successMsg);
+      const success = await copyText(text);
+      if (success) {
+        toast.success(successMsg);
+      } else {
+        toast.error('复制失败，请手动复制');
+      }
     } catch (error) {
       toast.error('复制失败，请手动复制');
     }

@@ -10,6 +10,7 @@ import { Dropdown, DropdownTrigger, DropdownMenu, DropdownItem, DropdownSection 
 import { Switch } from "@heroui/switch";
 import { Chip } from "@heroui/chip";
 import toast from 'react-hot-toast';
+import { copyText } from '@/utils/clipboard';
 
 import {
   createUserDeviceGroup,
@@ -197,8 +198,12 @@ export default function SingleTunnelPage() {
 
   const copyToClipboard = async (text: string, successMsg: string) => {
     try {
-      await navigator.clipboard.writeText(text);
-      toast.success(successMsg);
+      const success = await copyText(text);
+      if (success) {
+        toast.success(successMsg);
+      } else {
+        toast.error('复制失败，请手动复制');
+      }
     } catch (error) {
       toast.error('复制失败，请手动复制');
     }

@@ -4,6 +4,7 @@ import { Modal, ModalContent, ModalHeader, ModalBody } from "@heroui/modal";
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import toast from 'react-hot-toast';
+import { copyText } from '@/utils/clipboard';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 
@@ -549,8 +550,12 @@ export default function DashboardPage() {
 
   const copyToClipboard = async (text: string) => {
     try {
-      await navigator.clipboard.writeText(text);
-      toast.success(`已复制`);
+      const success = await copyText(text);
+      if (success) {
+        toast.success(`已复制`);
+      } else {
+        toast.error('复制失败');
+      }
     } catch (error) {
       toast.error('复制失败');
     }

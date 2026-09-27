@@ -184,22 +184,17 @@ export default function IndexPage() {
         return;
       }
 
-      // 检查是否需要强制修改密码
-      if (response.data.requirePasswordChange) {
-        localStorage.setItem('token', response.data.token);
-        localStorage.setItem("role_id", response.data.role_id.toString());
-        localStorage.setItem("name", response.data.name);
-        localStorage.setItem("admin", (response.data.role_id === 0).toString());
-        toast.success('检测到默认密码，即将跳转到修改密码页面');
-        navigate("/change-password");
-        return;
-      }
-
       // 保存登录信息
       localStorage.setItem('token', response.data.token);
       localStorage.setItem("role_id", response.data.role_id.toString());
       localStorage.setItem("name", response.data.name);
       localStorage.setItem("admin", (response.data.role_id === 0).toString());
+
+      // 检测到默认账号密码：不再强制跳转到独立的修改密码页面阻断使用，
+      // 而是正常进入主页，由布局组件弹出"修改密码"弹窗提醒（可关闭，不阻塞使用）
+      if (response.data.requirePasswordChange) {
+        localStorage.setItem('promptPasswordChange', 'true');
+      }
 
       // 登录成功
       toast('登录成功');

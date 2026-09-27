@@ -3,7 +3,6 @@ import { useEffect, useState } from "react";
 
 import IndexPage from "@/pages/index";
 import RegisterPage from "@/pages/register";
-import ChangePasswordPage from "@/pages/change-password";
 import AdminDashboardPage from "@/pages/admin-dashboard";
 import HomePage from "@/pages/home";
 import ForwardPage from "@/pages/forward";
@@ -164,14 +163,6 @@ function App() {
     <Routes>
       <Route path="/" element={<LoginRoute />} />
       <Route path="/register" element={<RegisterPage />} />
-      <Route 
-        path="/change-password" 
-        element={
-          <ProtectedRoute skipLayout={true}>
-            <ChangePasswordPage />
-          </ProtectedRoute>
-        } 
-      />
       <Route
         path="/dashboard" 
         element={

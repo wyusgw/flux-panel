@@ -804,8 +804,12 @@ export default function ForwardPage() {
     }
   };
 
-  // 诊断转发
+  // 诊断转发：规则被暂停/异常时，转发本身没在运行，诊断没有意义，不允许发起
   const handleDiagnose = async (forward: Forward) => {
+    if (forward.status !== 1) {
+      toast.error('转发规则未处于正常状态，暂不能诊断');
+      return;
+    }
     setCurrentDiagnosisForward(forward);
     setDiagnosisModalOpen(true);
     setDiagnosisLoading(true);
@@ -1541,7 +1545,7 @@ export default function ForwardPage() {
                               <Button isIconOnly size="sm" variant="flat" title={forward.serviceRunning ? '暂停' : '启动'} isDisabled={forward.status !== 1 && forward.status !== 0} onPress={() => handleServiceToggle(forward)}>
                                 {forward.serviceRunning ? <IconPause /> : <IconPlay />}
                               </Button>
-                              <Button isIconOnly size="sm" variant="flat" title="诊断" onPress={() => handleDiagnose(forward)}><IconHelp /></Button>
+                              <Button isIconOnly size="sm" variant="flat" title={forward.status === 1 ? '诊断' : '仅正常状态下可诊断'} isDisabled={forward.status !== 1} onPress={() => handleDiagnose(forward)}><IconHelp /></Button>
                               <Button isIconOnly size="sm" variant="flat" title="复制" onPress={() => handleCopyRule(forward)}><IconCopy /></Button>
                               <Button isIconOnly size="sm" variant="flat" title="编辑" onPress={() => handleEdit(forward)}><IconEdit /></Button>
                               <Button isIconOnly size="sm" variant="flat" color="danger" title="删除" onPress={() => handleDelete(forward)}><IconDelete /></Button>

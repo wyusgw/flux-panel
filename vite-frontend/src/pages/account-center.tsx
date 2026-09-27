@@ -484,45 +484,59 @@ export default function AccountCenterPage() {
           <ModalBody className="space-y-4">
             <p className="text-xs text-default-500">通道：Telegram（需先完成账号关联）</p>
 
-            <div className="space-y-2">
-              <p className="text-sm font-medium text-foreground">收款信息</p>
-              <ModePicker
-                value={paymentMode}
-                options={[{ value: 0, label: '不接收' }, { value: 1, label: '接收' }]}
-                onChange={setPaymentMode}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <p className="text-sm font-medium text-foreground">设备离线与恢复</p>
-              <ModePicker
-                value={deviceMode}
-                options={[{ value: 0, label: '不接收' }, { value: 3, label: '全部接收' }, { value: 1, label: '白名单' }, { value: 2, label: '黑名单' }]}
-                onChange={setDeviceMode}
-              />
-              {(deviceMode === 1 || deviceMode === 2) && (
-                <div className="mt-2 max-h-48 overflow-y-auto border border-default-200 rounded-medium p-2 flex flex-col gap-1">
-                  {deviceGroups.length === 0 && <p className="text-xs text-default-400 px-1 py-2">暂无设备组</p>}
-                  {deviceGroups.map((group) => (
-                    <Checkbox
-                      key={group.id}
-                      size="sm"
-                      isSelected={selectedGroupIds.includes(group.id)}
-                      onValueChange={() => toggleGroupSelected(group.id)}
-                    >
-                      <span className="text-sm">{group.name}</span>
-                    </Checkbox>
-                  ))}
-                  <p className="text-xs text-default-400 px-1 pt-1">
-                    {deviceMode === 1 ? '仅勾选的设备组会收到通知' : '除勾选的设备组外，其余都会收到通知'}
-                  </p>
+            {isAdminUser ? (
+              <>
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-foreground">收款信息</p>
+                  <ModePicker
+                    value={paymentMode}
+                    options={[{ value: 0, label: '不接收' }, { value: 1, label: '接收' }]}
+                    onChange={setPaymentMode}
+                  />
                 </div>
-              )}
-            </div>
+
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-foreground">设备离线与恢复</p>
+                  <ModePicker
+                    value={deviceMode}
+                    options={[{ value: 0, label: '不接收' }, { value: 3, label: '全部接收' }, { value: 1, label: '白名单' }, { value: 2, label: '黑名单' }]}
+                    onChange={setDeviceMode}
+                  />
+                  {(deviceMode === 1 || deviceMode === 2) && (
+                    <div className="mt-2 max-h-48 overflow-y-auto border border-default-200 rounded-medium p-2 flex flex-col gap-1">
+                      {deviceGroups.length === 0 && <p className="text-xs text-default-400 px-1 py-2">暂无设备组</p>}
+                      {deviceGroups.map((group) => (
+                        <Checkbox
+                          key={group.id}
+                          size="sm"
+                          isSelected={selectedGroupIds.includes(group.id)}
+                          onValueChange={() => toggleGroupSelected(group.id)}
+                        >
+                          <span className="text-sm">{group.name}</span>
+                        </Checkbox>
+                      ))}
+                      <p className="text-xs text-default-400 px-1 pt-1">
+                        {deviceMode === 1 ? '仅勾选的设备组会收到通知' : '除勾选的设备组外，其余都会收到通知'}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : (
+              <p className="text-sm text-default-500">
+                关联后将自动通过 Telegram 接收续费提醒：套餐到期提醒、自动续费成功/失败、流量即将用尽提醒，无需额外设置。
+              </p>
+            )}
           </ModalBody>
           <ModalFooter>
-            <Button variant="light" onPress={() => onPushOpenChange()}>取消</Button>
-            <Button color="default" isLoading={pushSaving} onPress={handleSavePushSettings}>确定</Button>
+            {isAdminUser ? (
+              <>
+                <Button variant="light" onPress={() => onPushOpenChange()}>取消</Button>
+                <Button color="default" isLoading={pushSaving} onPress={handleSavePushSettings}>确定</Button>
+              </>
+            ) : (
+              <Button color="default" onPress={() => onPushOpenChange()}>知道了</Button>
+            )}
           </ModalFooter>
         </ModalContent>
       </Modal>

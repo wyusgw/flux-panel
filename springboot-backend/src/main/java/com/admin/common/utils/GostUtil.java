@@ -364,9 +364,19 @@ public class GostUtil {
             service.put("addr", tunnel.getUdpListenAddr() + ":" + in_port);
         }
 
+        JSONObject metadata = null;
         if (StringUtils.isNotBlank(interfaceName)) {
-            JSONObject metadata = new JSONObject();
+            metadata = new JSONObject();
             metadata.put("interface", interfaceName);
+        }
+        // 接受 Proxy Protocol 需配置在 service 顶层 metadata，gost 只从这里读取，配置在 listener.metadata 下不会生效
+        if (acceptProxyProtocol != null && acceptProxyProtocol > 0) {
+            if (metadata == null) {
+                metadata = new JSONObject();
+            }
+            metadata.put("proxyProtocol", acceptProxyProtocol);
+        }
+        if (metadata != null) {
             service.put("metadata", metadata);
         }
 
@@ -386,7 +396,7 @@ public class GostUtil {
         service.put("handler", handler);
 
         // 配置监听器
-        JSONObject listener = createListener(protocol, acceptProxyProtocol);
+        JSONObject listener = createListener(protocol);
         service.put("listener", listener);
 
         // 端口转发需要配置转发器
@@ -416,22 +426,12 @@ public class GostUtil {
         return handler;
     }
 
-    private static JSONObject createListener(String protocol, Integer acceptProxyProtocol) {
+    private static JSONObject createListener(String protocol) {
         JSONObject listener = new JSONObject();
         listener.put("type", protocol);
-        JSONObject metadata = null;
         if (Objects.equals(protocol, "udp")){
-            metadata = new JSONObject();
+            JSONObject metadata = new JSONObject();
             metadata.put("keepAlive", true);
-        }
-        // 接受 Proxy Protocol（入站连接需携带 PP 头）
-        if (acceptProxyProtocol != null && acceptProxyProtocol > 0) {
-            if (metadata == null) {
-                metadata = new JSONObject();
-            }
-            metadata.put("proxyProtocol", acceptProxyProtocol);
-        }
-        if (metadata != null) {
             listener.put("metadata", metadata);
         }
         return listener;

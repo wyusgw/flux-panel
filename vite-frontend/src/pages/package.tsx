@@ -297,11 +297,11 @@ export default function PackagePlanPage() {
                   <TableCell className="font-medium">{plan.name}（#{plan.id}）</TableCell>
                   <TableCell>{plan.type}</TableCell>
                   <TableCell>{groupName(plan.groupId)}</TableCell>
-                  <TableCell>{plan.traffic} GiB</TableCell>
+                  <TableCell>{plan.traffic > 0 ? `${plan.traffic} GiB` : '不限流量'}</TableCell>
                   <TableCell>{plan.durationDays > 0 ? `${plan.durationDays} 天` : '永久'}</TableCell>
-                  <TableCell>{plan.maxRules}</TableCell>
+                  <TableCell>{plan.maxRules > 0 ? plan.maxRules : '不限'}</TableCell>
                   <TableCell>{plan.userSpeedLimit > 0 ? `${plan.userSpeedLimit} Mbps` : '不限速'}</TableCell>
-                  <TableCell>{plan.price} 元</TableCell>
+                  <TableCell>{plan.price > 0 ? `${plan.price} 元` : '免费'}</TableCell>
                   <TableCell>{plan.hidden === 1 ? '是' : '否'}</TableCell>
                   <TableCell>
                     <div className="flex justify-end items-center gap-1">
@@ -356,7 +356,7 @@ export default function PackagePlanPage() {
 
                   <Input
                     size="sm" autoComplete="off"
-                    label="可用流量"
+                    label={<HelpTooltip content="购买后套餐的可用流量，0 为不限流量">可用流量</HelpTooltip>}
                     type="number"
                     value={form.traffic.toString()}
                     onChange={(e) => setForm(prev => ({ ...prev, traffic: parseInt(e.target.value) || 0 }))}
@@ -378,7 +378,7 @@ export default function PackagePlanPage() {
 
                   <Input
                     size="sm" autoComplete="off"
-                    label="规则数"
+                    label={<HelpTooltip content="购买后可创建的最大转发规则数，0 为不限规则数">规则数</HelpTooltip>}
                     type="number"
                     value={form.maxRules.toString()}
                     onChange={(e) => setForm(prev => ({ ...prev, maxRules: parseInt(e.target.value) || 0 }))}
@@ -389,7 +389,7 @@ export default function PackagePlanPage() {
 
                   <Input
                     size="sm" autoComplete="off"
-                    label="价格"
+                    label={<HelpTooltip content="套餐价格，0 为免费">价格</HelpTooltip>}
                     type="number"
                     value={form.price.toString()}
                     onChange={(e) => setForm(prev => ({ ...prev, price: parseFloat(e.target.value) || 0 }))}

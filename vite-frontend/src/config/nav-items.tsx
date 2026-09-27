@@ -69,6 +69,17 @@ export const primaryNavItems: NavItem[] = [
     )
   },
   {
+    path: '/looking-glass',
+    label: '网络诊断',
+    icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 20 20">
+        <circle cx="10" cy="10" r="1.5" fill="currentColor" stroke="none" />
+        <circle cx="10" cy="10" r="4" />
+        <circle cx="10" cy="10" r="7.5" />
+      </svg>
+    )
+  },
+  {
     path: '/node',
     label: '节点状态',
     icon: (

@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync" // 新增：用于管理连接状态的互斥锁
@@ -117,6 +119,24 @@ type PingAttempt struct {
 	Success bool    `json:"success"`         // 该次连接是否成功
 	TimeMs  float64 `json:"timeMs"`          // 连接耗时(ms)，失败时为0
 	Error   string  `json:"error,omitempty"` // 失败原因
+}
+
+// NetworkDiagnosisRequest Looking Glass 网络诊断请求结构体，Traceroute/MTR/DNS 查询/ICMP Ping 共用
+type NetworkDiagnosisRequest struct {
+	Host      string `json:"host"`
+	MaxHops   int    `json:"maxHops"`
+	RequestId string `json:"requestId,omitempty"`
+}
+
+// NetworkDiagnosisResponse Looking Glass 网络诊断响应结构体：直接返回系统命令的原始文本输出，
+// 不做逐跳/逐行结构化解析（不同系统/版本的输出格式差异较大，解析成结构化数据容易漏跳或出错，
+// 面板端用等宽字体原样显示即可，这也是多数公开 Looking Glass 工具的做法）
+type NetworkDiagnosisResponse struct {
+	Host         string `json:"host"`
+	Success      bool   `json:"success"`
+	Output       string `json:"output,omitempty"`
+	ErrorMessage string `json:"errorMessage,omitempty"`
+	RequestId    string `json:"requestId,omitempty"`
 }
 
 type WebSocketReporter struct {
@@ -651,6 +671,28 @@ func (w *WebSocketReporter) routeCommand(cmd CommandMessage) {
 		tcpPingResult, err = w.handleTcpPing(cmd.Data)
 		response.Type = "TcpPingResponse"
 		response.Data = tcpPingResult
+
+	// Looking Glass 网络诊断命令
+	case "Traceroute":
+		var traceResult NetworkDiagnosisResponse
+		traceResult, err = w.handleTraceroute(cmd.Data)
+		response.Type = "TracerouteResponse"
+		response.Data = traceResult
+	case "Mtr":
+		var mtrResult NetworkDiagnosisResponse
+		mtrResult, err = w.handleMtr(cmd.Data)
+		response.Type = "MtrResponse"
+		response.Data = mtrResult
+	case "DnsQuery":
+		var dnsResult NetworkDiagnosisResponse
+		dnsResult, err = w.handleDnsQuery(cmd.Data)
+		response.Type = "DnsQueryResponse"
+		response.Data = dnsResult
+	case "IcmpPing":
+		var icmpResult NetworkDiagnosisResponse
+		icmpResult, err = w.handleIcmpPing(cmd.Data)
+		response.Type = "IcmpPingResponse"
+		response.Data = icmpResult
 
 	// Protocol blocking switches
 	case "SetProtocol":
@@ -1303,6 +1345,136 @@ func (w *WebSocketReporter) handleTcpPing(data interface{}) (TcpPingResponse, er
 	}
 
 	return response, nil
+}
+
+// runDiagnosisCommand 是 Traceroute/MTR/DNS 查询/ICMP Ping 共用的执行骨架：校验目标地址、
+// 起一个带超时的 exec.CommandContext（由 buildCmd 决定具体命令与参数，不经过 shell 解释，
+// 不存在命令注入风险），原样返回命令的原始文本输出，不做结构化解析（不同系统/版本输出差异大，
+// 解析容易出错，等宽字体原样展示即可，这也是多数公开 Looking Glass 工具的做法）。
+func (w *WebSocketReporter) runDiagnosisCommand(
+	data interface{},
+	timeout time.Duration,
+	notInstalledMsg string,
+	timeoutMsg string,
+	buildCmd func(ctx context.Context, host string, maxHops int) *exec.Cmd,
+) (NetworkDiagnosisResponse, error) {
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		return NetworkDiagnosisResponse{}, fmt.Errorf("序列化诊断请求数据失败: %v", err)
+	}
+
+	var req NetworkDiagnosisRequest
+	if err := json.Unmarshal(jsonData, &req); err != nil {
+		return NetworkDiagnosisResponse{}, fmt.Errorf("解析诊断请求失败: %v", err)
+	}
+
+	req.Host = strings.TrimSpace(req.Host)
+	if req.Host == "" {
+		return NetworkDiagnosisResponse{Success: false, ErrorMessage: "目标地址不能为空", RequestId: req.RequestId}, nil
+	}
+	if len(req.Host) > 253 {
+		return NetworkDiagnosisResponse{Host: req.Host, Success: false, ErrorMessage: "目标地址过长", RequestId: req.RequestId}, nil
+	}
+	if net.ParseIP(req.Host) == nil && !isValidHostname(req.Host) {
+		return NetworkDiagnosisResponse{Host: req.Host, Success: false, ErrorMessage: "无效的IP地址或主机名", RequestId: req.RequestId}, nil
+	}
+
+	if req.MaxHops <= 0 || req.MaxHops > 64 {
+		req.MaxHops = 20
+	}
+
+	// 面板通过 WebSocketServer.send_msg 同步等待响应，这里的超时必须比 Java 侧的等待窗口
+	// 留出安全余量提前结束，否则命令跑完时响应早已被面板判定超时丢弃。
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	cmd := buildCmd(ctx, req.Host, req.MaxHops)
+	output, runErr := cmd.CombinedOutput()
+	response := NetworkDiagnosisResponse{
+		Host:      req.Host,
+		RequestId: req.RequestId,
+		Output:    string(output),
+	}
+
+	if runErr != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			response.Success = false
+			response.ErrorMessage = timeoutMsg
+			return response, nil
+		}
+		if _, ok := runErr.(*exec.ExitError); !ok {
+			// 命令本身没找到/无法执行（例如节点未安装对应工具），而不是命令跑完后返回非0退出码
+			response.Success = false
+			response.ErrorMessage = notInstalledMsg
+			return response, nil
+		}
+		// 部分工具（如 traceroute/ping 个别探测超时）即使以非0退出码结束通常仍有有效输出，
+		// 这里不当作失败处理，原样把输出显示给用户自行判断
+	}
+
+	response.Success = true
+	if strings.TrimSpace(response.Output) == "" {
+		response.Success = false
+		response.ErrorMessage = "未获取到诊断输出"
+	}
+	return response, nil
+}
+
+// handleTraceroute 路由跟踪：调用系统自带的 traceroute（Linux/macOS）或 tracert（Windows）
+func (w *WebSocketReporter) handleTraceroute(data interface{}) (NetworkDiagnosisResponse, error) {
+	return w.runDiagnosisCommand(data, 18*time.Second,
+		"此节点未安装 traceroute 工具，请先在节点上安装（如 apt install traceroute / yum install traceroute）",
+		"路由跟踪超时",
+		func(ctx context.Context, host string, maxHops int) *exec.Cmd {
+			if runtime.GOOS == "windows" {
+				return exec.CommandContext(ctx, "tracert", "-h", fmt.Sprintf("%d", maxHops), "-w", "2000", host)
+			}
+			// -q 1（每跳只探测一次）用于把最坏情况耗时控制在超时窗口内，命中的路由跳数不受影响
+			return exec.CommandContext(ctx, "traceroute", "-m", fmt.Sprintf("%d", maxHops), "-q", "1", "-w", "2", host)
+		})
+}
+
+// handleMtr 持续路由质量检测：调用系统自带的 mtr（仅 Linux/macOS，报告模式，跑固定几轮后退出）
+func (w *WebSocketReporter) handleMtr(data interface{}) (NetworkDiagnosisResponse, error) {
+	if runtime.GOOS == "windows" {
+		// Windows 没有对应的 mtr 工具，其替代品 pathping 默认耗时远超请求等待窗口，
+		// 与其让请求必然超时，不如直接给出明确提示
+		return NetworkDiagnosisResponse{Success: false, ErrorMessage: "Windows 节点不支持 MTR，请改用 Traceroute"}, nil
+	}
+	return w.runDiagnosisCommand(data, 18*time.Second,
+		"此节点未安装 mtr 工具，请先在节点上安装（如 apt install mtr-tiny / yum install mtr）",
+		"MTR 检测超时",
+		func(ctx context.Context, host string, maxHops int) *exec.Cmd {
+			return exec.CommandContext(ctx, "mtr", "--report", "--report-cycles", "3", "--no-dns", "--max-ttl", fmt.Sprintf("%d", maxHops), host)
+		})
+}
+
+// handleDnsQuery DNS 解析查询：调用系统自带的 nslookup（Windows/Linux/macOS 均自带）
+func (w *WebSocketReporter) handleDnsQuery(data interface{}) (NetworkDiagnosisResponse, error) {
+	return w.runDiagnosisCommand(data, 8*time.Second,
+		"此节点未安装 nslookup 工具",
+		"DNS 查询超时",
+		func(ctx context.Context, host string, _ int) *exec.Cmd {
+			return exec.CommandContext(ctx, "nslookup", host)
+		})
+}
+
+// handleIcmpPing 真实 ICMP Ping（区别于 TcpPing 的 TCP 连通性测试）：调用系统自带的 ping，
+// 不同系统的超时参数单位不同（Linux 秒/macOS 与 Windows 毫秒），按 GOOS 区分
+func (w *WebSocketReporter) handleIcmpPing(data interface{}) (NetworkDiagnosisResponse, error) {
+	return w.runDiagnosisCommand(data, 12*time.Second,
+		"此节点未安装 ping 工具",
+		"ICMP Ping 超时",
+		func(ctx context.Context, host string, _ int) *exec.Cmd {
+			switch runtime.GOOS {
+			case "windows":
+				return exec.CommandContext(ctx, "ping", "-n", "4", "-w", "2000", host)
+			case "darwin":
+				return exec.CommandContext(ctx, "ping", "-c", "4", "-W", "2000", host)
+			default:
+				return exec.CommandContext(ctx, "ping", "-c", "4", "-W", "2", host)
+			}
+		})
 }
 
 // tcpPingHost 执行TCP连接测试，返回平均连接时间、失败率，以及每一次连接尝试的明细

@@ -6,6 +6,7 @@ import javax.validation.constraints.NotBlank;
 import javax.validation.constraints.NotNull;
 import javax.validation.constraints.Max;
 import javax.validation.constraints.Min;
+import java.util.List;
 
 @Data
 public class NodeUpdateDto {
@@ -35,4 +36,7 @@ public class NodeUpdateDto {
     private Integer http;
     private Integer tls;
     private Integer socks;
+
+    /** 该节点所属的节点组ID列表；不传（null）表示不修改现有归属，传空数组表示清空归属 */
+    private List<Long> nodeGroupIds;
 } 

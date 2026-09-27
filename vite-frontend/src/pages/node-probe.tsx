@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@heroui/button';
 import axios from 'axios';
-import { getDeviceGroupList, getNodeList, getUserGroupNames } from '@/api';
+import { getDeviceGroupList, getNodeList, getUserGroupNames, getNodeGroupNames } from '@/api';
 import { ThemeSwitch } from '@/components/theme-switch';
 import { isAdmin } from '@/utils/auth';
 import 'flag-icons/css/flag-icons.min.css';
@@ -21,6 +21,7 @@ const DownloadIcon = ({ className = 'w-4 h-4' }: { className?: string }) => (
 
 type Node = {
   id: number; name: string; ip?: string; serverIp?: string; status?: number; version?: string; portSta?: number; portEnd?: number;
+  nodeGroupIds?: number[];
   connectionStatus?: 'online' | 'offline';
   systemInfo?: {
     cpuUsage: number; cpuModel?: string;
@@ -32,8 +33,9 @@ type Node = {
     uptime: number;
   } | null;
 };
-type DeviceGroup = { id: number; name: string; nodeId: number; nodeName?: string; node?: Node; userGroupId?: number | null; ownerUserId?: number | null; singleTunnelGroupName?: string | null; ratio?: number; remark?: string; hideInProbe?: number };
+type DeviceGroup = { id: number; name: string; nodeId: number; nodeName?: string; node?: Node; userGroupIds?: number[]; ownerUserId?: number | null; singleTunnelGroupName?: string | null; ratio?: number; remark?: string; hideInProbe?: number };
 type UserGroup = { id: number; name: string };
+type NodeGroup = { id: number; name: string };
 
 const formatBytes = (value = 0) => value >= 1024 ** 3 ? `${(value / 1024 ** 3).toFixed(2)} GB` : value >= 1024 ** 2 ? `${(value / 1024 ** 2).toFixed(2)} MB` : `${(value / 1024).toFixed(2)} KB`;
 const formatSpeed = (value = 0) => `${formatBytes(value)}/s`;
@@ -55,14 +57,14 @@ interface NodeRowProps {
   groupMeta?: DeviceGroup;
   effectiveAdmin: boolean;
   regionCode?: string;
-  userGroupName: (id?: number | null) => string;
+  userGroupNames: (ids?: number[]) => string;
   detailHandlers: (key: string, content: React.ReactNode) => DetailHandlers;
 }
 
 // 每个节点每 2 秒推送一次系统信息，之前整张表都在一个大 .map() 里内联渲染，
 // 任何一个节点的数据更新都会导致所有行重新渲染，节点一多就会看起来卡顿。
 // 拆成独立的 memo 组件后，某个节点更新时只有它自己这一行会重渲染。
-const NodeRow = memo(function NodeRow({ node, groupMeta, effectiveAdmin, regionCode, userGroupName, detailHandlers }: NodeRowProps) {
+const NodeRow = memo(function NodeRow({ node, groupMeta, effectiveAdmin, regionCode, userGroupNames, detailHandlers }: NodeRowProps) {
   const isOnline = node.connectionStatus === 'online';
   // 节点离线时没有实时数据，连接数/CPU/RAM/存储的详情卡片没有意义，
   // 只在在线时才可点击查看，离线时不挂载点击/悬停处理器
@@ -74,7 +76,7 @@ const NodeRow = memo(function NodeRow({ node, groupMeta, effectiveAdmin, regionC
       <PopRow>服务器：{node.serverIp || '—'}</PopRow>
       <PopRow>入口：{node.ip || '—'}</PopRow>
       <PopRow>端口：{node.portSta ?? '—'} - {node.portEnd ?? '—'}</PopRow>
-      <PopRow>可见用户组：{userGroupName(groupMeta?.userGroupId)}</PopRow>
+      <PopRow>可见用户组：{userGroupNames(groupMeta?.userGroupIds)}</PopRow>
       <PopRow>流量倍率：{groupMeta?.ratio ?? '—'}</PopRow>
       <PopRow>备注：{groupMeta?.remark || '—'}</PopRow>
     </>
@@ -167,6 +169,7 @@ export default function NodeProbePage() {
   const [nodes, setNodes] = useState<Node[]>([]); const [loading, setLoading] = useState(true);
   const [groups, setGroups] = useState<DeviceGroup[]>([]);
   const [userGroups, setUserGroups] = useState<UserGroup[]>([]);
+  const [nodeGroups, setNodeGroups] = useState<NodeGroup[]>([]);
   const [regionCodes, setRegionCodes] = useState<Record<string, string>>({});
 
   // 统一的详情 popover：状态 / CPU / RAM / 存储 / 连接数点击或悬停共用同一套定位与显示逻辑，
@@ -183,7 +186,7 @@ export default function NodeProbePage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [nodeResponse, groupResponse, userGroupResponse] = await Promise.all([getNodeList(), getDeviceGroupList(), getUserGroupNames()]);
+      const [nodeResponse, groupResponse, userGroupResponse, nodeGroupResponse] = await Promise.all([getNodeList(), getDeviceGroupList(), getUserGroupNames(), getNodeGroupNames()]);
       const deviceGroups: DeviceGroup[] = groupResponse.code === 0 ? (groupResponse.data || []) : [];
       const nodesById = new Map<number, Node>();
       if (nodeResponse.code === 0) (nodeResponse.data || []).forEach((node: Node) => nodesById.set(node.id, node));
@@ -191,6 +194,7 @@ export default function NodeProbePage() {
       setNodes(Array.from(nodesById.values()).map(node => ({ ...node, connectionStatus: node.status === 1 ? 'online' : 'offline', systemInfo: null })));
       if (groupResponse.code === 0) setGroups(deviceGroups);
       if (userGroupResponse.code === 0) setUserGroups(userGroupResponse.data || []);
+      if (nodeGroupResponse.code === 0) setNodeGroups(nodeGroupResponse.data || []);
     } finally {
       setLoading(false);
     }
@@ -230,7 +234,7 @@ export default function NodeProbePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detailPinned]);
 
-  const userGroupName = useCallback((id?: number | null) => id ? (userGroups.find(g => g.id === id)?.name || `#${id}`) : '所有用户可见', [userGroups]);
+  const userGroupNames = useCallback((ids?: number[]) => !ids || ids.length === 0 ? '所有用户可见' : ids.map(id => userGroups.find(g => g.id === id)?.name || `#${id}`).join('、'), [userGroups]);
 
   // 生成某个可点击/悬停单元格的事件处理器：桌面端悬停显示，桌面/移动端点击可"钉住"（再点一次关闭）。
   // 包一层 useCallback，只在 detailPinned/detailKey 真正变化（用户实际交互）时才换新引用，
@@ -312,21 +316,36 @@ export default function NodeProbePage() {
   }, [load]);
 
   useEffect(() => {
-    const ips = Array.from(new Set(nodes.map(node => node.ip).filter((ip): ip is string => !!ip))).filter(ip => !resolvedIpsRef.current.has(ip));
+    // 入口 IP/域名 现在支持填多个（逗号拼接存储），地区查询只取第一个地址即可
+    const ips = Array.from(new Set(nodes.map(node => node.ip?.split(',')[0]?.trim()).filter((ip): ip is string => !!ip))).filter(ip => !resolvedIpsRef.current.has(ip));
     ips.forEach(ip => {
       resolvedIpsRef.current.add(ip);
       fetch(`https://ipwho.is/${ip}`).then(res => res.json()).then(data => { if (data?.success && data.country_code) setRegionCodes(prev => ({ ...prev, [ip]: String(data.country_code).toLowerCase() })); }).catch(() => {});
     });
   }, [nodes]);
 
-  const visibleGroups = useMemo(() => groups
-    .filter(group => effectiveAdmin || (group.hideInProbe ?? 0) === 0)
-    .map(group => ({
-      label: group.ownerUserId != null ? (group.singleTunnelGroupName || '未分组') : userGroupName(group.userGroupId),
-      id: group.id,
-      meta: group,
-      nodes: nodes.filter(node => node.id === group.nodeId)
-    })), [groups, nodes, effectiveAdmin, userGroupName]);
+  // 节点组表格里每一行仍要能展示"可见用户组/流量倍率/备注"等详情，这些信息挂在 DeviceGroup 上，
+  // 所以按 nodeId 建一份反查表，供节点组分组的 NodeRow 使用（节点没有对应设备组时为 undefined，
+  // NodeRow 里对应字段会退化显示为 "—"）；同时用于沿用设备组原有的"在探针中隐藏"设置
+  const groupMetaByNodeId = useMemo(() => {
+    const map = new Map<number, DeviceGroup>();
+    groups.forEach(group => { if (group.nodeId) map.set(group.nodeId, group); });
+    return map;
+  }, [groups]);
+
+  // 按节点组分类：一个节点可同时属于多个节点组，所以这里是按 nodeGroupIds 展开，而不是每个节点只出现一次；
+  // 只展示至少绑了一个节点的节点组，避免空组占位；沿用设备组的"在探针中隐藏"设置过滤非管理员不可见的节点
+  const visibleNodeGroups = useMemo(() => nodeGroups
+    .map(nodeGroup => ({
+      id: nodeGroup.id,
+      name: nodeGroup.name || `#${nodeGroup.id}`,
+      nodes: nodes.filter(node => {
+        if (!(node.nodeGroupIds || []).includes(nodeGroup.id)) return false;
+        const meta = groupMetaByNodeId.get(node.id);
+        return effectiveAdmin || (meta?.hideInProbe ?? 0) === 0;
+      })
+    }))
+    .filter(nodeGroup => nodeGroup.nodes.length > 0), [nodeGroups, nodes, groupMetaByNodeId, effectiveAdmin]);
 
   return (
     <main className="probe-page min-h-screen">
@@ -353,15 +372,17 @@ export default function NodeProbePage() {
       <div className="probe-content">
         {loading ? (
           <div className="probe-loading"><div className="probe-loading-ring" /><p>加载节点状态…</p></div>
+        ) : visibleNodeGroups.length === 0 ? (
+          <div className="probe-loading"><p>{effectiveAdmin ? '暂无节点组数据，请前往"设备管理"将节点归入节点组后再查看' : '暂无可显示的节点'}</p></div>
         ) : (
           <div className="probe-groups">
-            {visibleGroups.map(group => {
-              const up = group.nodes.reduce((sum, node) => sum + (node.systemInfo?.uploadSpeed || 0), 0);
-              const down = group.nodes.reduce((sum, node) => sum + (node.systemInfo?.downloadSpeed || 0), 0);
+            {visibleNodeGroups.map(nodeGroup => {
+              const up = nodeGroup.nodes.reduce((sum, node) => sum + (node.systemInfo?.uploadSpeed || 0), 0);
+              const down = nodeGroup.nodes.reduce((sum, node) => sum + (node.systemInfo?.downloadSpeed || 0), 0);
               return (
-                <section className="probe-group" key={group.id}>
+                <section className="probe-group" key={`nodegroup-${nodeGroup.id}`}>
                   <div className="probe-group-head">
-                    <span className="probe-title">{group.label}<em> | ID: {group.id || '—'}</em></span>
+                    <span className="probe-title">{nodeGroup.name}<em> | ID: {nodeGroup.id}</em></span>
                     <div className="probe-totals"><span className="probe-total"><UploadIcon />{formatSpeed(up)}</span><span className="probe-total"><DownloadIcon />{formatSpeed(down)}</span></div>
                   </div>
                   <div className="probe-scroll">
@@ -370,18 +391,17 @@ export default function NodeProbePage() {
                         <tr><th>状态</th><th>IPv4 地区</th><th>IPv6 地区</th><th>上行</th><th>下行</th><th>开机时长</th><th>流量</th><th>CPU</th><th>RAM</th><th>存储</th></tr>
                       </thead>
                       <tbody>
-                        {group.nodes.map(node => (
+                        {nodeGroup.nodes.map(node => (
                           <NodeRow
                             key={node.id}
                             node={node}
-                            groupMeta={group.meta}
+                            groupMeta={groupMetaByNodeId.get(node.id)}
                             effectiveAdmin={effectiveAdmin}
-                            regionCode={node.ip ? regionCodes[node.ip] : undefined}
-                            userGroupName={userGroupName}
+                            regionCode={node.ip ? regionCodes[node.ip.split(',')[0].trim()] : undefined}
+                            userGroupNames={userGroupNames}
                             detailHandlers={detailHandlers}
                           />
                         ))}
-                        {group.nodes.length === 0 && <tr><td colSpan={10} className="text-center text-default-500 py-8">此设备组没有可用节点</td></tr>}
                       </tbody>
                     </table>
                   </div>

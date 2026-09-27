@@ -1,12 +1,14 @@
 package com.admin.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 /**
  * <p>
@@ -42,9 +44,11 @@ public class DeviceGroup extends BaseEntity {
     private String protocol;
 
     /**
-     * 可见用户组ID（为空表示所有用户可见）
+     * 可见用户组ID列表（多对多，非持久化字段，通过 device_group_user_group_relation 表维护；
+     * 为空表示所有用户可见）
      */
-    private Long userGroupId;
+    @TableField(exist = false)
+    private List<Long> userGroupIds;
 
     /**
      * 单端隧道：用户自建设备组的拥有者用户ID；管理员建立的设备组此字段为空

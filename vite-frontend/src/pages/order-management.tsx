@@ -21,6 +21,7 @@ import toast from 'react-hot-toast';
 import { EmptyState } from "@/components/empty-state";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { TablePagination } from "@/components/table-pagination";
+import { HelpTooltip } from "@/components/help-tooltip";
 import { getAdminOrderList, createManualOrder, batchDeleteOrders, updateOrderStatus, getAllUsers } from "@/api";
 
 interface OrderItem {
@@ -390,14 +391,13 @@ export default function OrderManagementPage() {
                   <Input
                     size="sm"
                     autoComplete="off"
-                    label="金额"
+                    label={<HelpTooltip content="仅作记录用途，不会真实扣减或增加用户余额">金额</HelpTooltip>}
                     type="number"
                     value={manualForm.amount}
                     onChange={(e) => setManualForm(prev => ({ ...prev, amount: e.target.value }))}
                     isInvalid={!!manualErrors.amount}
                     errorMessage={manualErrors.amount}
                     variant="bordered"
-                    description="仅作记录用途，不会真实扣减或增加用户余额"
                     endContent={<span className="px-2 py-0.5 -mr-1 rounded-md bg-default-100 dark:bg-default-50/10 text-default-500 text-xs font-medium">元</span>}
                   />
                 </div>

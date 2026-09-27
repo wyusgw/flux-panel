@@ -18,6 +18,7 @@ import toast from 'react-hot-toast';
 
 import { EmptyState } from "@/components/empty-state";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { HelpTooltip } from "@/components/help-tooltip";
 import {
   batchCreateInviteCodes,
   getInviteCodeList,
@@ -210,14 +211,13 @@ export default function InviteCodePage() {
                 <div className="space-y-3 pb-4">
                   <Input autoComplete="off"
                     size="sm"
-                    label="可用次数"
+                    label={<HelpTooltip content="每个邀请代码可被使用的次数">可用次数</HelpTooltip>}
                     type="number"
                     value={form.usesRemaining.toString()}
                     onChange={(e) => setForm(prev => ({ ...prev, usesRemaining: parseInt(e.target.value) || 0 }))}
                     isInvalid={!!errors.usesRemaining}
                     errorMessage={errors.usesRemaining}
                     variant="bordered"
-                    description="每个邀请代码可被使用的次数"
                   />
 
                   <Textarea autoComplete="off"

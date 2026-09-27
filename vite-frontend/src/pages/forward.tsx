@@ -9,12 +9,12 @@ import { Table, TableHeader, TableColumn, TableBody, TableRow, TableCell } from 
 import { Chip } from "@heroui/chip";
 import { Spinner } from "@heroui/spinner";
 import { Accordion, AccordionItem } from "@heroui/accordion";
-import { Tooltip } from "@heroui/tooltip";
 import toast from 'react-hot-toast';
 import { copyText } from '@/utils/clipboard';
 import { EmptyState } from "@/components/empty-state";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { ToastWarningIcon } from "@/components/toast-icons";
+import { HelpTooltip } from "@/components/help-tooltip";
 
 import {
   createForward,
@@ -200,9 +200,11 @@ export default function ForwardPage() {
   const [selectedKeys, setSelectedKeys] = useState<any>(new Set([]));
   const [batchLoading, setBatchLoading] = useState(false);
 
-  // 右侧浮动工具列：可拖动到任意位置，位置记住在本地，下次打开还在原地
+  // 右侧浮动工具列：可拖动到任意位置，位置记住在本地，下次打开还在原地；
+  // 平时收起为一个小圆点，点击（非拖动）展开为完整工具条，再点击一次收起
   const railRef = useRef<HTMLDivElement | null>(null);
-  const railDragRef = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null);
+  const railDragRef = useRef<{ startX: number; startY: number; originX: number; originY: number; moved: boolean } | null>(null);
+  const [railExpanded, setRailExpanded] = useState(false);
   const [railPos, setRailPos] = useState<{ x: number; y: number } | null>(() => {
     try {
       const saved = localStorage.getItem('forward-rail-pos');
@@ -231,18 +233,27 @@ export default function ForwardPage() {
     const rect = railRef.current?.getBoundingClientRect();
     const originX = railPos?.x ?? (rect?.left ?? window.innerWidth - 70);
     const originY = railPos?.y ?? (rect?.top ?? window.innerHeight / 2 - 150);
-    railDragRef.current = { startX: e.clientX, startY: e.clientY, originX, originY };
+    railDragRef.current = { startX: e.clientX, startY: e.clientY, originX, originY, moved: false };
 
     const handleMove = (ev: PointerEvent) => {
       if (!railDragRef.current) return;
       const dx = ev.clientX - railDragRef.current.startX;
       const dy = ev.clientY - railDragRef.current.startY;
+      if (Math.abs(dx) > 4 || Math.abs(dy) > 4) {
+        railDragRef.current.moved = true;
+      }
       setRailPos(clampRailPos(railDragRef.current.originX + dx, railDragRef.current.originY + dy));
     };
     const handleUp = () => {
+      const wasMoved = railDragRef.current?.moved ?? false;
       railDragRef.current = null;
       window.removeEventListener('pointermove', handleMove);
       window.removeEventListener('pointerup', handleUp);
+      if (!wasMoved) {
+        // 没有实际拖动位移，视为一次点击：切换展开/收起
+        setRailExpanded(prev => !prev);
+        return;
+      }
       setRailPos(prev => {
         if (prev) {
           try { localStorage.setItem('forward-rail-pos', JSON.stringify(prev)); } catch {}
@@ -1518,25 +1529,33 @@ export default function ForwardPage() {
           </Card>
         )}
 
-        {/* 右侧浮动工具列（桌面端）：可拖动到任意位置 */}
+        {/* 右侧浮动工具列（桌面端）：平时收起为一个圆点，点击展开为可拖动的工具条 */}
         {!isMobile && (
           <div
             ref={railRef}
-            className="forward-rail"
+            className={`forward-rail ${railExpanded ? '' : 'forward-rail-collapsed'}`}
             style={railPos ? { left: railPos.x, top: railPos.y, right: 'auto', transform: 'none' } : undefined}
           >
-            <div className="rail-drag-handle" onPointerDown={handleRailDragStart} title="拖动调整位置">
-              <IconDragHandle />
-            </div>
-            <RailButton icon={<IconGroup />} label="分组" onPress={() => setGroupManageModalOpen(true)} />
-            <RailButton icon={<IconAddSingle />} label="单条" onPress={handleAdd} />
-            <RailButton icon={<IconImport />} label="批量" onPress={handleImport} />
-            <RailButton icon={<IconExport />} label="导出" onPress={handleExport} loading={exportLoading} />
-            <RailButton icon={<IconToggle />} label="切换" onPress={handleBatchToggle} disabled={selectedIds.length === 0} loading={batchLoading} />
-            <RailButton icon={<IconFlow />} label="流量" onPress={handleBatchClearFlow} disabled={selectedIds.length === 0} />
-            <RailButton icon={<IconPause />} label="暂停" onPress={() => handleBatchSetRunning(false)} disabled={selectedIds.length === 0} loading={batchLoading} />
-            <RailButton icon={<IconPlay />} label="启动" onPress={() => handleBatchSetRunning(true)} disabled={selectedIds.length === 0} loading={batchLoading} />
-            <RailButton icon={<IconDelete />} label="删除" onPress={handleBatchDelete} disabled={selectedIds.length === 0} loading={batchLoading} danger />
+            {railExpanded ? (
+              <>
+                <div className="rail-drag-handle" onPointerDown={handleRailDragStart} title="拖动调整位置 / 点击收起">
+                  <IconDragHandle />
+                </div>
+                <RailButton icon={<IconGroup />} label="分组" onPress={() => setGroupManageModalOpen(true)} />
+                <RailButton icon={<IconAddSingle />} label="单条" onPress={handleAdd} />
+                <RailButton icon={<IconImport />} label="批量" onPress={handleImport} />
+                <RailButton icon={<IconExport />} label="导出" onPress={handleExport} loading={exportLoading} />
+                <RailButton icon={<IconToggle />} label="切换" onPress={handleBatchToggle} disabled={selectedIds.length === 0} loading={batchLoading} />
+                <RailButton icon={<IconFlow />} label="流量" onPress={handleBatchClearFlow} disabled={selectedIds.length === 0} />
+                <RailButton icon={<IconPause />} label="暂停" onPress={() => handleBatchSetRunning(false)} disabled={selectedIds.length === 0} loading={batchLoading} />
+                <RailButton icon={<IconPlay />} label="启动" onPress={() => handleBatchSetRunning(true)} disabled={selectedIds.length === 0} loading={batchLoading} />
+                <RailButton icon={<IconDelete />} label="删除" onPress={handleBatchDelete} disabled={selectedIds.length === 0} loading={batchLoading} danger />
+              </>
+            ) : (
+              <div className="rail-collapsed-handle" onPointerDown={handleRailDragStart} title="拖动调整位置 / 点击展开工具栏">
+                <IconDragHandle />
+              </div>
+            )}
           </div>
         )}
 
@@ -1624,7 +1643,7 @@ export default function ForwardPage() {
 
                         <Select
                           size="sm"
-                          label="出口"
+                          label={<HelpTooltip content="不选择出口时，流量将直接从入口转发至目标地址">出口</HelpTooltip>}
                           placeholder="留空则为直接端口转发"
                           selectedKeys={form.outDeviceGroupId ? [form.outDeviceGroupId.toString()] : []}
                           onSelectionChange={(keys) => {
@@ -1632,7 +1651,6 @@ export default function ForwardPage() {
                             setForm(prev => ({ ...prev, outDeviceGroupId: selectedKey ? parseInt(selectedKey) : null }));
                           }}
                           variant="bordered"
-                          description="不选择出口时，流量将直接从入口转发至目标地址"
                           renderValue={(items) => items.map((item) => <div key={item.key}>{item.rendered}</div>)}
                         >
                           {deviceGroups.filter((group) => {
@@ -1709,14 +1727,13 @@ export default function ForwardPage() {
                     
                     <Input autoComplete="off"
                       size="sm"
-                      label="出口网卡名或IP"
+                      label={<HelpTooltip content="用于多IP服务器指定使用那个IP请求远程地址，不懂的默认为空就行">出口网卡名或IP</HelpTooltip>}
                       placeholder="请输入出口网卡名或IP"
                       value={form.interfaceName}
                       onChange={(e) => setForm(prev => ({ ...prev, interfaceName: e.target.value }))}
                       isInvalid={!!errors.interfaceName}
                       errorMessage={errors.interfaceName}
                       variant="bordered"
-                      description="用于多IP服务器指定使用那个IP请求远程地址，不懂的默认为空就行"
                     />
                     
                     <Select
@@ -1759,7 +1776,7 @@ export default function ForwardPage() {
 
                           <Select
                             size="sm"
-                            label={<span className="inline-flex items-center gap-1 leading-none">接受 Proxy Protocol<Tooltip content="如果打开，用户在连接时必须发送 Proxy 头，否则连接将失败。"><span className="inline-flex items-center"><IconHelp /></span></Tooltip></span>}
+                            label={<HelpTooltip content="如果打开，用户在连接时必须发送 Proxy 头，否则连接将失败。">接受 Proxy Protocol</HelpTooltip>}
                             selectedKeys={[String(form.acceptProxyProtocol)]}
                             onSelectionChange={(keys) => {
                               const selectedKey = Array.from(keys)[0] as string;
@@ -1773,7 +1790,7 @@ export default function ForwardPage() {
 
                           <Select
                             size="sm"
-                            label={<span className="inline-flex items-center gap-1 leading-none">发送 Proxy Protocol<Tooltip content="如果打开，转发目标必须支持读取 Proxy 头，否则连接将失败。"><span className="inline-flex items-center"><IconHelp /></span></Tooltip></span>}
+                            label={<HelpTooltip content="如果打开，转发目标必须支持读取 Proxy 头，否则连接将失败。">发送 Proxy Protocol</HelpTooltip>}
                             selectedKeys={[String(form.sendProxyProtocol)]}
                             onSelectionChange={(keys) => {
                               const selectedKey = Array.from(keys)[0] as string;
@@ -1789,7 +1806,7 @@ export default function ForwardPage() {
 
                           <Input autoComplete="off"
                             size="sm"
-                            label={<span className="inline-flex items-center gap-1 leading-none">规则限速<Tooltip content="该规则的最大速率，0 为不限速（与套餐/用户限速取较严格值，不同规则的限速可叠加）"><span className="inline-flex items-center"><IconHelp /></span></Tooltip></span>}
+                            label={<HelpTooltip content="该规则的最大速率，0 为不限速（与套餐/用户限速取较严格值，不同规则的限速可叠加）">规则限速</HelpTooltip>}
                             type="number"
                             value={form.speedLimit.toString()}
                             onChange={(e) => setForm(prev => ({ ...prev, speedLimit: parseInt(e.target.value) || 0 }))}
@@ -1799,7 +1816,7 @@ export default function ForwardPage() {
 
                           <Input autoComplete="off"
                             size="sm"
-                            label={<span className="inline-flex items-center gap-1 leading-none">IP 限制<Tooltip content="单个 IP 的最大并发连接数，0 为不限制"><span className="inline-flex items-center"><IconHelp /></span></Tooltip></span>}
+                            label={<HelpTooltip content="单个 IP 的最大并发连接数，0 为不限制">IP 限制</HelpTooltip>}
                             type="number"
                             value={form.ipLimit.toString()}
                             onChange={(e) => setForm(prev => ({ ...prev, ipLimit: parseInt(e.target.value) || 0 }))}
@@ -1808,7 +1825,7 @@ export default function ForwardPage() {
 
                           <Input autoComplete="off"
                             size="sm"
-                            label={<span className="inline-flex items-center gap-1 leading-none">连接数限制<Tooltip content="该规则的总并发连接数，0 为不限制"><span className="inline-flex items-center"><IconHelp /></span></Tooltip></span>}
+                            label={<HelpTooltip content="该规则的总并发连接数，0 为不限制">连接数限制</HelpTooltip>}
                             type="number"
                             value={form.connLimit.toString()}
                             onChange={(e) => setForm(prev => ({ ...prev, connLimit: parseInt(e.target.value) || 0 }))}

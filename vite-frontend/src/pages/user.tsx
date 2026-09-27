@@ -50,6 +50,7 @@ import {
 import { SearchIcon, EditIcon, DeleteIcon, UserIcon, SettingsIcon } from '@/components/icons';
 import { EmptyState } from '@/components/empty-state';
 import { ConfirmDialog } from '@/components/confirm-dialog';
+import { HelpTooltip } from '@/components/help-tooltip';
 import { parseDate, today, getLocalTimeZone } from "@internationalized/date";
 
 
@@ -693,7 +694,7 @@ export default function UserPage() {
               </Select>
               <DatePicker
                 size="sm"
-                label="过期时间"
+                label={<HelpTooltip content="留空表示永不过期">过期时间</HelpTooltip>}
                 value={userForm.expTime ? parseDate(userForm.expTime.toISOString().split('T')[0]) as any : null}
                 placeholderValue={today(getLocalTimeZone())}
                 onChange={(date) => {
@@ -704,7 +705,6 @@ export default function UserPage() {
                     setUserForm(prev => ({ ...prev, expTime: null }));
                   }
                 }}
-                description="留空表示永不过期"
                 showMonthAndYearPickers
                 className="cursor-pointer"
               />

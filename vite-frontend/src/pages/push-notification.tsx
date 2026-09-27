@@ -2,14 +2,56 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from "@heroui/button";
 import { Card, CardBody, CardHeader } from "@heroui/card";
-import { Input } from "@heroui/input";
+import { Chip } from "@heroui/chip";
+import { Input, Textarea } from "@heroui/input";
+import { Select, SelectItem } from "@heroui/select";
 import { Spinner } from "@heroui/spinner";
 import { Switch } from "@heroui/switch";
 import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from "@heroui/table";
 import { Tooltip } from "@heroui/tooltip";
 import toast from 'react-hot-toast';
-import { getConfigs, updateConfigs, testTelegramNotify, getDeviceGroupList, updateDeviceGroupOfflineConfig } from '@/api';
+import { getConfigs, updateConfigs, testTelegramNotify, getDeviceGroupList, updateDeviceGroupOfflineConfig, getTelegramSendLogs } from '@/api';
 import { isAdmin } from '@/utils/auth';
+
+interface TemplateMeta {
+  key: string;
+  title: string;
+  placeholders: string;
+  defaultValue: string;
+}
+
+const TEMPLATE_META: TemplateMeta[] = [
+  { key: 'telegram_tpl_payment_success', title: '充值成功', placeholders: '{amount} 充值金额　{balance} 当前余额', defaultValue: '金额：¥{amount}\n当前余额：¥{balance}' },
+  { key: 'telegram_tpl_device_offline', title: '设备离线', placeholders: '{name} 设备名称', defaultValue: '设备「{name}」已离线' },
+  { key: 'telegram_tpl_device_online', title: '设备恢复在线', placeholders: '{name} 设备名称', defaultValue: '设备「{name}」已恢复在线' },
+  { key: 'telegram_tpl_renew_success', title: '自动续费成功', placeholders: '{amount} 扣款金额', defaultValue: '扣款金额：¥{amount}' },
+  { key: 'telegram_tpl_renew_failed', title: '自动续费失败', placeholders: '{reason} 失败原因', defaultValue: '原因：{reason}' },
+  { key: 'telegram_tpl_expiry_reminder', title: '套餐到期提醒', placeholders: '{days} 距到期天数', defaultValue: '您的套餐将于 {days} 天后到期，请及时续费' },
+  { key: 'telegram_tpl_flow_reminder', title: '流量即将用尽提醒', placeholders: '{percent} 已用流量百分比', defaultValue: '您的套餐流量已使用 {percent}%，即将用尽，请留意' },
+];
+
+const LOG_TYPE_LABELS: Record<string, string> = {
+  PAYMENT_SUCCESS: '充值成功',
+  DEVICE_OFFLINE: '设备离线',
+  DEVICE_ONLINE: '设备恢复',
+  RENEW_SUCCESS: '自动续费成功',
+  RENEW_FAILED: '自动续费失败',
+  EXPIRY_REMINDER: '到期提醒',
+  FLOW_REMINDER: '流量提醒',
+  TEST: '测试消息',
+};
+
+interface TelegramLogRow {
+  id: number;
+  userId: number | null;
+  userName: string | null;
+  chatId: string;
+  type: string;
+  content: string;
+  status: string;
+  error: string | null;
+  createdTime: number;
+}
 
 const HelpIcon = () => (
   <svg className="w-3.5 h-3.5 text-default-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -60,6 +102,21 @@ export default function PushNotificationPage() {
   const [groupOverrides, setGroupOverrides] = useState<Record<number, GroupOverrideForm>>({});
   const [offlineSaving, setOfflineSaving] = useState(false);
 
+  // 消息模板与提醒阈值/时间
+  const [templates, setTemplates] = useState<Record<string, string>>(
+    () => Object.fromEntries(TEMPLATE_META.map(t => [t.key, t.defaultValue]))
+  );
+  const [expiryReminderDays, setExpiryReminderDays] = useState('7');
+  const [flowReminderPercent, setFlowReminderPercent] = useState('90');
+  const [reminderHour, setReminderHour] = useState('9');
+  const [templatesSaving, setTemplatesSaving] = useState(false);
+
+  // 发送记录
+  const [logs, setLogs] = useState<TelegramLogRow[]>([]);
+  const [logsLoading, setLogsLoading] = useState(false);
+  const [logTypeFilter, setLogTypeFilter] = useState<string>('');
+  const [logStatusFilter, setLogStatusFilter] = useState<string>('');
+
   useEffect(() => {
     if (!isAdmin()) {
       toast.error('权限不足，只有管理员可以访问此页面');
@@ -67,6 +124,7 @@ export default function PushNotificationPage() {
       return;
     }
     loadAll();
+    loadLogs();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navigate]);
 
@@ -85,6 +143,10 @@ export default function PushNotificationPage() {
         setGraceSeconds(c.device_offline_grace_seconds || '20');
         setRetainEnabled(c.device_offline_retain_enabled === 'true');
         setRetainSeconds(c.device_offline_retain_seconds || '86400');
+        setTemplates(Object.fromEntries(TEMPLATE_META.map(t => [t.key, c[t.key] || t.defaultValue])));
+        setExpiryReminderDays(c.telegram_expiry_reminder_days || '7');
+        setFlowReminderPercent(c.telegram_flow_reminder_percent || '90');
+        setReminderHour(c.telegram_reminder_hour || '9');
       } else {
         toast.error(configRes.msg || '获取配置失败');
       }
@@ -150,6 +212,47 @@ export default function PushNotificationPage() {
 
   const updateGroupOverride = (id: number, patch: Partial<GroupOverrideForm>) => {
     setGroupOverrides(prev => ({ ...prev, [id]: { ...prev[id], ...patch } }));
+  };
+
+  const resetTemplate = (key: string, defaultValue: string) => {
+    setTemplates(prev => ({ ...prev, [key]: defaultValue }));
+  };
+
+  const saveTemplates = async () => {
+    setTemplatesSaving(true);
+    try {
+      const res = await updateConfigs({
+        ...templates,
+        telegram_expiry_reminder_days: expiryReminderDays || '7',
+        telegram_flow_reminder_percent: flowReminderPercent || '90',
+        telegram_reminder_hour: reminderHour || '9',
+      });
+      if (res.code === 0) {
+        toast.success('消息模板与提醒设置已保存');
+      } else {
+        toast.error(res.msg || '保存失败');
+      }
+    } catch (error) {
+      toast.error('保存失败');
+    } finally {
+      setTemplatesSaving(false);
+    }
+  };
+
+  const loadLogs = async (type = logTypeFilter, status = logStatusFilter) => {
+    setLogsLoading(true);
+    try {
+      const res = await getTelegramSendLogs({ type: type || undefined, status: status || undefined, limit: 100 });
+      if (res.code === 0) {
+        setLogs(res.data || []);
+      } else {
+        toast.error(res.msg || '获取发送记录失败');
+      }
+    } catch (error) {
+      toast.error('获取发送记录失败');
+    } finally {
+      setLogsLoading(false);
+    }
   };
 
   const saveOfflineConfig = async () => {
@@ -339,6 +442,138 @@ export default function PushNotificationPage() {
 
           <div className="flex justify-end pt-2">
             <Button color="default" onPress={saveOfflineConfig} isLoading={offlineSaving}>保存离线通知配置</Button>
+          </div>
+        </CardBody>
+      </Card>
+
+      {/* Telegram 消息模板与提醒设置 */}
+      <Card className="settings-panel">
+        <CardHeader className="flex flex-row items-center justify-between gap-4 p-4 border-b border-default-100">
+          <div className="flex items-center gap-1.5">
+            <h1 className="text-base font-semibold text-foreground">消息模板与提醒设置</h1>
+            <Tooltip content="自定义各类 Telegram 通知的正文内容，以及到期/流量提醒的阈值与每日推送时间；标题（含图标）由系统固定生成"><span className="inline-flex items-center"><HelpIcon /></span></Tooltip>
+          </div>
+          <Button size="sm" color="default" onPress={saveTemplates} isLoading={templatesSaving}>保存模板与设置</Button>
+        </CardHeader>
+        <CardBody className="p-4 lg:p-5 space-y-5">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div>
+              <label className="text-xs font-medium text-foreground mb-1 block">到期提醒阈值（天）</label>
+              <Input autoComplete="off" type="number" size="sm" variant="bordered" value={expiryReminderDays} onChange={(e) => setExpiryReminderDays(e.target.value)} />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-foreground mb-1 block">流量提醒阈值（%）</label>
+              <Input autoComplete="off" type="number" size="sm" variant="bordered" value={flowReminderPercent} onChange={(e) => setFlowReminderPercent(e.target.value)} />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-foreground mb-1 block inline-flex items-center gap-1">
+                每日推送时间（小时）
+                <Tooltip content="0-23 的整数，例如 9 表示每天 9:00 左右检查并推送到期/流量提醒"><span className="inline-flex items-center"><HelpIcon /></span></Tooltip>
+              </label>
+              <Input autoComplete="off" type="number" size="sm" variant="bordered" value={reminderHour} onChange={(e) => setReminderHour(e.target.value)} />
+            </div>
+          </div>
+
+          <div className="space-y-4 pt-2 border-t border-default-100">
+            {TEMPLATE_META.map((meta) => (
+              <div key={meta.key} className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-medium text-foreground">{meta.title}</label>
+                  <button
+                    type="button"
+                    className="text-xs font-medium text-default-500 hover:text-foreground"
+                    onClick={() => resetTemplate(meta.key, meta.defaultValue)}
+                  >
+                    恢复默认
+                  </button>
+                </div>
+                <Textarea
+                  autoComplete="off"
+                  size="sm"
+                  variant="bordered"
+                  minRows={2}
+                  value={templates[meta.key] ?? ''}
+                  onChange={(e) => setTemplates(prev => ({ ...prev, [meta.key]: e.target.value }))}
+                />
+                <p className="text-xs text-default-400">可用占位符：{meta.placeholders}</p>
+              </div>
+            ))}
+          </div>
+        </CardBody>
+      </Card>
+
+      {/* Telegram 发送记录 */}
+      <Card className="settings-panel">
+        <CardHeader className="flex flex-row items-center justify-between gap-4 p-4 border-b border-default-100 flex-wrap">
+          <div className="flex items-center gap-1.5">
+            <h1 className="text-base font-semibold text-foreground">发送记录</h1>
+            <Tooltip content="每次尝试发送 Telegram 通知（无论成功/失败）的历史记录，最多展示最近 100 条；记录保留 30 天"><span className="inline-flex items-center"><HelpIcon /></span></Tooltip>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Select
+              size="sm"
+              variant="bordered"
+              placeholder="全部类型"
+              className="w-36"
+              selectedKeys={logTypeFilter ? [logTypeFilter] : []}
+              onSelectionChange={(keys) => {
+                const key = (Array.from(keys)[0] as string) || '';
+                setLogTypeFilter(key);
+                loadLogs(key, logStatusFilter);
+              }}
+            >
+              {Object.entries(LOG_TYPE_LABELS).map(([value, label]) => (
+                <SelectItem key={value}>{label}</SelectItem>
+              ))}
+            </Select>
+            <Select
+              size="sm"
+              variant="bordered"
+              placeholder="全部状态"
+              className="w-32"
+              selectedKeys={logStatusFilter ? [logStatusFilter] : []}
+              onSelectionChange={(keys) => {
+                const key = (Array.from(keys)[0] as string) || '';
+                setLogStatusFilter(key);
+                loadLogs(logTypeFilter, key);
+              }}
+            >
+              <SelectItem key="SUCCESS">成功</SelectItem>
+              <SelectItem key="FAILED">失败</SelectItem>
+            </Select>
+            <Button size="sm" variant="flat" isLoading={logsLoading} onPress={() => loadLogs()}>刷新</Button>
+          </div>
+        </CardHeader>
+        <CardBody className="p-4 lg:p-5">
+          <div className="settings-table-scroll">
+            <Table removeWrapper aria-label="Telegram 发送记录" classNames={{ th: "management-table-heading", td: "management-table-cell", table: "min-w-[720px]" }}>
+              <TableHeader>
+                <TableColumn>时间</TableColumn>
+                <TableColumn>接收者</TableColumn>
+                <TableColumn>类型</TableColumn>
+                <TableColumn>状态</TableColumn>
+                <TableColumn>内容/错误</TableColumn>
+              </TableHeader>
+              <TableBody emptyContent={logsLoading ? '加载中...' : '暂无发送记录'}>
+                {logs.map((item) => (
+                  <TableRow key={item.id}>
+                    <TableCell className="whitespace-nowrap text-xs text-default-500">{new Date(item.createdTime).toLocaleString()}</TableCell>
+                    <TableCell>{item.userName || (item.userId != null ? `用户#${item.userId}` : '-')}</TableCell>
+                    <TableCell><Chip size="sm" variant="flat">{LOG_TYPE_LABELS[item.type] || item.type}</Chip></TableCell>
+                    <TableCell>
+                      {item.status === 'SUCCESS'
+                        ? <Chip size="sm" variant="flat" color="success">成功</Chip>
+                        : <Chip size="sm" variant="flat" color="danger">失败</Chip>}
+                    </TableCell>
+                    <TableCell className="max-w-[360px]">
+                      <p className="text-xs text-default-500 whitespace-pre-line line-clamp-2">
+                        {item.status === 'SUCCESS' ? item.content : (item.error || item.content)}
+                      </p>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           </div>
         </CardBody>
       </Card>

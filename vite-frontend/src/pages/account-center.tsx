@@ -39,6 +39,9 @@ interface UserInfo {
   notifyPaymentMode: number;
   notifyDeviceMode: number;
   notifyDeviceGroupIds: number[];
+  notifyRenewMode: number;
+  notifyExpiryMode: number;
+  notifyFlowMode: number;
 }
 
 interface PackagePlanItem {
@@ -112,6 +115,9 @@ export default function AccountCenterPage() {
   const [paymentMode, setPaymentMode] = useState(0);
   const [deviceMode, setDeviceMode] = useState(0);
   const [selectedGroupIds, setSelectedGroupIds] = useState<number[]>([]);
+  const [renewMode, setRenewMode] = useState(1);
+  const [expiryMode, setExpiryMode] = useState(1);
+  const [flowMode, setFlowMode] = useState(1);
   const [pushSaving, setPushSaving] = useState(false);
 
   useEffect(() => {
@@ -140,6 +146,9 @@ export default function AccountCenterPage() {
         setPaymentMode(info.notifyPaymentMode ?? 0);
         setDeviceMode(info.notifyDeviceMode ?? 0);
         setSelectedGroupIds(info.notifyDeviceGroupIds ?? []);
+        setRenewMode(info.notifyRenewMode ?? 1);
+        setExpiryMode(info.notifyExpiryMode ?? 1);
+        setFlowMode(info.notifyFlowMode ?? 1);
         if (notify) toast.success('刷新用户信息成功', { id: 'account-refresh' });
       } else {
         toast.error(userRes.msg || '获取用户信息失败');
@@ -300,7 +309,14 @@ export default function AccountCenterPage() {
   const handleSavePushSettings = async () => {
     setPushSaving(true);
     try {
-      const res = await updateNotifySettings(paymentMode, deviceMode, (deviceMode === 1 || deviceMode === 2) ? selectedGroupIds : []);
+      const res = await updateNotifySettings({
+        paymentMode,
+        deviceMode,
+        deviceGroupIds: (deviceMode === 1 || deviceMode === 2) ? selectedGroupIds : [],
+        renewMode,
+        expiryMode,
+        flowMode,
+      });
       if (res.code === 0) {
         toast.success('推送设置已保存');
         onPushOpenChange();
@@ -523,20 +539,37 @@ export default function AccountCenterPage() {
                 </div>
               </>
             ) : (
-              <p className="text-sm text-default-500">
-                关联后将自动通过 Telegram 接收续费提醒：套餐到期提醒、自动续费成功/失败、流量即将用尽提醒，无需额外设置。
-              </p>
+              <>
+                <p className="text-xs text-default-500">
+                  收款信息、设备状态等运维类通知归管理员查看，以下为您可控制的续费类通知：
+                </p>
+                <div className="flex items-center justify-between py-1">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">套餐到期提醒</p>
+                    <p className="mt-0.5 text-xs text-default-500">套餐即将到期时通过 Telegram 提醒您续费</p>
+                  </div>
+                  <Switch size="sm" isSelected={expiryMode === 1} onValueChange={(v) => setExpiryMode(v ? 1 : 0)} />
+                </div>
+                <div className="flex items-center justify-between py-1">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">流量即将用尽提醒</p>
+                    <p className="mt-0.5 text-xs text-default-500">套餐流量用量达到阈值时提醒您</p>
+                  </div>
+                  <Switch size="sm" isSelected={flowMode === 1} onValueChange={(v) => setFlowMode(v ? 1 : 0)} />
+                </div>
+                <div className="flex items-center justify-between py-1">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">自动续费结果</p>
+                    <p className="mt-0.5 text-xs text-default-500">自动续费成功或失败时通知您</p>
+                  </div>
+                  <Switch size="sm" isSelected={renewMode === 1} onValueChange={(v) => setRenewMode(v ? 1 : 0)} />
+                </div>
+              </>
             )}
           </ModalBody>
           <ModalFooter>
-            {isAdminUser ? (
-              <>
-                <Button variant="light" onPress={() => onPushOpenChange()}>取消</Button>
-                <Button color="default" isLoading={pushSaving} onPress={handleSavePushSettings}>确定</Button>
-              </>
-            ) : (
-              <Button color="default" onPress={() => onPushOpenChange()}>知道了</Button>
-            )}
+            <Button variant="light" onPress={() => onPushOpenChange()}>取消</Button>
+            <Button color="default" isLoading={pushSaving} onPress={handleSavePushSettings}>确定</Button>
           </ModalFooter>
         </ModalContent>
       </Modal>

@@ -1811,7 +1811,7 @@ export default function ForwardPage() {
                             value={form.speedLimit.toString()}
                             onChange={(e) => setForm(prev => ({ ...prev, speedLimit: parseInt(e.target.value) || 0 }))}
                             variant="bordered"
-                            endContent={<span className="px-2 py-0.5 -mr-1 rounded-md bg-default-100 dark:bg-default-50/10 text-default-500 text-xs font-medium">Mbps</span>}
+                            endContent={<span className="self-center px-2 py-0.5 -mr-1 rounded-md bg-default-100 dark:bg-default-50/10 text-default-500 text-xs font-medium">Mbps</span>}
                           />
 
                           <Input autoComplete="off"

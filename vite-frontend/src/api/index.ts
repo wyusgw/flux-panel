@@ -25,10 +25,19 @@ export const deleteUser = (id: number) => Network.post("/user/delete", { id });
 export const getUserPackageInfo = () => Network.post("/user/package");
 export const updateAutoRenew = (autoRenew: boolean) => Network.post("/user/autoRenew", { autoRenew });
 export const resetPassword = (currentPassword: string, newPassword?: string) => Network.post("/user/resetPassword", { currentPassword, newPassword });
-export const updateNotifySettings = (paymentMode: number, deviceMode: number, deviceGroupIds: number[]) => Network.post("/user/notifySettings", { paymentMode, deviceMode, deviceGroupIds });
+export interface NotifySettingsPayload {
+  paymentMode: number;
+  deviceMode: number;
+  deviceGroupIds: number[];
+  renewMode?: number;
+  expiryMode?: number;
+  flowMode?: number;
+}
+export const updateNotifySettings = (data: NotifySettingsPayload) => Network.post("/user/notifySettings", data);
 export const getTelegramBindCode = () => Network.post("/user/telegram/bindCode");
 export const unbindTelegram = () => Network.post("/user/telegram/unbind");
 export const testTelegramNotify = () => Network.post("/user/telegram/test");
+export const getTelegramSendLogs = (params: { type?: string; status?: string; limit?: number } = {}) => Network.post("/telegram-log/list", params);
 
 // 用户组CRUD操作 - 全部使用POST请求
 export const createUserGroup = (data: any) => Network.post("/user-group/create", data);
@@ -87,6 +96,9 @@ export const deleteInviteCode = (id: number) => Network.post("/invite-code/delet
 
 // 任务重试队列相关操作 - 全部使用POST请求
 export const getTaskQueueList = () => Network.post("/task-queue/list");
+
+// 管理员仪表盘聚合统计
+export const getDashboardFlowStats = () => Network.post("/dashboard/flow-stats");
 export const getTaskQueueHealth = () => Network.post("/task-queue/health");
 export const retryTaskQueue = (id: number) => Network.post("/task-queue/retry", { id });
 export const deleteTaskQueue = (id: number) => Network.post("/task-queue/delete", { id });

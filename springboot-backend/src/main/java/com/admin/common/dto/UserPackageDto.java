@@ -59,6 +59,9 @@ public class UserPackageDto {
         private Integer notifyPaymentMode;  // 收款信息推送模式（0-不接收，1-接收）
         private Integer notifyDeviceMode;   // 设备离线与恢复推送模式（0-不接收，1-白名单，2-黑名单）
         private List<Long> notifyDeviceGroupIds; // 设备离线推送范围（设备组ID）
+        private Integer notifyRenewMode;    // 自动续费成功/失败推送模式（0-不接收，1-接收）
+        private Integer notifyExpiryMode;   // 套餐到期提醒推送模式（0-不接收，1-接收）
+        private Integer notifyFlowMode;      // 流量即将用尽提醒推送模式（0-不接收，1-接收）
     }
     
     /**

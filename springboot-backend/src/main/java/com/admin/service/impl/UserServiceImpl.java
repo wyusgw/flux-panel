@@ -427,9 +427,11 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
                 return R.err(ERROR_CURRENT_PASSWORD_WRONG);
             }
 
-            // 4. 验证新用户名唯一性（如果与当前用户名不同）
-            if (!user.getUser().equals(changePasswordDto.getNewUsername())) {
-                R usernameValidationResult = validateUsernameUniqueness(changePasswordDto.getNewUsername(), user.getId());
+            // 4. 用户名留空表示不修改，只改密码；填了且与当前用户名不同才需要校验唯一性
+            String newUsername = StringUtils.isBlank(changePasswordDto.getNewUsername())
+                    ? user.getUser() : changePasswordDto.getNewUsername().trim();
+            if (!user.getUser().equals(newUsername)) {
+                R usernameValidationResult = validateUsernameUniqueness(newUsername, user.getId());
                 if (usernameValidationResult.getCode() != 0) {
                     return usernameValidationResult;
                 }
@@ -438,7 +440,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
             // 5. 更新用户名和密码
             User updateUser = new User();
             updateUser.setId(user.getId());
-            updateUser.setUser(changePasswordDto.getNewUsername());
+            updateUser.setUser(newUsername);
             updateUser.setPwd(Md5Util.md5(changePasswordDto.getNewPassword()));
             updateUser.setUpdatedTime(System.currentTimeMillis());
             

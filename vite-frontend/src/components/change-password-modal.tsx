@@ -37,11 +37,7 @@ export const ChangePasswordModal = ({
   const resetForm = () => setPasswordForm(emptyForm);
 
   const validate = (): boolean => {
-    if (!passwordForm.newUsername.trim()) {
-      toast.error('请输入新用户名');
-      return false;
-    }
-    if (passwordForm.newUsername.length < 3) {
+    if (passwordForm.newUsername.trim() && passwordForm.newUsername.trim().length < 3) {
       toast.error('用户名长度至少3位');
       return false;
     }
@@ -106,8 +102,8 @@ export const ChangePasswordModal = ({
               <div className="space-y-4">
                 <Input
                   size="sm" autoComplete="off"
-                  label="新用户名"
-                  placeholder="请输入新用户名（至少3位）"
+                  label="新用户名（选填）"
+                  placeholder="留空则不修改用户名，只改密码"
                   value={passwordForm.newUsername}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPasswordForm(prev => ({ ...prev, newUsername: e.target.value }))}
                   variant="bordered"

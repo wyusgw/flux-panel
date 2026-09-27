@@ -1295,3 +1295,16 @@ CREATE TABLE IF NOT EXISTS `telegram_send_log` (
   KEY `idx_telegram_send_log_created` (`created_time`),
   KEY `idx_telegram_send_log_type_status` (`type`,`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 创建 node_daily_raw_flow 表（如果不存在）：节点按自然日累计的原始流量（不计流量倍率），
+-- 供管理员仪表盘「今日/昨日节点流量排行」使用；此前这两张排行表一直是前端写死的空数组占位，
+-- 从未真正统计过节点维度的流量，这里补上数据来源（与 user_daily_raw_flow 同一次流量上报各自累计）
+CREATE TABLE IF NOT EXISTS `node_daily_raw_flow` (
+  `id` int(10) NOT NULL AUTO_INCREMENT,
+  `node_id` bigint(20) NOT NULL,
+  `day` varchar(10) NOT NULL,
+  `raw_bytes` bigint(20) NOT NULL DEFAULT '0',
+  `updated_time` bigint(20) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uniq_node_day` (`node_id`,`day`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

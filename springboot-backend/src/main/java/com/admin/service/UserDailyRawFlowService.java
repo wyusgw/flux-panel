@@ -3,6 +3,8 @@ package com.admin.service;
 import com.admin.entity.UserDailyRawFlow;
 import com.baomidou.mybatisplus.extension.service.IService;
 
+import java.util.List;
+
 public interface UserDailyRawFlowService extends IService<UserDailyRawFlow> {
 
     /**
@@ -15,4 +17,9 @@ public interface UserDailyRawFlowService extends IService<UserDailyRawFlow> {
      * 查询某用户今日、昨日累计的原始流量（字节），用于"我的转发规则"页「统计数据」弹窗
      */
     long[] getTodayAndYesterday(Integer userId);
+
+    /**
+     * 查询某一自然日所有用户的累计原始流量记录，供管理员仪表盘计算用户流量排行/系统总流量
+     */
+    List<UserDailyRawFlow> listByDay(String day);
 }

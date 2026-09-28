@@ -24,7 +24,7 @@ export const updateUser = (data: any) => Network.post("/user/update", data);
 export const deleteUser = (id: number) => Network.post("/user/delete", { id });
 export const getUserPackageInfo = () => Network.post("/user/package");
 export const updateAutoRenew = (autoRenew: boolean) => Network.post("/user/autoRenew", { autoRenew });
-export const resetPassword = (currentPassword: string, newPassword?: string) => Network.post("/user/resetPassword", { currentPassword, newPassword });
+export const resetPassword = (currentPassword: string, newPassword?: string, newUsername?: string) => Network.post("/user/resetPassword", { currentPassword, newPassword, newUsername });
 export interface NotifySettingsPayload {
   paymentMode: number;
   deviceMode: number;
@@ -176,9 +176,6 @@ export const createSpeedLimit = (data: any) => Network.post("/speed-limit/create
 export const getSpeedLimitList = () => Network.post("/speed-limit/list");
 export const updateSpeedLimit = (data: any) => Network.post("/speed-limit/update", data);
 export const deleteSpeedLimit = (id: number) => Network.post("/speed-limit/delete", { id });
-
-// 修改密码接口
-export const updatePassword = (data: any) => Network.post("/user/updatePassword", data);
 
 // 重置流量接口
 export const resetUserFlow = (data: { id: number; type: number }) => Network.post("/user/reset", data);

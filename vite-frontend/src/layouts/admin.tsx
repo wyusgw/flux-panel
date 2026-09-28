@@ -1,13 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Button } from "@heroui/button";
-import { useDisclosure } from "@heroui/modal";
 import toast from 'react-hot-toast';
 
 import { Logo } from '@/components/icons';
 import { ThemeSwitch } from '@/components/theme-switch';
 import { UserMenu } from '@/components/user-menu';
-import { ChangePasswordModal } from '@/components/change-password-modal';
+import { ToastWarningIcon } from '@/components/toast-icons';
 import { safeLogout } from '@/utils/logout';
 import { consumePasswordChangePrompt } from '@/utils/auth';
 import { siteConfig, getCachedConfigs } from '@/config/site';
@@ -27,7 +26,6 @@ export default function AdminLayout({
 }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { isOpen, onOpen, onOpenChange } = useDisclosure();
 
   const [isMobile, setIsMobile] = useState(false);
   const [mobileMenuVisible, setMobileMenuVisible] = useState(false);
@@ -278,10 +276,10 @@ export default function AdminLayout({
     setIsAdmin(adminFlag);
 
     // 检测到默认账号密码登录时，登录页会写入这个标记：不阻断使用，正常进入主页后
-    // 弹出"修改密码"弹窗提醒（可关闭），提醒一次即消费掉，不会每次导航都重新弹出
+    // 提示一次并跳转到个人中心账户设置的重置密码区域，提醒一次即消费掉，不会每次导航都重新提示
     if (consumePasswordChangePrompt()) {
-      toast('检测到您使用的是默认账号密码，为了账户安全请尽快修改', { icon: '⚠️', duration: 6000 });
-      onOpen();
+      toast('检测到您使用的是默认账号密码，为了账户安全请尽快修改', { icon: <ToastWarningIcon />, duration: 6000 });
+      navigate('/account-center');
     }
 
     getCachedConfigs().then((configs) => {
@@ -474,7 +472,7 @@ export default function AdminLayout({
           </div>
 
           <div className="flex items-center gap-3">
-            <UserMenu username={username} onChangePassword={onOpen} onLogout={handleLogout} />
+            <UserMenu username={username} onLogout={handleLogout} />
             <ThemeSwitch />
           </div>
         </header>
@@ -484,8 +482,6 @@ export default function AdminLayout({
           {children}
         </main>
       </div>
-
-      <ChangePasswordModal isOpen={isOpen} onOpenChange={onOpenChange} />
     </div>
   );
-} 
+}

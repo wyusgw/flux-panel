@@ -54,7 +54,7 @@ export function isLoggedIn(): boolean {
 
 /**
  * 检测到默认账号密码登录后，登录页会写入这个标记；布局组件挂载时调用本函数消费一次
- * （读到即清除，不会每次导航都重新弹出），据此弹出"修改密码"提醒弹窗
+ * （读到即清除，不会每次导航都重新提示），据此提示并跳转到个人中心账户设置的重置密码区域
  * @returns 本次是否需要提示修改密码
  */
 export function consumePasswordChangePrompt(): boolean {

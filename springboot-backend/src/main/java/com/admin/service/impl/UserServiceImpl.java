@@ -494,7 +494,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     }
 
     /**
-     * 个人中心「重置密码」：当前密码校验通过后，新密码留空则随机生成
+     * 个人中心「重置密码」：当前密码校验通过后，新密码留空则随机生成；用户名留空表示不修改
      * 注意：不做token失效/强制下线其他设备（当前JWT为无状态签名，暂不支持该能力）
      *
      * @param resetPasswordDto 重置密码数据传输对象
@@ -514,11 +514,22 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
                 return R.err(ERROR_CURRENT_PASSWORD_WRONG);
             }
 
+            // 用户名留空表示不修改；填了且与当前用户名不同才需要校验唯一性
+            String newUsername = StringUtils.isBlank(resetPasswordDto.getNewUsername())
+                    ? user.getUser() : resetPasswordDto.getNewUsername().trim();
+            if (!user.getUser().equals(newUsername)) {
+                R usernameValidationResult = validateUsernameUniqueness(newUsername, user.getId());
+                if (usernameValidationResult.getCode() != 0) {
+                    return usernameValidationResult;
+                }
+            }
+
             boolean generated = StringUtils.isBlank(resetPasswordDto.getNewPassword());
             String newPassword = generated ? RandomUtil.randomString(10) : resetPasswordDto.getNewPassword();
 
             User updateUser = new User();
             updateUser.setId(user.getId());
+            updateUser.setUser(newUsername);
             updateUser.setPwd(Md5Util.md5(newPassword));
             updateUser.setUpdatedTime(System.currentTimeMillis());
 

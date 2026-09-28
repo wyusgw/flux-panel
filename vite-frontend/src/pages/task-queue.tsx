@@ -236,9 +236,6 @@ export default function TaskQueuePage() {
     <div className="px-3 lg:px-6 py-8">
       <div className="mb-4">
         <h1 className="text-xl font-semibold">队列监控</h1>
-        <p className="text-sm text-default-500 mt-1">
-          各类异步任务（转发同步、Telegram 通知发送等）失败时会登记在这里，相关节点重新上线或定时兜底扫描会自动重试，也可以在这里手动立即重试。
-        </p>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-3 mb-4">

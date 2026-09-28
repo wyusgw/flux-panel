@@ -271,7 +271,7 @@ export default function PackagePlanPage() {
           <div><h1 className="text-base font-semibold text-foreground">套餐管理</h1><p className="mt-1 text-xs text-default-500">管理可供购买的流量套餐</p></div>
           <div className="flex gap-2">
             {selectedIds.length > 0 && <Button size="sm" color="danger" variant="flat" onPress={() => setBatchDeleteModalOpen(true)}>批量删除（{selectedIds.length}）</Button>}
-            <Button size="sm" variant="bordered" onPress={loadData} isLoading={loading}>刷新</Button>
+            <Button size="sm" variant="bordered" onPress={loadData} isDisabled={loading}>刷新</Button>
             <Button size="sm" color="default" onPress={handleAdd}>添加套餐</Button>
           </div>
         </CardHeader>

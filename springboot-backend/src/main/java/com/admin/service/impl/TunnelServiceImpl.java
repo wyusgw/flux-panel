@@ -19,6 +19,7 @@ import com.admin.service.ForwardService;
 import com.admin.service.NodeService;
 import com.admin.service.TunnelService;
 import com.admin.service.UserTunnelService;
+import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
@@ -154,7 +155,25 @@ public class TunnelServiceImpl extends ServiceImpl<TunnelMapper, Tunnel> impleme
     public R getAllTunnels() {
         // 排除转发规则（入口/出口设备组模式）自动创建的隧道，"隧道管理"只展示手动创建的隧道
         List<Tunnel> tunnelList = this.list(new QueryWrapper<Tunnel>().ne("is_auto", 1));
-        return R.ok(tunnelList);
+        if (tunnelList.isEmpty()) {
+            return R.ok(tunnelList);
+        }
+
+        // 已用流量：Tunnel 本身不记录用量，按 tunnel_id 汇总其下所有转发规则的 inFlow+outFlow
+        List<Integer> tunnelIds = tunnelList.stream().map(t -> t.getId().intValue()).collect(Collectors.toList());
+        List<Forward> forwards = forwardService.list(new QueryWrapper<Forward>().in("tunnel_id", tunnelIds));
+        Map<Integer, Long> usedFlowByTunnelId = new HashMap<>();
+        for (Forward forward : forwards) {
+            long used = (forward.getInFlow() == null ? 0L : forward.getInFlow()) + (forward.getOutFlow() == null ? 0L : forward.getOutFlow());
+            usedFlowByTunnelId.merge(forward.getTunnelId(), used, Long::sum);
+        }
+
+        List<JSONObject> result = tunnelList.stream().map(tunnel -> {
+            JSONObject json = (JSONObject) JSON.toJSON(tunnel);
+            json.put("usedFlow", usedFlowByTunnelId.getOrDefault(tunnel.getId().intValue(), 0L));
+            return json;
+        }).collect(Collectors.toList());
+        return R.ok(result);
     }
 
     /**

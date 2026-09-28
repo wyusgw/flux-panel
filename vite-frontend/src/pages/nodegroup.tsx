@@ -215,7 +215,7 @@ export default function NodeGroupPage() {
           <div><h1 className="text-base font-semibold text-foreground">节点组管理</h1><p className="mt-1 text-xs text-default-500">对节点进行分类，用于分配哪些节点可被套餐/用户组使用</p></div>
           <div className="flex gap-2">
             {selectedIds.length > 0 && <Button size="sm" color="danger" variant="flat" onPress={() => setBatchDeleteModalOpen(true)}>批量删除（{selectedIds.length}）</Button>}
-            <Button size="sm" variant="bordered" onPress={loadData} isLoading={loading}>刷新</Button>
+            <Button size="sm" variant="bordered" onPress={loadData} isDisabled={loading}>刷新</Button>
             <Button size="sm" color="default" onPress={handleAdd}>添加节点组</Button>
           </div>
         </CardHeader>

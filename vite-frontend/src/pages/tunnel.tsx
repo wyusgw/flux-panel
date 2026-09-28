@@ -38,6 +38,7 @@ interface Tunnel {
   interfaceName?: string;
   flow: number; // 1: 单向, 2: 双向
   trafficRatio: number;
+  usedFlow?: number;
   status: number;
   createdTime: string;
 }
@@ -384,6 +385,15 @@ export default function TunnelPage() {
     }
   };
 
+  // 格式化流量
+  const formatFlow = (value: number): string => {
+    if (value === 0) return '0 B';
+    if (value < 1024) return value + ' B';
+    if (value < 1024 * 1024) return (value / 1024).toFixed(2) + ' KB';
+    if (value < 1024 * 1024 * 1024) return (value / (1024 * 1024)).toFixed(2) + ' MB';
+    return (value / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+  };
+
   // 获取流量计算显示
   const getFlowDisplay = (flow: number) => {
     switch (flow) {
@@ -445,6 +455,7 @@ export default function TunnelPage() {
                     <TableColumn>入口</TableColumn>
                     <TableColumn>出口</TableColumn>
                     <TableColumn>流量配置</TableColumn>
+                    <TableColumn>已用流量</TableColumn>
                     <TableColumn>状态</TableColumn>
                     <TableColumn align="end">操作</TableColumn>
                   </TableHeader>
@@ -474,6 +485,7 @@ export default function TunnelPage() {
                             <div className="text-sm text-foreground">{getFlowDisplay(tunnel.flow)}</div>
                             <div className="text-xs text-default-500">倍率 {tunnel.trafficRatio}x</div>
                           </TableCell>
+                          <TableCell>{formatFlow(tunnel.usedFlow || 0)}</TableCell>
                           <TableCell>
                             <Chip size="sm" variant="flat" color={statusDisplay.color as any}>{statusDisplay.text}</Chip>
                           </TableCell>

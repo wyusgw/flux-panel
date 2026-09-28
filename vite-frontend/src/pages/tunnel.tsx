@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import { Card, CardBody, CardHeader } from "@heroui/card";
+import { Card, CardBody } from "@heroui/card";
+import { Table, TableHeader, TableColumn, TableBody, TableRow, TableCell } from "@heroui/table";
 import { Button } from "@heroui/button";
 import { Input } from "@heroui/input";
 import { Select, SelectItem } from "@heroui/select";
@@ -429,146 +430,80 @@ export default function TunnelPage() {
      
         </div>
 
-        {/* 隧道卡片网格 */}
+        {/* 隧道列表 */}
         {tunnels.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
-            {tunnels.map((tunnel) => {
-              const statusDisplay = getStatusDisplay(tunnel.status);
-              const typeDisplay = getTypeDisplay(tunnel.type);
-              
-              return (
-                <Card key={tunnel.id} className="shadow-sm border border-divider hover:shadow-md transition-shadow duration-200">
-                  <CardHeader className="pb-2">
-                    <div className="flex justify-between items-start w-full">
-                      <div className="flex-1 min-w-0">
-                        <h3 className="font-semibold text-foreground truncate text-sm">{tunnel.name}</h3>
-                        <div className="flex items-center gap-1.5 mt-1">
-                          <Chip 
-                            color={typeDisplay.color as any} 
-                            variant="flat" 
-                            size="sm"
-                            className="text-xs"
-                          >
-                            {typeDisplay.text}
-                          </Chip>
-                          <Chip 
-                            color={statusDisplay.color as any} 
-                            variant="flat" 
-                            size="sm"
-                            className="text-xs"
-                          >
-                            {statusDisplay.text}
-                          </Chip>
-                        </div>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  
-                  <CardBody className="pt-0 pb-3">
-                    <div className="space-y-2">
-                      {/* 流程展示 */}
-                      <div className="space-y-1.5">
-                        <div className="p-2 bg-default-50 dark:bg-default-100/50 rounded border border-default-200 dark:border-default-300">
-                          <div className="flex items-center justify-between mb-1">
-                            <span className="text-xs font-medium text-default-600">入口节点</span>
-                          </div>
-                          <code className="text-xs font-mono text-foreground block truncate">
-                            {getNodeName(tunnel.inNodeId)}
-                          </code>
-                          <code className="text-xs font-mono text-default-500 block truncate">
-                            {getDisplayIp(tunnel.inIp)}
-                          </code>
-                        </div>
-                        
-                        <div className="text-center py-0.5">
-                          <svg className="w-3 h-3 text-default-400 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-                          </svg>
-                        </div>
-                        
-                        <div className="p-2 bg-default-50 dark:bg-default-100/50 rounded border border-default-200 dark:border-default-300">
-                          <div className="flex items-center justify-between mb-1">
-                            <span className="text-xs font-medium text-default-600">
-                              {tunnel.type === 1 ? '出口节点（同入口）' : '出口节点'}
-                            </span>
-                          </div>
-                          <code className="text-xs font-mono text-foreground block truncate">
-                            {tunnel.type === 1 ? getNodeName(tunnel.inNodeId) : getNodeName(tunnel.outNodeId)}
-                          </code>
-                          <code className="text-xs font-mono text-default-500 block truncate">
-                            {tunnel.type === 1 ? getDisplayIp(tunnel.inIp) : getDisplayIp(tunnel.outIp)}
-                          </code>
-                        </div>
-                      </div>
-
-                      {/* 配置信息 */}
-                      <div className="flex justify-between items-center pt-2 border-t border-divider">
-                        <div className="text-left">
-                          <div className="text-xs font-medium text-foreground">
-                            {getFlowDisplay(tunnel.flow)}
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <div className="text-xs font-medium text-foreground">
-                            {tunnel.trafficRatio}x
-                          </div>
-                        </div>
-                      </div>
-
-                    </div>
-                    
-                    <div className="flex gap-1.5 mt-3">
-                      <Button
-                        size="sm"
-                        variant="flat"
-                        color="default"
-                        onPress={() => handleEdit(tunnel)}
-                        className="flex-1 min-h-8"
-                        startContent={
-                          <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                            <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
-                          </svg>
-                        }
-                      >
-                        编辑
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="flat"
-                        color="default"
-                        onPress={() => handleDiagnose(tunnel)}
-                        isDisabled={tunnel.status !== 1}
-                        title={tunnel.status === 1 ? '诊断' : '仅启用状态下可诊断'}
-                        className="flex-1 min-h-8"
-                        startContent={
-                          <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                          </svg>
-                        }
-                      >
-                        诊断
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="flat"
-                        color="danger"
-                        onPress={() => handleDelete(tunnel)}
-                        className="flex-1 min-h-8"
-                        startContent={
-                          <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z" clipRule="evenodd" />
-                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7a1 1 0 012 0v4a1 1 0 11-2 0V7zM12 7a1 1 0 012 0v4a1 1 0 11-2 0V7z" clipRule="evenodd" />
-                          </svg>
-                        }
-                      >
-                        删除
-                      </Button>
-                    </div>
-                  </CardBody>
-                </Card>
-              );
-            })}
-          </div>
+          <Card className="shadow-sm border border-default-200">
+            <CardBody className="p-0">
+              <div className="settings-table-scroll">
+                <Table
+                  removeWrapper
+                  aria-label="隧道列表"
+                  classNames={{ base: "w-full", table: "w-full tunnel-table", th: "management-table-heading", td: "management-table-cell" }}
+                >
+                  <TableHeader>
+                    <TableColumn>隧道名</TableColumn>
+                    <TableColumn>入口</TableColumn>
+                    <TableColumn>出口</TableColumn>
+                    <TableColumn>流量配置</TableColumn>
+                    <TableColumn>状态</TableColumn>
+                    <TableColumn align="end">操作</TableColumn>
+                  </TableHeader>
+                  <TableBody items={tunnels}>
+                    {(tunnel) => {
+                      const statusDisplay = getStatusDisplay(tunnel.status);
+                      const typeDisplay = getTypeDisplay(tunnel.type);
+                      return (
+                        <TableRow key={tunnel.id}>
+                          <TableCell>
+                            <div className="font-medium text-foreground">{tunnel.name}</div>
+                            <div className="flex items-center gap-1.5 mt-1">
+                              <span className="text-xs text-default-400">#{tunnel.id}</span>
+                              <Chip color={typeDisplay.color as any} variant="flat" size="sm" className="text-xs">{typeDisplay.text}</Chip>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="font-medium">{getNodeName(tunnel.inNodeId)}</div>
+                            <div className="text-xs text-default-500">{getDisplayIp(tunnel.inIp)}</div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="font-medium">{tunnel.type === 1 ? getNodeName(tunnel.inNodeId) : getNodeName(tunnel.outNodeId)}</div>
+                            <div className="text-xs text-default-500">{tunnel.type === 1 ? getDisplayIp(tunnel.inIp) : getDisplayIp(tunnel.outIp)}</div>
+                            {tunnel.type === 1 && <div className="text-xs text-default-400">同入口</div>}
+                          </TableCell>
+                          <TableCell>
+                            <div className="text-sm text-foreground">{getFlowDisplay(tunnel.flow)}</div>
+                            <div className="text-xs text-default-500">倍率 {tunnel.trafficRatio}x</div>
+                          </TableCell>
+                          <TableCell>
+                            <Chip size="sm" variant="flat" color={statusDisplay.color as any}>{statusDisplay.text}</Chip>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex justify-end items-center gap-1">
+                              <Button isIconOnly size="sm" variant="flat" title={tunnel.status === 1 ? '诊断' : '仅启用状态下可诊断'} isDisabled={tunnel.status !== 1} onPress={() => handleDiagnose(tunnel)}>
+                                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                </svg>
+                              </Button>
+                              <Button isIconOnly size="sm" variant="flat" title="编辑" onPress={() => handleEdit(tunnel)}>
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
+                                </svg>
+                              </Button>
+                              <Button isIconOnly size="sm" variant="flat" color="danger" title="删除" onPress={() => handleDelete(tunnel)}>
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 7h16M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m-8 0l1 13a1 1 0 001 1h6a1 1 0 001-1l1-13" />
+                                </svg>
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    }}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardBody>
+          </Card>
         ) : (
           /* 空状态 */
           <Card className="shadow-sm border border-gray-200 dark:border-gray-700">

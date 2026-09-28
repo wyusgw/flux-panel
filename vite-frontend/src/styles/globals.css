@@ -217,4 +217,5 @@ td.probe-clickable:hover { text-decoration: underline; text-underline-offset: 2p
 .dark .rail-btn:hover:not(:disabled) { background: #27272a; color: #e4e4e7; }
 .dark .rail-btn-danger:hover:not(:disabled) { background: rgb(239 68 68 / 16%); color: #f87171; }
 .forward-table { min-width: 760px; }
+.tunnel-table { min-width: 680px; }
 @media (max-width: 767px) { .forward-page { padding-right: 12px; } }

@@ -1317,12 +1317,12 @@ export default function ForwardPage() {
               <Button size="sm" variant="flat" onPress={() => navigate('/user')}>← 返回用户管理</Button>
             )}
             <h1 className="text-xl font-bold text-foreground">
-              {isImpersonating ? `用户转发规则 (UID=${impersonateUserId}${impersonateUserName ? `，${impersonateUserName}` : ''})` : '我的转发规则'}
+              {isImpersonating ? `用户转发规则${impersonateUserName ? ` ${impersonateUserName}` : ''} (UID=${impersonateUserId})` : '我的转发规则'}
             </h1>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <Button size="sm" variant="flat" startContent={<IconSearch />} onPress={() => setSearchModalOpen(true)}>搜索规则</Button>
-            <Button size="sm" variant="flat" startContent={<IconRefresh />} isLoading={loading} onPress={() => loadData()}>刷新</Button>
+            <Button size="sm" variant="flat" startContent={<IconRefresh />} isDisabled={loading} onPress={() => loadData()}>刷新</Button>
             {!isImpersonating && <Button size="sm" variant="flat" startContent={<IconStats />} onPress={openStats}>统计数据</Button>}
           </div>
         </div>
@@ -2168,7 +2168,7 @@ export default function ForwardPage() {
                     <Button
                       color="default"
                       onPress={() => handleDiagnose(currentDiagnosisForward)}
-                      isLoading={diagnosisLoading}
+                      isDisabled={diagnosisLoading}
                     >
                       重新诊断
                     </Button>

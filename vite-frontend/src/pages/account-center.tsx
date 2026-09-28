@@ -488,7 +488,7 @@ export default function AccountCenterPage() {
           </ModalBody>
           <ModalFooter>
             <Button variant="light" onPress={() => onBindOpenChange()}>关闭</Button>
-            <Button color="default" isLoading={bindChecking} onPress={handleRefreshBindStatus}>刷新状态</Button>
+            <Button color="default" isDisabled={bindChecking} onPress={handleRefreshBindStatus}>刷新状态</Button>
           </ModalFooter>
         </ModalContent>
       </Modal>

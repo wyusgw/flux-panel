@@ -110,10 +110,10 @@ export default function AdminLayout({
       label: '网络诊断',
       hidden: !lookingGlassEnabled,
       icon: (
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 20 20">
-          <circle cx="10" cy="10" r="1.5" fill="currentColor" stroke="none" />
-          <circle cx="10" cy="10" r="4" />
-          <circle cx="10" cy="10" r="7.5" />
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" viewBox="0 0 20 20">
+          <circle cx="10" cy="10" r="1" fill="currentColor" stroke="none" />
+          <circle cx="10" cy="10" r="6" />
+          <path d="M10 1v3.2M10 15.8V19M1 10h3.2M15.8 10H19" />
         </svg>
       )
     },
@@ -131,8 +131,12 @@ export default function AdminLayout({
       path: '/node',
       label: '节点状态',
       icon: (
-        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-          <path fillRule="evenodd" d="M3 3a1 1 0 000 2v8a2 2 0 002 2h2.586l-1.293 1.293a1 1 0 101.414 1.414L10 15.414l2.293 2.293a1 1 0 001.414-1.414L12.414 15H15a2 2 0 002-2V5a1 1 0 100-2H3zm11.707 4.707a1 1 0 00-1.414-1.414L10 9.586 8.707 8.293a1 1 0 00-1.414 0l-2 2a1 1 0 101.414 1.414L8 10.414l1.293 1.293a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" viewBox="0 0 20 20">
+          <rect x="2.5" y="3" width="15" height="5.5" rx="1.3" />
+          <rect x="2.5" y="11.5" width="15" height="5.5" rx="1.3" />
+          <circle cx="6" cy="5.75" r="0.9" fill="currentColor" stroke="none" />
+          <circle cx="6" cy="14.25" r="0.9" fill="currentColor" stroke="none" />
+          <path d="M9.5 5.75h5M9.5 14.25h5" />
         </svg>
       )
     },

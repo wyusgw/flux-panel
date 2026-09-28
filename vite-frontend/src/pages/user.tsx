@@ -539,7 +539,7 @@ export default function UserPage() {
                 classNames={{ inputWrapper: "management-search" }}
               />
               <Button size="sm" variant="bordered" onPress={handleSearch}>搜索</Button>
-              <Button size="sm" variant="bordered" onPress={loadUsers} isLoading={loading}>刷新</Button>
+              <Button size="sm" variant="bordered" onPress={loadUsers} isDisabled={loading}>刷新</Button>
             </div>
           </CardHeader>
           <CardBody className="p-0">

@@ -859,7 +859,7 @@ export default function TunnelPage() {
                     <Button
                       color="default"
                       onPress={() => handleDiagnose(currentDiagnosisTunnel)}
-                      isLoading={diagnosisLoading}
+                      isDisabled={diagnosisLoading}
                     >
                       重新诊断
                     </Button>

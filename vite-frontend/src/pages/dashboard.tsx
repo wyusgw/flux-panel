@@ -617,7 +617,7 @@ export default function DashboardPage() {
               <p className="mt-1 text-sm text-default-500">查看账户资源、流量使用情况与转发状态。</p>
             </div>
             <div className="flex items-center gap-2">
-              <Button size="sm" variant="bordered" className="dashboard-action" onPress={loadPackageData} isLoading={loading}>
+              <Button size="sm" variant="bordered" className="dashboard-action" onPress={loadPackageData} isDisabled={loading}>
                 刷新数据
               </Button>
               <Button size="sm" color="default" className="font-medium" onPress={() => navigate('/forward')}>

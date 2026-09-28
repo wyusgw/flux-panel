@@ -46,31 +46,13 @@ const RegionCell = ({ code }: { code?: string }) => code ? <span className={`fi 
 // 可点击/悬停查看详情的一行 popover 内容
 const PopRow = ({ children }: { children: React.ReactNode }) => <div className="probe-node-popover-row">{children}</div>;
 
-type DetailHandlers = {
-  onMouseEnter: (e: React.MouseEvent) => void;
-  onMouseLeave: () => void;
-  onClick: (e: React.MouseEvent) => void;
-};
-
-interface NodeRowProps {
-  node: Node;
-  groupMeta?: DeviceGroup;
-  effectiveAdmin: boolean;
-  regionCode?: string;
-  userGroupNames: (ids?: number[]) => string;
-  detailHandlers: (key: string, content: React.ReactNode) => DetailHandlers;
-}
-
-// 每个节点每 2 秒推送一次系统信息，之前整张表都在一个大 .map() 里内联渲染，
-// 任何一个节点的数据更新都会导致所有行重新渲染，节点一多就会看起来卡顿。
-// 拆成独立的 memo 组件后，某个节点更新时只有它自己这一行会重渲染。
-const NodeRow = memo(function NodeRow({ node, groupMeta, effectiveAdmin, regionCode, userGroupNames, detailHandlers }: NodeRowProps) {
+// 各个详情 popover 的内容，都在父组件里做成纯函数，而不是在 NodeRow 里算好、把算出来的 JSX
+// 当"快照"存进 state——那样的话，弹窗打开着的时候节点数据再更新（CPU/RAM/连接数变化、上下线等），
+// 弹窗内容也不会跟着变，得关掉重开才能看到新的。现在父组件每次渲染都用最新的 nodes 数据重新算一遍，
+// 哪个弹窗开着，内容就跟着 WebSocket 推送实时刷新，交互方式（点击/悬停才展开）本身不变
+const buildStatusContent = (node: Node, groupMeta: DeviceGroup | undefined, effectiveAdmin: boolean, userGroupNames: (ids?: number[]) => string) => {
   const isOnline = node.connectionStatus === 'online';
-  // 节点离线时没有实时数据，连接数/CPU/RAM/存储的详情卡片没有意义，
-  // 只在在线时才可点击查看，离线时不挂载点击/悬停处理器
-  const onlineOnlyHandlers = (key: string, content: React.ReactNode) => isOnline ? detailHandlers(key, content) : {};
-
-  const statusContent = effectiveAdmin ? (
+  return effectiveAdmin ? (
     <>
       <PopRow><b>{node.name}</b></PopRow>
       <PopRow>服务器：{node.serverIp || '—'}</PopRow>
@@ -88,47 +70,69 @@ const NodeRow = memo(function NodeRow({ node, groupMeta, effectiveAdmin, regionC
       <PopRow>状态：{isOnline ? '在线' : '离线'}</PopRow>
     </>
   );
-  const sendConnContent = (
-    <>
-      <PopRow><b>发送当前连接数</b></PopRow>
-      <PopRow>TCP：{node.systemInfo?.outboundTcpConnections ?? '—'}</PopRow>
-      <PopRow>UDP：{node.systemInfo?.outboundUdpConnections ?? '—'}</PopRow>
-    </>
-  );
-  const receiveConnContent = (
-    <>
-      <PopRow><b>接收当前连接数</b></PopRow>
-      <PopRow>TCP：{node.systemInfo?.inboundTcpConnections ?? '—'}</PopRow>
-      <PopRow>UDP：{node.systemInfo?.inboundUdpConnections ?? '—'}</PopRow>
-    </>
-  );
-  const cpuContent = (
-    <>
-      <PopRow><b>CPU</b></PopRow>
-      <PopRow>型号：{node.systemInfo?.cpuModel || '暂无型号信息'}</PopRow>
-      <PopRow>使用率：{node.systemInfo?.cpuUsage !== undefined ? `${node.systemInfo.cpuUsage.toFixed(1)}%` : '—'}</PopRow>
-    </>
-  );
-  const ramContent = (
-    <>
-      <PopRow><b>RAM</b></PopRow>
-      <PopRow>已用：{formatBytes(node.systemInfo?.memoryUsed)}</PopRow>
-      <PopRow>剩余：{formatBytes(node.systemInfo?.memoryAvailable)}</PopRow>
-      <PopRow>总量：{formatBytes(node.systemInfo?.memoryTotal)}</PopRow>
-    </>
-  );
-  const storageContent = (
-    <>
-      <PopRow>已用：{formatBytes(node.systemInfo?.storageUsed)}</PopRow>
-      <PopRow>剩余：{formatBytes(node.systemInfo?.storageFree)}</PopRow>
-      <PopRow>总量：{formatBytes(node.systemInfo?.storageTotal)}</PopRow>
-    </>
-  );
+};
+const buildCpuContent = (node: Node) => (
+  <>
+    <PopRow><b>CPU</b></PopRow>
+    <PopRow>型号：{node.systemInfo?.cpuModel || '暂无型号信息'}</PopRow>
+    <PopRow>使用率：{node.systemInfo?.cpuUsage !== undefined ? `${node.systemInfo.cpuUsage.toFixed(1)}%` : '—'}</PopRow>
+  </>
+);
+const buildRamContent = (node: Node) => (
+  <>
+    <PopRow><b>RAM</b></PopRow>
+    <PopRow>已用：{formatBytes(node.systemInfo?.memoryUsed)}</PopRow>
+    <PopRow>剩余：{formatBytes(node.systemInfo?.memoryAvailable)}</PopRow>
+    <PopRow>总量：{formatBytes(node.systemInfo?.memoryTotal)}</PopRow>
+  </>
+);
+const buildStorageContent = (node: Node) => (
+  <>
+    <PopRow>已用：{formatBytes(node.systemInfo?.storageUsed)}</PopRow>
+    <PopRow>剩余：{formatBytes(node.systemInfo?.storageFree)}</PopRow>
+    <PopRow>总量：{formatBytes(node.systemInfo?.storageTotal)}</PopRow>
+  </>
+);
+const buildReceiveConnContent = (node: Node) => (
+  <>
+    <PopRow><b>接收当前连接数</b></PopRow>
+    <PopRow>TCP：{node.systemInfo?.inboundTcpConnections ?? '—'}</PopRow>
+    <PopRow>UDP：{node.systemInfo?.inboundUdpConnections ?? '—'}</PopRow>
+  </>
+);
+const buildSendConnContent = (node: Node) => (
+  <>
+    <PopRow><b>发送当前连接数</b></PopRow>
+    <PopRow>TCP：{node.systemInfo?.outboundTcpConnections ?? '—'}</PopRow>
+    <PopRow>UDP：{node.systemInfo?.outboundUdpConnections ?? '—'}</PopRow>
+  </>
+);
+
+type DetailHandlers = {
+  onMouseEnter: (e: React.MouseEvent) => void;
+  onMouseLeave: () => void;
+  onClick: (e: React.MouseEvent) => void;
+};
+
+interface NodeRowProps {
+  node: Node;
+  regionCode?: string;
+  detailHandlers: (key: string) => DetailHandlers;
+}
+
+// 每个节点每 2 秒推送一次系统信息，之前整张表都在一个大 .map() 里内联渲染，
+// 任何一个节点的数据更新都会导致所有行重新渲染，节点一多就会看起来卡顿。
+// 拆成独立的 memo 组件后，某个节点更新时只有它自己这一行会重渲染。
+const NodeRow = memo(function NodeRow({ node, regionCode, detailHandlers }: NodeRowProps) {
+  const isOnline = node.connectionStatus === 'online';
+  // 节点离线时没有实时数据，连接数/CPU/RAM/存储的详情卡片没有意义，
+  // 只在在线时才可点击查看，离线时不挂载点击/悬停处理器
+  const onlineOnlyHandlers = (key: string) => isOnline ? detailHandlers(key) : {};
 
   return (
     <tr>
       <td>
-        <span className={`probe-status probe-clickable ${isOnline ? 'online' : ''}`} {...detailHandlers(`status-${node.id}`, statusContent)}>
+        <span className={`probe-status probe-clickable ${isOnline ? 'online' : ''}`} {...detailHandlers(`status-${node.id}`)}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-label={isOnline ? '在线' : '离线'}>
             <circle cx="12" cy="12" r="10" />
             {isOnline ? <path d="M7.8 12.3l2.9 2.9 5.5-5.7" /> : <path d="M9 9l6 6M15 9l-6 6" />}
@@ -137,22 +141,22 @@ const NodeRow = memo(function NodeRow({ node, groupMeta, effectiveAdmin, regionC
       </td>
       <td><RegionCell code={regionCode} /></td>
       <td><RegionCell /></td>
-      <td className={isOnline ? 'probe-clickable' : ''} {...onlineOnlyHandlers(`conn-recv-${node.id}`, receiveConnContent)}>{formatSpeed(node.systemInfo?.uploadSpeed)}</td>
-      <td className={isOnline ? 'probe-clickable' : ''} {...onlineOnlyHandlers(`conn-send-${node.id}`, sendConnContent)}>{formatSpeed(node.systemInfo?.downloadSpeed)}</td>
+      <td className={isOnline ? 'probe-clickable' : ''} {...onlineOnlyHandlers(`conn-recv-${node.id}`)}>{formatSpeed(node.systemInfo?.uploadSpeed)}</td>
+      <td className={isOnline ? 'probe-clickable' : ''} {...onlineOnlyHandlers(`conn-send-${node.id}`)}>{formatSpeed(node.systemInfo?.downloadSpeed)}</td>
       <td className="probe-uptime">{node.systemInfo ? formatUptime(node.systemInfo.uptime) : ''}</td>
       <td className="probe-pair"><span>{formatBytes(node.systemInfo?.uploadTraffic)} <UploadIcon className="w-3 h-3 inline-block align-middle" /></span><span>{formatBytes(node.systemInfo?.downloadTraffic)} <DownloadIcon className="w-3 h-3 inline-block align-middle" /></span></td>
       <td>
-        <div className={`probe-meter probe-meter-${meterTone(node.systemInfo?.cpuUsage)} ${isOnline ? 'probe-clickable' : ''}`} {...onlineOnlyHandlers(`cpu-${node.id}`, cpuContent)}>
+        <div className={`probe-meter probe-meter-${meterTone(node.systemInfo?.cpuUsage)} ${isOnline ? 'probe-clickable' : ''}`} {...onlineOnlyHandlers(`cpu-${node.id}`)}>
           <span style={{ width: `${Math.min(node.systemInfo?.cpuUsage || 0, 100)}%` }} /> <b>{node.systemInfo?.cpuUsage === undefined ? '' : `${node.systemInfo.cpuUsage.toFixed(1)}%`}</b>
         </div>
       </td>
       <td>
-        <div className={`probe-meter probe-meter-${meterTone(node.systemInfo?.memoryUsage)} ${isOnline ? 'probe-clickable' : ''}`} {...onlineOnlyHandlers(`ram-${node.id}`, ramContent)}>
+        <div className={`probe-meter probe-meter-${meterTone(node.systemInfo?.memoryUsage)} ${isOnline ? 'probe-clickable' : ''}`} {...onlineOnlyHandlers(`ram-${node.id}`)}>
           <span style={{ width: `${Math.min(node.systemInfo?.memoryUsage || 0, 100)}%` }} /> <b>{node.systemInfo?.memoryUsage === undefined ? '' : `${node.systemInfo.memoryUsage.toFixed(1)}%`}</b>
         </div>
       </td>
       <td>
-        <div className={`probe-meter probe-meter-${meterTone(node.systemInfo?.storageUsage)} ${isOnline ? 'probe-clickable' : ''}`} {...onlineOnlyHandlers(`storage-${node.id}`, storageContent)}>
+        <div className={`probe-meter probe-meter-${meterTone(node.systemInfo?.storageUsage)} ${isOnline ? 'probe-clickable' : ''}`} {...onlineOnlyHandlers(`storage-${node.id}`)}>
           <span style={{ width: `${Math.min(node.systemInfo?.storageUsage || 0, 100)}%` }} /> <b>{node.systemInfo?.storageUsage === undefined ? '' : `${node.systemInfo.storageUsage.toFixed(1)}%`}</b>
         </div>
       </td>
@@ -172,10 +176,10 @@ export default function NodeProbePage() {
   const [nodeGroups, setNodeGroups] = useState<NodeGroup[]>([]);
   const [regionCodes, setRegionCodes] = useState<Record<string, string>>({});
 
-  // 统一的详情 popover：状态 / CPU / RAM / 存储 / 连接数点击或悬停共用同一套定位与显示逻辑，
-  // 内容在打开时以 JSX 形式传入，这里只负责定位和是否显示
+  // 状态图标点击/悬停的详情 popover：只记 key（标识是哪个节点）和定位信息，内容在渲染时用
+  // buildStatusContent 现算，而不是在打开那一刻把内容存成快照——这样弹窗开着的时候如果节点状态
+  // 更新了（比如离线/上线），能跟着刷新，不用关掉重开才看得到新数据
   const [detailKey, setDetailKey] = useState<string | null>(null);
-  const [detailContent, setDetailContent] = useState<React.ReactNode>(null);
   const [detailRect, setDetailRect] = useState<{ top: number; left: number; bottom: number } | null>(null);
   const [detailPinned, setDetailPinned] = useState(false);
 
@@ -200,7 +204,7 @@ export default function NodeProbePage() {
     }
   }, []);
 
-  const closeDetail = useCallback(() => { setDetailKey(null); setDetailContent(null); setDetailRect(null); setDetailPinned(false); }, []);
+  const closeDetail = useCallback(() => { setDetailKey(null); setDetailRect(null); setDetailPinned(false); }, []);
 
   // 移动端窄屏下，弹出的详情卡片若直接贴着触发元素的左边缘定位，很容易超出屏幕右边界被切掉一半，
   // 这里在卡片实际渲染出尺寸后，按视口边界纠正一次位置（水平不超出左右边界，垂直放不下时改往上弹）
@@ -239,12 +243,12 @@ export default function NodeProbePage() {
   // 生成某个可点击/悬停单元格的事件处理器：桌面端悬停显示，桌面/移动端点击可"钉住"（再点一次关闭）。
   // 包一层 useCallback，只在 detailPinned/detailKey 真正变化（用户实际交互）时才换新引用，
   // 避免每个节点每 2 秒推送系统信息时，这个函数引用跟着变化，连带把所有 NodeRow 的 memo 都打破。
-  const detailHandlers = useCallback((key: string, content: React.ReactNode): DetailHandlers => ({
+  const detailHandlers = useCallback((key: string): DetailHandlers => ({
     onMouseEnter: (e) => {
       if (detailPinned) return;
       const rect = e.currentTarget.getBoundingClientRect();
       setDetailRect({ top: rect.top, left: rect.left, bottom: rect.bottom });
-      setDetailKey(key); setDetailContent(content);
+      setDetailKey(key);
     },
     onMouseLeave: () => { if (!detailPinned) closeDetail(); },
     onClick: (e) => {
@@ -252,7 +256,7 @@ export default function NodeProbePage() {
       if (detailPinned && detailKey === key) { closeDetail(); return; }
       const rect = e.currentTarget.getBoundingClientRect();
       setDetailRect({ top: rect.top, left: rect.left, bottom: rect.bottom });
-      setDetailKey(key); setDetailContent(content); setDetailPinned(true);
+      setDetailKey(key); setDetailPinned(true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [detailPinned, detailKey, closeDetail]);
@@ -347,6 +351,19 @@ export default function NodeProbePage() {
     }))
     .filter(nodeGroup => nodeGroup.nodes.length > 0), [nodeGroups, nodes, groupMetaByNodeId, effectiveAdmin]);
 
+  // 状态详情 popover 的实际内容：每次渲染都从当前最新的 nodes/groupMetaByNodeId 现算，
+  // 而不是打开时存一份快照，这样弹窗开着的时候节点数据更新了也能跟着刷新
+  const detailKind = detailKey ? detailKey.slice(0, detailKey.lastIndexOf('-')) : null;
+  const detailNode = detailKey ? nodes.find(n => n.id === Number(detailKey.slice(detailKey.lastIndexOf('-') + 1))) : undefined;
+  const detailContent = detailNode && detailKind ? ({
+    status: buildStatusContent(detailNode, groupMetaByNodeId.get(detailNode.id), effectiveAdmin, userGroupNames),
+    cpu: buildCpuContent(detailNode),
+    ram: buildRamContent(detailNode),
+    storage: buildStorageContent(detailNode),
+    'conn-recv': buildReceiveConnContent(detailNode),
+    'conn-send': buildSendConnContent(detailNode)
+  } as Record<string, React.ReactNode>)[detailKind] ?? null : null;
+
   return (
     <main className="probe-page min-h-screen">
       <header className="probe-topbar">
@@ -395,10 +412,7 @@ export default function NodeProbePage() {
                           <NodeRow
                             key={node.id}
                             node={node}
-                            groupMeta={groupMetaByNodeId.get(node.id)}
-                            effectiveAdmin={effectiveAdmin}
                             regionCode={node.ip ? regionCodes[node.ip.split(',')[0].trim()] : undefined}
-                            userGroupNames={userGroupNames}
                             detailHandlers={detailHandlers}
                           />
                         ))}

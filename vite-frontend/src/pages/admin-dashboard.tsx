@@ -6,12 +6,14 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, LabelList } from "recharts";
 
-import { getAllUsers, getNodeList, getAdminOrderList, getTaskQueueList, getDashboardFlowStats } from "@/api";
+import { getAllUsers, getNodeList, getAdminOrderList, getTaskQueueList, getTaskQueueMetrics, getDashboardFlowStats } from "@/api";
 
 type Order = { amount?: number; orderStatus?: number; createdTime?: number; paidTime?: number };
 type User = { id: number; user: string; name?: string; inFlow?: number; outFlow?: number };
 type Node = { id: number; name: string; ip?: string; status?: number };
 type TaskQueueItem = { taskTypeLabel: string; status: 'PENDING' | 'SUCCESS'; retryCount: number; createdTime: number };
+type TaskQueueMetrics = { successLastHour: number; failureLastHour: number; successLast24h: number; failureLast24h: number };
+const EMPTY_TASK_QUEUE_METRICS: TaskQueueMetrics = { successLastHour: 0, failureLastHour: 0, successLast24h: 0, failureLast24h: 0 };
 type RankRow = { name: string; value: number };
 type FlowStats = {
   todayTotal: number; yesterdayTotal: number;
@@ -218,15 +220,17 @@ export default function AdminDashboardPage() {
   const [nodes, setNodes] = useState<Node[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [taskQueueItems, setTaskQueueItems] = useState<TaskQueueItem[]>([]);
+  const [taskQueueMetrics, setTaskQueueMetrics] = useState<TaskQueueMetrics>(EMPTY_TASK_QUEUE_METRICS);
   const [flowStats, setFlowStats] = useState<FlowStats>(EMPTY_FLOW_STATS);
   const loadData = useCallback(async () => {
-    const [userResponse, nodeResponse, orderResponse, taskQueueResponse, flowStatsResponse] = await Promise.all([
-      getAllUsers({ current: 1, size: 1000 }), getNodeList(), getAdminOrderList(), getTaskQueueList(), getDashboardFlowStats(),
+    const [userResponse, nodeResponse, orderResponse, taskQueueResponse, taskQueueMetricsResponse, flowStatsResponse] = await Promise.all([
+      getAllUsers({ current: 1, size: 1000 }), getNodeList(), getAdminOrderList(), getTaskQueueList(), getTaskQueueMetrics(), getDashboardFlowStats(),
     ]);
     if (userResponse.code === 0) setUsers(userResponse.data || []);
     if (nodeResponse.code === 0) setNodes(nodeResponse.data || []);
     if (orderResponse.code === 0) setOrders(orderResponse.data || []);
     if (taskQueueResponse.code === 0) setTaskQueueItems(taskQueueResponse.data || []);
+    if (taskQueueMetricsResponse.code === 0) setTaskQueueMetrics({ ...EMPTY_TASK_QUEUE_METRICS, ...taskQueueMetricsResponse.data });
     if (flowStatsResponse.code === 0) setFlowStats({ ...EMPTY_FLOW_STATS, ...flowStatsResponse.data });
   }, []);
   useEffect(() => { loadData(); }, [loadData]);
@@ -307,10 +311,12 @@ export default function AdminDashboardPage() {
         <h2 className="text-sm font-semibold">任务队列监控</h2>
         <Button size="sm" variant="light" onPress={() => navigate('/task-queue')}>查看详情</Button>
       </div>
-      <div className="grid grid-cols-2 md:grid-cols-4">
-        <div className="p-4 min-h-24 md:border-r border-default-100"><p className="text-xs text-default-500">待处理总数</p><p className="mt-2 text-lg font-semibold text-foreground">{taskQueueStats.total}</p></div>
-        <div className="p-4 min-h-24 md:border-r border-default-100"><p className="text-xs text-default-500">24小时内新增</p><p className="mt-2 text-lg font-semibold text-foreground">{taskQueueStats.last24h}</p></div>
-        <div className="p-4 min-h-24 md:border-r border-default-100"><p className="text-xs text-default-500">超过自动重试上限</p><p className={`mt-2 text-lg font-semibold ${taskQueueStats.stuck > 0 ? 'text-warning-600' : 'text-foreground'}`}>{taskQueueStats.stuck}</p></div>
+      <div className="grid grid-cols-2 md:grid-cols-3">
+        <div className="p-4 min-h-24 md:border-r border-b md:border-b-0 border-default-100"><p className="text-xs text-default-500">当前作业量（待处理）</p><p className="mt-2 text-lg font-semibold text-foreground">{taskQueueStats.total}</p></div>
+        <div className="p-4 min-h-24 md:border-r border-b md:border-b-0 border-default-100"><p className="text-xs text-default-500">24小时内新增</p><p className="mt-2 text-lg font-semibold text-foreground">{taskQueueStats.last24h}</p></div>
+        <div className="p-4 min-h-24 border-b md:border-b-0 border-default-100"><p className="text-xs text-default-500">超过自动重试上限</p><p className={`mt-2 text-lg font-semibold ${taskQueueStats.stuck > 0 ? 'text-warning-600' : 'text-foreground'}`}>{taskQueueStats.stuck}</p></div>
+        <div className="p-4 min-h-24 md:border-r border-default-100"><p className="text-xs text-default-500">近一小时处理量</p><p className="mt-2 text-lg font-semibold text-foreground">{taskQueueMetrics.successLastHour + taskQueueMetrics.failureLastHour}</p></div>
+        <div className="p-4 min-h-24 md:border-r border-default-100"><p className="text-xs text-default-500">24小时内成功</p><p className="mt-2 text-lg font-semibold text-foreground">{taskQueueMetrics.successLast24h}</p></div>
         <div className="p-4 min-h-24">
           <p className="text-xs text-default-500">按类型分布</p>
           {taskQueueStats.byType.length > 0 ? (

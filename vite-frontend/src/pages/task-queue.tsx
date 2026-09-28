@@ -49,9 +49,11 @@ const IconDelete = () => (
   </svg>
 );
 
-const TASK_TYPE_COLORS: Record<string, "primary" | "secondary" | "default"> = {
+const TASK_TYPE_COLORS: Record<string, "primary" | "secondary" | "success" | "warning" | "default"> = {
   FORWARD_SYNC: "primary",
-  TELEGRAM_NOTIFY: "secondary"
+  TELEGRAM_NOTIFY: "secondary",
+  USER_FLOW_RECORD: "success",
+  NODE_FLOW_RECORD: "warning"
 };
 
 // 需与后端 TaskQueueServiceImpl.MAX_AUTO_RETRY 保持一致：超过这个次数后不再自动重试，仅供手动处理

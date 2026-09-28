@@ -1,6 +1,7 @@
 package com.admin.service.impl.task;
 
 import com.admin.common.lang.R;
+import com.admin.common.utils.TaskMetricsService;
 import com.admin.common.utils.TelegramBotUtil;
 import com.admin.entity.TaskQueue;
 import com.admin.entity.ViteConfig;
@@ -29,6 +30,9 @@ public class TelegramNotifyTaskHandler implements TaskHandler {
     @Lazy
     private ViteConfigService viteConfigService;
 
+    @Resource
+    private TaskMetricsService taskMetricsService;
+
     @Override
     public String getTaskType() {
         return "TELEGRAM_NOTIFY";
@@ -54,6 +58,11 @@ public class TelegramNotifyTaskHandler implements TaskHandler {
             return R.err("Telegram Bot Token 未配置");
         }
         boolean ok = TelegramBotUtil.sendMessage(token, chatId, text, parseMode);
+        if (ok) {
+            taskMetricsService.recordSuccess();
+        } else {
+            taskMetricsService.recordFailure();
+        }
         return ok ? R.ok() : R.err("Telegram 消息发送失败");
     }
 }

@@ -14,6 +14,12 @@ public interface UserDailyRawFlowService extends IService<UserDailyRawFlow> {
     void recordRaw(Integer userId, long rawBytes);
 
     /**
+     * 同上，但显式指定要累加到哪一自然日——用于失败重试时按上报当时的日期补记，
+     * 而不是按重试发生时的"今天"
+     */
+    void recordRaw(Integer userId, String day, long rawBytes);
+
+    /**
      * 查询某用户今日、昨日累计的原始流量（字节），用于"我的转发规则"页「统计数据」弹窗
      */
     long[] getTodayAndYesterday(Integer userId);

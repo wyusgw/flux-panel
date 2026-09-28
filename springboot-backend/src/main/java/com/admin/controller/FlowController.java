@@ -78,6 +78,9 @@ public class FlowController extends BaseController {
     @Resource
     com.admin.service.NodeDailyRawFlowService nodeDailyRawFlowService;
 
+    @Resource
+    com.admin.service.TaskQueueService taskQueueService;
+
     /**
      * 加密消息包装器
      */
@@ -344,16 +347,37 @@ public class FlowController extends BaseController {
     }
 
     /**
-     * 记录本次上报的原始（未按流量倍率调整）流量到该用户、该上报节点各自的当日累计
+     * 记录本次上报的原始（未按流量倍率调整）流量到该用户、该上报节点各自的当日累计；
+     * 用户侧、节点侧分别独立 try，一侧写库失败不影响另一侧，失败的那一侧登记进任务队列由定时任务重试补记，
+     * 而不是像之前那样直接丢弃（两次 recordRaw 都是纯累加，失败重试不会导致重复计数）
      */
     private void recordRawDailyFlow(String userId, Long reportingNodeId, FlowDto rawFlowDto) {
+        long raw = (rawFlowDto.getD() != null ? rawFlowDto.getD() : 0L) + (rawFlowDto.getU() != null ? rawFlowDto.getU() : 0L);
+        if (raw <= 0) return;
+        String day = java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd"));
+
         try {
-            long raw = (rawFlowDto.getD() != null ? rawFlowDto.getD() : 0L) + (rawFlowDto.getU() != null ? rawFlowDto.getU() : 0L);
-            if (raw <= 0) return;
             userDailyRawFlowService.recordRaw(Integer.valueOf(userId), raw);
+        } catch (Exception e) {
+            log.info("记录用户原始每日流量失败，登记进任务队列重试: {}", e.getMessage());
+            JSONObject payload = new JSONObject();
+            payload.put("userId", Integer.valueOf(userId));
+            payload.put("day", day);
+            payload.put("rawBytes", raw);
+            payload.put("summary", "用户#" + userId + " 流量统计补记 " + day);
+            taskQueueService.enqueue("USER_FLOW_RECORD", null, payload.toJSONString(), java.util.Collections.emptyList(), e.getMessage());
+        }
+
+        try {
             nodeDailyRawFlowService.recordRaw(reportingNodeId, raw);
         } catch (Exception e) {
-            log.info("记录原始每日流量失败: {}", e.getMessage());
+            log.info("记录节点原始每日流量失败，登记进任务队列重试: {}", e.getMessage());
+            JSONObject payload = new JSONObject();
+            payload.put("nodeId", reportingNodeId);
+            payload.put("day", day);
+            payload.put("rawBytes", raw);
+            payload.put("summary", "节点#" + reportingNodeId + " 流量统计补记 " + day);
+            taskQueueService.enqueue("NODE_FLOW_RECORD", null, payload.toJSONString(), java.util.Collections.emptyList(), e.getMessage());
         }
     }
 

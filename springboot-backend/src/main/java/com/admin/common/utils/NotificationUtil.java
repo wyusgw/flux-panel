@@ -66,6 +66,9 @@ public class NotificationUtil {
     @Lazy
     private TelegramSendLogService telegramSendLogService;
 
+    @Resource
+    private TaskMetricsService taskMetricsService;
+
     /**
      * 充值成功通知
      */
@@ -284,7 +287,11 @@ public class NotificationUtil {
     private void sendWithRetry(Long userId, String chatId, String text, String type, String token) {
         boolean ok = TelegramBotUtil.sendMessage(token, chatId, text, PARSE_MODE_HTML);
         telegramSendLogService.record(userId, chatId, type, text, ok, ok ? null : "首次发送失败，已加入重试队列");
-        if (ok) return;
+        if (ok) {
+            taskMetricsService.recordSuccess();
+            return;
+        }
+        taskMetricsService.recordFailure();
         try {
             JSONObject payload = new JSONObject();
             payload.put("chatId", chatId);

@@ -108,10 +108,6 @@ html, body {
   box-shadow: none;
 }
 
-.dark .dashboard-home .dashboard-panel:hover {
-  box-shadow: 0 10px 28px rgb(0 0 0 / 18%);
-}
-
 .dashboard-home .dashboard-stat {
   min-height: 112px;
 }

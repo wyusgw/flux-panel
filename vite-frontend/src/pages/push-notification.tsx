@@ -534,7 +534,7 @@ export default function PushNotificationPage() {
               <SelectItem key="SUCCESS">成功</SelectItem>
               <SelectItem key="FAILED">失败</SelectItem>
             </Select>
-            <Button size="sm" variant="flat" isLoading={logsLoading} onPress={() => loadLogs()}>刷新</Button>
+            <Button size="sm" variant="flat" isDisabled={logsLoading} onPress={() => loadLogs()}>刷新</Button>
           </div>
         </CardHeader>
         <CardBody className="p-4 lg:p-5">

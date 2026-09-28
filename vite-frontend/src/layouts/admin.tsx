@@ -1,13 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Button } from "@heroui/button";
-import { useDisclosure } from "@heroui/modal";
 import toast from 'react-hot-toast';
 
 import { Logo } from '@/components/icons';
 import { ThemeSwitch } from '@/components/theme-switch';
 import { UserMenu } from '@/components/user-menu';
-import { ChangePasswordModal } from '@/components/change-password-modal';
+import { ToastWarningIcon } from '@/components/toast-icons';
 import { safeLogout } from '@/utils/logout';
 import { consumePasswordChangePrompt } from '@/utils/auth';
 import { siteConfig, getCachedConfigs } from '@/config/site';
@@ -27,7 +26,6 @@ export default function AdminLayout({
 }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { isOpen, onOpen, onOpenChange } = useDisclosure();
 
   const [isMobile, setIsMobile] = useState(false);
   const [mobileMenuVisible, setMobileMenuVisible] = useState(false);
@@ -110,10 +108,10 @@ export default function AdminLayout({
       label: '网络诊断',
       hidden: !lookingGlassEnabled,
       icon: (
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 20 20">
-          <circle cx="10" cy="10" r="1.5" fill="currentColor" stroke="none" />
-          <circle cx="10" cy="10" r="4" />
-          <circle cx="10" cy="10" r="7.5" />
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" viewBox="0 0 20 20">
+          <circle cx="10" cy="10" r="1" fill="currentColor" stroke="none" />
+          <circle cx="10" cy="10" r="6" />
+          <path d="M10 1v3.2M10 15.8V19M1 10h3.2M15.8 10H19" />
         </svg>
       )
     },
@@ -131,8 +129,12 @@ export default function AdminLayout({
       path: '/node',
       label: '节点状态',
       icon: (
-        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-          <path fillRule="evenodd" d="M3 3a1 1 0 000 2v8a2 2 0 002 2h2.586l-1.293 1.293a1 1 0 101.414 1.414L10 15.414l2.293 2.293a1 1 0 001.414-1.414L12.414 15H15a2 2 0 002-2V5a1 1 0 100-2H3zm11.707 4.707a1 1 0 00-1.414-1.414L10 9.586 8.707 8.293a1 1 0 00-1.414 0l-2 2a1 1 0 101.414 1.414L8 10.414l1.293 1.293a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" viewBox="0 0 20 20">
+          <rect x="2.5" y="3" width="15" height="5.5" rx="1.3" />
+          <rect x="2.5" y="11.5" width="15" height="5.5" rx="1.3" />
+          <circle cx="6" cy="5.75" r="0.9" fill="currentColor" stroke="none" />
+          <circle cx="6" cy="14.25" r="0.9" fill="currentColor" stroke="none" />
+          <path d="M9.5 5.75h5M9.5 14.25h5" />
         </svg>
       )
     },
@@ -274,10 +276,10 @@ export default function AdminLayout({
     setIsAdmin(adminFlag);
 
     // 检测到默认账号密码登录时，登录页会写入这个标记：不阻断使用，正常进入主页后
-    // 弹出"修改密码"弹窗提醒（可关闭），提醒一次即消费掉，不会每次导航都重新弹出
+    // 提示一次并跳转到个人中心账户设置的重置密码区域，提醒一次即消费掉，不会每次导航都重新提示
     if (consumePasswordChangePrompt()) {
-      toast('检测到您使用的是默认账号密码，为了账户安全请尽快修改', { icon: '⚠️', duration: 6000 });
-      onOpen();
+      toast('检测到您使用的是默认账号密码，为了账户安全请尽快修改', { icon: <ToastWarningIcon />, duration: 6000 });
+      navigate('/account-center');
     }
 
     getCachedConfigs().then((configs) => {
@@ -470,7 +472,7 @@ export default function AdminLayout({
           </div>
 
           <div className="flex items-center gap-3">
-            <UserMenu username={username} onChangePassword={onOpen} onLogout={handleLogout} />
+            <UserMenu username={username} onLogout={handleLogout} />
             <ThemeSwitch />
           </div>
         </header>
@@ -480,8 +482,6 @@ export default function AdminLayout({
           {children}
         </main>
       </div>
-
-      <ChangePasswordModal isOpen={isOpen} onOpenChange={onOpenChange} />
     </div>
   );
-} 
+}

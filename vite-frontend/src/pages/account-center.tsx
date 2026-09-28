@@ -57,6 +57,20 @@ interface DeviceGroupOption {
 
 const GB = 1024 * 1024 * 1024;
 
+const LockIcon = () => (
+  <svg className="w-4 h-4 text-default-400 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+    <rect x="5" y="11" width="14" height="9" rx="2" />
+    <path d="M8 11V7a4 4 0 018 0v4" />
+  </svg>
+);
+
+const UserFieldIcon = () => (
+  <svg className="w-4 h-4 text-default-400 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+    <circle cx="12" cy="8" r="3.2" />
+    <path d="M5.5 19.5a6.5 6.5 0 0113 0" />
+  </svg>
+);
+
 const ModePicker = ({
   value,
   options,
@@ -93,11 +107,11 @@ export default function AccountCenterPage() {
   const [renewLoading, setRenewLoading] = useState(false);
 
   // 重置密码
+  const [newUsername, setNewUsername] = useState('');
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [resetLoading, setResetLoading] = useState(false);
-  const { isOpen: isResetOpen, onOpen: onResetOpen, onOpenChange: onResetOpenChange } = useDisclosure();
   const { isOpen: isGeneratedOpen, onOpenChange: onGeneratedOpenChange } = useDisclosure();
   const [generatedPassword, setGeneratedPassword] = useState('');
 
@@ -205,6 +219,10 @@ export default function AccountCenterPage() {
   };
 
   const handleResetPassword = async () => {
+    if (newUsername.trim() && newUsername.trim().length < 3) {
+      toast.error('用户名长度至少3位');
+      return;
+    }
     if (!currentPassword) {
       toast.error('请输入当前密码');
       return;
@@ -220,12 +238,12 @@ export default function AccountCenterPage() {
 
     setResetLoading(true);
     try {
-      const res = await resetPassword(currentPassword, newPassword || undefined);
+      const res = await resetPassword(currentPassword, newPassword || undefined, newUsername.trim() || undefined);
       if (res.code === 0) {
+        setNewUsername('');
         setCurrentPassword('');
         setNewPassword('');
         setConfirmPassword('');
-        onResetOpenChange();
         if (res.data?.generatedPassword) {
           setGeneratedPassword(res.data.generatedPassword);
           onGeneratedOpenChange();
@@ -413,55 +431,29 @@ export default function AccountCenterPage() {
         <CardBody className="p-5 space-y-5">
           <h2 className="text-base font-semibold text-foreground">账户设置</h2>
 
-          <div className="flex items-center justify-between py-1">
-            <div>
+          <div>
+            <div className="flex items-center justify-between gap-3">
               <p className="text-sm font-medium text-foreground">自动续费</p>
-              <p className="mt-1 text-xs text-default-500 max-w-md">如果您的套餐临近到期，或者流量用完，系统将自动续费。请保证余额充足，否则会续费失败。</p>
+              <Switch isSelected={userInfo.autoRenew === 1} isDisabled={autoRenewLoading} onValueChange={handleAutoRenewChange} />
             </div>
-            <Switch isSelected={userInfo.autoRenew === 1} isDisabled={autoRenewLoading} onValueChange={handleAutoRenewChange} />
+            <p className="mt-2 pl-3 border-l-2 border-default-200 text-xs text-default-500 max-w-xl">如果您的套餐临近到期，或者流量用完，系统将自动续费。请保证余额充足，否则会续费失败。</p>
           </div>
 
-          <div className="pt-3 border-t border-default-100">
-            <div className="flex items-center justify-between gap-3 py-1">
-              <div>
-                <p className="text-sm font-medium text-foreground">重置密码</p>
-                <p className="mt-1 text-xs text-default-500 max-w-md">验证当前密码后即可重置，新密码留空将由系统随机生成。</p>
-              </div>
-              <Button size="sm" variant="flat" color="danger" onPress={onResetOpen}>
-                重置
-              </Button>
+          <div className="pt-4 border-t border-default-100 space-y-3">
+            <div>
+              <p className="text-sm font-medium text-foreground">重置密码</p>
+              <p className="mt-2 pl-3 border-l-2 border-default-200 text-xs text-default-500 max-w-xl">如果您的密码已泄漏，可以在这里重置。用户名留空则不修改。重置操作会强制下线您在其他地方的登录。</p>
             </div>
+            <div className="space-y-2 max-w-md">
+              <Input autoComplete="off" placeholder="新用户名（选填）" value={newUsername} onChange={(e) => setNewUsername(e.target.value)} variant="bordered" size="md" startContent={<UserFieldIcon />} />
+              <Input autoComplete="off" type="password" placeholder="当前密码" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} variant="bordered" size="md" startContent={<LockIcon />} />
+              <Input autoComplete="off" type="password" placeholder="新密码，留空随机生成。" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} variant="bordered" size="md" startContent={<LockIcon />} />
+              <Input autoComplete="off" type="password" placeholder="确认新密码" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} variant="bordered" size="md" startContent={<LockIcon />} />
+            </div>
+            <Button size="sm" color="danger" isLoading={resetLoading} onPress={handleResetPassword}>重置密码</Button>
           </div>
         </CardBody>
       </Card>
-
-      {/* 重置密码弹窗 */}
-      <Modal
-        isOpen={isResetOpen}
-        onOpenChange={() => {
-          onResetOpenChange();
-          setCurrentPassword('');
-          setNewPassword('');
-          setConfirmPassword('');
-        }}
-        size="sm"
-        placement="center"
-        backdrop="blur"
-      >
-        <ModalContent>
-          <ModalHeader>重置密码</ModalHeader>
-          <ModalBody className="space-y-3">
-            <p className="text-xs text-default-500">验证当前密码后即可重置，新密码留空将由系统随机生成。</p>
-            <Input autoComplete="off" type="password" label="当前密码" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} variant="bordered" size="sm" />
-            <Input autoComplete="off" type="password" label="新密码，留空随机生成" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} variant="bordered" size="sm" />
-            <Input autoComplete="off" type="password" label="确认新密码" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} variant="bordered" size="sm" />
-          </ModalBody>
-          <ModalFooter>
-            <Button variant="light" onPress={() => onResetOpenChange()}>取消</Button>
-            <Button color="danger" isLoading={resetLoading} onPress={handleResetPassword}>确定</Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
 
       {/* Telegram 绑定码弹窗 */}
       <Modal isOpen={isBindOpen} onOpenChange={onBindOpenChange} size="sm" placement="center" backdrop="blur">

@@ -11,8 +11,7 @@ import { primaryNavItems, managementNavItems } from '@/config/nav-items';
 import { safeLogout } from '@/utils/logout';
 import { consumePasswordChangePrompt } from '@/utils/auth';
 import { UserMenu } from '@/components/user-menu';
-import { ChangePasswordModal } from '@/components/change-password-modal';
-import { useDisclosure } from '@heroui/modal';
+import { ToastWarningIcon } from '@/components/toast-icons';
 
 export default function H5SimpleLayout({
   children,
@@ -26,7 +25,6 @@ export default function H5SimpleLayout({
   const [lookingGlassEnabled, setLookingGlassEnabled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [username] = useState(() => localStorage.getItem('name') || 'Admin');
-  const { isOpen, onOpen, onOpenChange } = useDisclosure();
 
   useEffect(() => {
     // 兼容处理：如果没有admin字段，根据role_id判断（0为管理员）
@@ -39,10 +37,10 @@ export default function H5SimpleLayout({
     setIsAdmin(adminFlag);
 
     // 检测到默认账号密码登录时，登录页会写入这个标记：不阻断使用，正常进入主页后
-    // 弹出"修改密码"弹窗提醒（可关闭），提醒一次即消费掉，不会每次导航都重新弹出
+    // 提示一次并跳转到个人中心账户设置的重置密码区域，提醒一次即消费掉，不会每次导航都重新提示
     if (consumePasswordChangePrompt()) {
-      toast('检测到您使用的是默认账号密码，为了账户安全请尽快修改', { icon: '⚠️', duration: 6000 });
-      onOpen();
+      toast('检测到您使用的是默认账号密码，为了账户安全请尽快修改', { icon: <ToastWarningIcon />, duration: 6000 });
+      navigate('/account-center');
     }
 
     getCachedConfigs().then((configs) => {
@@ -105,7 +103,7 @@ export default function H5SimpleLayout({
         </div>
 
         <div className="flex items-center gap-2">
-          <UserMenu username={username} onChangePassword={onOpen} onLogout={handleLogout} />
+          <UserMenu username={username} onLogout={handleLogout} />
           <ThemeSwitch />
           <button
             onClick={() => setMenuOpen(true)}
@@ -176,8 +174,6 @@ export default function H5SimpleLayout({
       <main className="flex-1 bg-gray-100 dark:bg-black pb-0">
         {children}
       </main>
-
-      <ChangePasswordModal isOpen={isOpen} onOpenChange={onOpenChange} />
     </div>
   );
 }

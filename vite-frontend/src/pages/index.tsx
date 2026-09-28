@@ -191,7 +191,7 @@ export default function IndexPage() {
       localStorage.setItem("admin", (response.data.role_id === 0).toString());
 
       // 检测到默认账号密码：不再强制跳转到独立的修改密码页面阻断使用，
-      // 而是正常进入主页，由布局组件弹出"修改密码"弹窗提醒（可关闭，不阻塞使用）
+      // 而是正常进入主页，由布局组件提示后跳转到个人中心账户设置的重置密码区域（不阻塞使用）
       if (response.data.requirePasswordChange) {
         localStorage.setItem('promptPasswordChange', 'true');
       }

@@ -101,19 +101,15 @@ export default function AdminDashboardPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [taskQueueItems, setTaskQueueItems] = useState<TaskQueueItem[]>([]);
   const [flowStats, setFlowStats] = useState<FlowStats>(EMPTY_FLOW_STATS);
-  const [loading, setLoading] = useState(true);
   const loadData = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [userResponse, nodeResponse, orderResponse, taskQueueResponse, flowStatsResponse] = await Promise.all([
-        getAllUsers({ current: 1, size: 1000 }), getNodeList(), getAdminOrderList(), getTaskQueueList(), getDashboardFlowStats(),
-      ]);
-      if (userResponse.code === 0) setUsers(userResponse.data || []);
-      if (nodeResponse.code === 0) setNodes(nodeResponse.data || []);
-      if (orderResponse.code === 0) setOrders(orderResponse.data || []);
-      if (taskQueueResponse.code === 0) setTaskQueueItems(taskQueueResponse.data || []);
-      if (flowStatsResponse.code === 0) setFlowStats({ ...EMPTY_FLOW_STATS, ...flowStatsResponse.data });
-    } finally { setLoading(false); }
+    const [userResponse, nodeResponse, orderResponse, taskQueueResponse, flowStatsResponse] = await Promise.all([
+      getAllUsers({ current: 1, size: 1000 }), getNodeList(), getAdminOrderList(), getTaskQueueList(), getDashboardFlowStats(),
+    ]);
+    if (userResponse.code === 0) setUsers(userResponse.data || []);
+    if (nodeResponse.code === 0) setNodes(nodeResponse.data || []);
+    if (orderResponse.code === 0) setOrders(orderResponse.data || []);
+    if (taskQueueResponse.code === 0) setTaskQueueItems(taskQueueResponse.data || []);
+    if (flowStatsResponse.code === 0) setFlowStats({ ...EMPTY_FLOW_STATS, ...flowStatsResponse.data });
   }, []);
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -146,7 +142,7 @@ export default function AdminDashboardPage() {
   ];
 
   return <div className="dashboard-home px-4 lg:px-6 py-5 lg:py-6 max-w-[1600px] mx-auto">
-    <div className="flex items-center justify-between mb-5"><div><p className="text-xs font-medium tracking-[0.16em] text-blue-400 uppercase">Console</p><h1 className="mt-1 text-xl font-semibold">仪表盘</h1></div><Button size="sm" variant="bordered" className="dashboard-action" onPress={loadData} isLoading={loading}>刷新</Button></div>
+    <div className="flex items-center justify-between mb-5"><div><p className="text-xs font-medium tracking-[0.16em] text-blue-400 uppercase">Console</p><h1 className="mt-1 text-xl font-semibold">仪表盘</h1></div></div>
     <section className="dashboard-panel mb-5 overflow-hidden"><div className="px-4 py-3 border-b border-default-100"><h2 className="text-sm font-semibold">数据一览</h2></div><div className="grid grid-cols-2 md:grid-cols-4">{cards.map(([label, value], index) => <div key={label} className={`p-4 min-h-24 ${index % 4 !== 3 ? 'md:border-r border-default-100' : ''} ${index < 4 ? 'border-b border-default-100' : ''}`}><p className="text-xs text-default-500">{label}</p><p className="mt-2 text-lg font-semibold text-foreground">{value}</p></div>)}</div></section>
     <section className="dashboard-panel mb-5 overflow-hidden">
       <div className="px-4 py-3 border-b border-default-100 flex items-center justify-between">

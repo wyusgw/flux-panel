@@ -1317,7 +1317,7 @@ export default function ForwardPage() {
               <Button size="sm" variant="flat" onPress={() => navigate('/user')}>← 返回用户管理</Button>
             )}
             <h1 className="text-xl font-bold text-foreground">
-              {isImpersonating ? `用户转发规则 (UID=${impersonateUserId}${impersonateUserName ? `，${impersonateUserName}` : ''})` : '我的转发规则'}
+              {isImpersonating ? `用户转发规则${impersonateUserName ? ` ${impersonateUserName}` : ''} (UID=${impersonateUserId})` : '我的转发规则'}
             </h1>
           </div>
           <div className="flex items-center gap-2 flex-wrap">

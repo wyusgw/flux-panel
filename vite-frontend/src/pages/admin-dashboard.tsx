@@ -153,7 +153,7 @@ const TrendSparkline = ({ title, current, compareLabel, compareValue, data }: { 
               );
             }}
           />
-          <Line type="monotone" dataKey="amount" strokeWidth={2} dot={false} className="stroke-[#2a78d6] dark:stroke-[#3987e5]" />
+          <Line type="monotone" dataKey="amount" strokeWidth={2} dot={false} activeDot={false} className="stroke-[#2a78d6] dark:stroke-[#3987e5]" />
         </LineChart>
       </ResponsiveContainer>
     </div>
@@ -188,7 +188,7 @@ function RankTable({ title, rows, kind }: { title: string; rows: { name: string;
                 <XAxis type="number" hide />
                 <YAxis type="category" dataKey="name" width={90} tickLine={false} axisLine={false} tick={{ fontSize: 12 }} />
                 <Tooltip
-                  cursor={{ fill: 'currentColor', className: 'opacity-5' }}
+                  cursor={false}
                   content={({ active, payload }) => {
                     if (!active || !payload || !payload.length) return null;
                     const row = payload[0].payload as { name: string; value: number };

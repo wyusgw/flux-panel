@@ -39,7 +39,11 @@ type NodeGroup = { id: number; name: string };
 
 const formatBytes = (value = 0) => value >= 1024 ** 3 ? `${(value / 1024 ** 3).toFixed(2)} GB` : value >= 1024 ** 2 ? `${(value / 1024 ** 2).toFixed(2)} MB` : `${(value / 1024).toFixed(2)} KB`;
 const formatSpeed = (value = 0) => `${formatBytes(value)}/s`;
-const formatUptime = (value = 0) => value < 60 ? `${value}s` : value < 3600 ? `${Math.floor(value / 60)}分 ${value % 60}秒` : value < 86400 ? `${Math.floor(value / 3600)}时 ${Math.floor(value % 3600 / 60)}分` : `${Math.floor(value / 86400)} 天`;
+const formatUptime = (value = 0) => {
+  if (value >= 86400) return `${Math.floor(value / 86400)} 天`;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${pad(Math.floor(value / 3600))}:${pad(Math.floor(value % 3600 / 60))}:${pad(Math.floor(value % 60))}`;
+};
 const meterTone = (value?: number) => value === undefined ? 'idle' : value >= 80 ? 'danger' : value >= 50 ? 'warning' : 'safe';
 const RegionCell = ({ code }: { code?: string }) => code ? <span className={`fi fi-${code} fis probe-flag`} /> : null;
 

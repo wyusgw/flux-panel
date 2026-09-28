@@ -215,7 +215,7 @@ export default function UserGroupPage() {
           <div><h1 className="text-base font-semibold text-foreground">用户组管理</h1><p className="mt-1 text-xs text-default-500">管理用户分组与分组内用户数量</p></div>
           <div className="flex gap-2">
             {selectedIds.length > 0 && <Button size="sm" color="danger" variant="flat" onPress={() => setBatchDeleteModalOpen(true)}>批量删除（{selectedIds.length}）</Button>}
-            <Button size="sm" variant="bordered" onPress={loadData} isLoading={loading}>刷新</Button>
+            <Button size="sm" variant="bordered" onPress={loadData} isDisabled={loading}>刷新</Button>
             <Button size="sm" color="default" onPress={handleAdd}>添加用户组</Button>
           </div>
         </CardHeader>

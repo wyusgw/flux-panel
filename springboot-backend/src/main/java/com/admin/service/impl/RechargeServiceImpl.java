@@ -39,7 +39,6 @@ import java.util.concurrent.ThreadLocalRandom;
 @Service
 public class RechargeServiceImpl extends ServiceImpl<OrderMapper, Order> implements RechargeService {
 
-    private static final String CONFIG_PAYMENT_ENABLED = "payment_enabled";
     private static final String CONFIG_PAYMENT_MIN_AMOUNT = "payment_min_amount";
     private static final String CONFIG_PAYMENT_CHANNELS = "payment_config_json";
     private static final String ORDER_TYPE_RECHARGE = "recharge";
@@ -75,8 +74,8 @@ public class RechargeServiceImpl extends ServiceImpl<OrderMapper, Order> impleme
             return R.err("充值金额必须大于0");
         }
 
-        if (!"true".equals(getConfigValue(CONFIG_PAYMENT_ENABLED))) {
-            return R.err("站点未启用在线支付");
+        if (!hasConfiguredPaymentChannel()) {
+            return R.err("站点未配置可用的支付渠道");
         }
 
         BigDecimal minAmount = parseAmount(getConfigValue(CONFIG_PAYMENT_MIN_AMOUNT));
@@ -277,6 +276,41 @@ public class RechargeServiceImpl extends ServiceImpl<OrderMapper, Order> impleme
         } catch (NumberFormatException e) {
             return null;
         }
+    }
+
+    /**
+     * 站点是否已配置至少一个可用的支付渠道（启用状态、类型受支持且 URL/PID/密钥均已填写）。
+     * 在线支付无需单独的开关，只要存在这样的渠道即视为已启用。
+     */
+    private boolean hasConfiguredPaymentChannel() {
+        String json = getConfigValue(CONFIG_PAYMENT_CHANNELS);
+        if (StringUtils.isBlank(json)) {
+            return false;
+        }
+        try {
+            JSONArray channels = JSONArray.parseArray(json);
+            for (int i = 0; i < channels.size(); i++) {
+                if (isChannelUsable(channels.getJSONObject(i))) {
+                    return true;
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return false;
+    }
+
+    private boolean isChannelUsable(JSONObject channel) {
+        if (channel == null || !channel.getBooleanValue("enabled")) {
+            return false;
+        }
+        if (!"epay".equals(channel.getString("type"))) {
+            return false;
+        }
+        JSONObject config = channel.getJSONObject("config");
+        String url = config == null ? null : config.getString("url");
+        String pid = config == null ? null : config.getString("pid");
+        String secret = config == null ? null : config.getString("secret");
+        return StringUtils.isNotBlank(url) && StringUtils.isNotBlank(pid) && StringUtils.isNotBlank(secret);
     }
 
     private JSONObject findChannel(String channelId) {

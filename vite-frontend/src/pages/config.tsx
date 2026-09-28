@@ -195,13 +195,6 @@ const CONFIG_ITEMS: ConfigItem[] = [
     type: 'textarea'
   },
   {
-    key: 'payment_enabled',
-    section: 'payment',
-    label: '启用在线支付',
-    description: '开启后用户可以在购买套餐时使用已配置的支付渠道',
-    type: 'switch'
-  },
-  {
     key: 'payment_min_amount',
     section: 'payment',
     label: '最小支付金额',
@@ -578,20 +571,7 @@ export default function ConfigPage() {
                   </div>
                   {section.key === 'payment' ? (
                     <div className="p-4 lg:p-5">
-                      <div className="grid grid-cols-1 lg:grid-cols-[minmax(260px,0.75fr)_minmax(360px,1.25fr)] gap-3 lg:gap-8 pb-5 border-b border-default-100 items-center">
-                        <div className="pt-1"><p className="text-sm font-medium text-foreground">启用在线支付</p><p className="mt-1 text-xs text-default-500">开启后用户可以在购买套餐时使用已配置的支付渠道</p></div>
-                        <div className="w-full max-w-2xl lg:justify-self-end">
-                          <Switch
-                            isSelected={configs.payment_enabled === 'true'}
-                            onValueChange={(checked) => handleConfigChange('payment_enabled', checked ? 'true' : 'false')}
-                            color="primary"
-                            size="md"
-                          >
-                            <span className="text-sm text-gray-700 dark:text-gray-300">{configs.payment_enabled === 'true' ? '已启用' : '已禁用'}</span>
-                          </Switch>
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-1 lg:grid-cols-[minmax(260px,0.75fr)_minmax(360px,1.25fr)] gap-3 lg:gap-8 py-5 border-b border-default-100">
+                      <div className="grid grid-cols-1 lg:grid-cols-[minmax(260px,0.75fr)_minmax(360px,1.25fr)] gap-3 lg:gap-8 pb-5 border-b border-default-100">
                         <div className="pt-1"><p className="text-sm font-medium text-foreground">最小充值金额</p><p className="mt-1 text-xs text-default-500">订单金额不得低于此金额，单位为元</p></div>
                         <Input size="sm" autoComplete="off" value={configs.payment_min_amount || ''} onChange={(event) => handleConfigChange('payment_min_amount', event.target.value)} placeholder="10.00" endContent={<span className="text-sm text-default-500">元</span>} className="w-full max-w-2xl lg:justify-self-end" />
                       </div>

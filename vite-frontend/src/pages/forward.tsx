@@ -1350,15 +1350,17 @@ export default function ForwardPage() {
           >
             全部
           </Chip>
-          <Chip
-            size="sm"
-            variant={activeGroupFilter === -1 ? 'solid' : 'flat'}
-            color={activeGroupFilter === -1 ? 'primary' : 'default'}
-            className="cursor-pointer"
-            onClick={() => setActiveGroupFilter(-1)}
-          >
-            未分组 ({myForwardsAll.filter(f => !f.groupId).length})
-          </Chip>
+          {myForwardsAll.some(f => !f.groupId) && (
+            <Chip
+              size="sm"
+              variant={activeGroupFilter === -1 ? 'solid' : 'flat'}
+              color={activeGroupFilter === -1 ? 'primary' : 'default'}
+              className="cursor-pointer"
+              onClick={() => setActiveGroupFilter(-1)}
+            >
+              未分组 ({myForwardsAll.filter(f => !f.groupId).length})
+            </Chip>
+          )}
           {scopedForwardGroups.map(group => (
             <Chip
               key={group.id}

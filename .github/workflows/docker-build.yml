@@ -13,35 +13,55 @@ on:
         required: true
         type: string
 
+permissions:
+  contents: read
+
+# 同一个 tag 同一时间只允许一个构建在跑，重复触发时排队而不是并行覆盖
+concurrency:
+  group: build-${{ github.event.release.tag_name || github.event.inputs.tag }}
+  cancel-in-progress: false
+
 jobs:
   resolve-version:
     name: Resolve Version from Release Tag
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       tag: ${{ steps.resolve.outputs.tag }}
       version: ${{ steps.resolve.outputs.version }}
     steps:
       - name: Resolve version from release tag
         id: resolve
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            TAG="${{ github.event.inputs.tag }}"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            TAG="$INPUT_TAG"
             echo "手动触发，使用指定的 tag: $TAG"
           else
-            TAG="${{ github.event.release.tag_name }}"
+            TAG="$RELEASE_TAG"
             echo "Release 发布触发，tag: $TAG"
+          fi
+
+          # tag 会用作镜像 tag 和 Release 定位，只允许常见版本号字符，避免异常输入
+          if ! [[ "$TAG" =~ ^[0-9A-Za-z][0-9A-Za-z._-]*$ ]]; then
+            echo "非法的 tag: $TAG"
+            exit 1
           fi
 
           # tag 本身就是版本号（不带 v 前缀），直接用作 Docker 镜像 tag
           VERSION="$TAG"
           echo "Docker image version: $VERSION"
-          echo "tag=$TAG" >> $GITHUB_OUTPUT
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
   build-gost:
     name: Build & Upload GOST Binary (${{ matrix.arch }})
     needs: resolve-version
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     permissions:
       contents: write
     strategy:
@@ -49,17 +69,17 @@ jobs:
       matrix:
         arch: [amd64, arm64]
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.resolve-version.outputs.tag }}
 
       - name: Set up Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v7
         with:
           go-version: '1.21'
 
       - name: Cache Go modules
-        uses: actions/cache@v3
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cache/go-build
@@ -94,7 +114,7 @@ jobs:
           (cd ./offline-${{ matrix.arch }} && zip -j ../flux-panel-offline-${{ matrix.arch }}.zip gost offline.sh)
 
       - name: Upload GOST binary to the Release
-        uses: svenstaro/upload-release-action@v2
+        uses: svenstaro/upload-release-action@29e53e917877a24fad85510ded594ab3c9ca12de # v2.11.5
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: ./go-gost/gost-${{ matrix.arch }}
@@ -102,7 +122,7 @@ jobs:
           overwrite: true
 
       - name: Upload offline bundle to the Release
-        uses: svenstaro/upload-release-action@v2
+        uses: svenstaro/upload-release-action@29e53e917877a24fad85510ded594ab3c9ca12de # v2.11.5
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: ./flux-panel-offline-${{ matrix.arch }}.zip
@@ -113,21 +133,22 @@ jobs:
     name: Build & Push Vite Frontend
     needs: resolve-version
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.resolve-version.outputs.tag }}
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 20
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v4
 
       - name: Log in to DockerHub
-        uses: docker/login-action@v2
+        uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKER_HUB_USERNAME }}
           password: ${{ secrets.DOCKER_HUB_TOKEN }}
@@ -148,19 +169,20 @@ jobs:
     name: Build & Push Spring Boot Backend
     needs: resolve-version
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.resolve-version.outputs.tag }}
 
       - name: Set up JDK and Maven
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v6
         with:
           java-version: 21
           distribution: 'temurin'
 
       - name: Cache Maven dependencies
-        uses: actions/cache@v3
+        uses: actions/cache@v6
         with:
           path: ~/.m2
           key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
@@ -171,10 +193,10 @@ jobs:
         run: mvn clean package -DskipTests
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v4
 
       - name: Log in to DockerHub
-        uses: docker/login-action@v2
+        uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKER_HUB_USERNAME }}
           password: ${{ secrets.DOCKER_HUB_TOKEN }}
@@ -195,15 +217,16 @@ jobs:
     name: Upload Scripts and Config to Release
     needs: resolve-version
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.resolve-version.outputs.tag }}
 
       - name: Upload static files to the Release
-        uses: svenstaro/upload-release-action@v2
+        uses: svenstaro/upload-release-action@29e53e917877a24fad85510ded594ab3c9ca12de # v2.11.5
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file_glob: true

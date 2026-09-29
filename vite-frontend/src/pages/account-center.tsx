@@ -227,8 +227,8 @@ export default function AccountCenterPage() {
       toast.error('请输入当前密码');
       return;
     }
-    if (newPassword && newPassword.length < 6) {
-      toast.error('新密码长度不能少于6位');
+    if (newPassword && newPassword.length < 5) {
+      toast.error('新密码长度不能少于5位');
       return;
     }
     if (newPassword && newPassword !== confirmPassword) {

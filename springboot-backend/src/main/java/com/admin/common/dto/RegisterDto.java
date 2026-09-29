@@ -13,7 +13,7 @@ public class RegisterDto {
     private String username;
 
     @NotBlank(message = "密码不能为空")
-    @Size(min = 6, max = 100, message = "密码长度不能少于6位")
+    @Size(min = 5, max = 100, message = "密码长度不能少于5位")
     private String password;
 
     @NotBlank(message = "确认密码不能为空")

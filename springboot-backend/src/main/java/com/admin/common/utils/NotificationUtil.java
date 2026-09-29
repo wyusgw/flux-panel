@@ -66,9 +66,6 @@ public class NotificationUtil {
     @Lazy
     private TelegramSendLogService telegramSendLogService;
 
-    @Resource
-    private TaskMetricsService taskMetricsService;
-
     /**
      * 充值成功通知
      */
@@ -281,26 +278,23 @@ public class NotificationUtil {
     }
 
     /**
-     * 发送 Telegram 通知并登记发送记录；失败时额外登记进通用任务队列（task_type=TELEGRAM_NOTIFY），
-     * 由定时兜底扫描自动重试，不阻塞/不影响当前调用方的主流程
+     * Telegram 通知每次都先登记进通用任务队列（task_type=TELEGRAM_NOTIFY），再由队列异步立即执行发送，
+     * 发送失败则留在队列里由定时兜底扫描自动重试；发送记录由 TelegramNotifyTaskHandler 在每次发送尝试后写入。
+     * 不阻塞/不影响当前调用方的主流程
      */
     private void sendWithRetry(Long userId, String chatId, String text, String type, String token) {
-        boolean ok = TelegramBotUtil.sendMessage(token, chatId, text, PARSE_MODE_HTML);
-        telegramSendLogService.record(userId, chatId, type, text, ok, ok ? null : "首次发送失败，已加入重试队列");
-        if (ok) {
-            taskMetricsService.recordSuccess();
-            return;
-        }
-        taskMetricsService.recordFailure();
         try {
             JSONObject payload = new JSONObject();
+            payload.put("userId", userId);
+            payload.put("type", type);
             payload.put("chatId", chatId);
             payload.put("text", text);
             payload.put("parseMode", PARSE_MODE_HTML);
             payload.put("summary", "Telegram 通知：" + (text.length() > 40 ? text.substring(0, 40) + "..." : text));
-            taskQueueService.enqueue("TELEGRAM_NOTIFY", null, payload.toJSONString(), Collections.emptyList(), "首次发送失败");
+            Long queueId = taskQueueService.enqueue("TELEGRAM_NOTIFY", null, payload.toJSONString(), Collections.emptyList(), null);
+            taskQueueService.dispatch(queueId);
         } catch (Exception e) {
-            log.warn("登记 Telegram 通知重试任务失败: {}", e.getMessage());
+            log.warn("登记 Telegram 通知任务失败: {}", e.getMessage());
         }
     }
 

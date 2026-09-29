@@ -8,7 +8,6 @@ import com.admin.common.dto.TcpPingDiagnosisResult;
 import com.admin.common.lang.R;
 import com.admin.common.utils.GostUtil;
 import com.admin.common.utils.JwtUtil;
-import com.admin.common.utils.TaskMetricsService;
 import com.admin.common.utils.TcpPingDiagnosisUtil;
 import com.admin.common.utils.TunnelResolver;
 import com.admin.common.utils.WebSocketServer;
@@ -89,9 +88,6 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
     @Lazy
     private TaskQueueService taskQueueService;
 
-    @Resource
-    private TaskMetricsService taskMetricsService;
-
     /**
      * 端口分配 -> 落库 这段临界区的互斥锁：避免并发创建/更新转发规则时，
      * 两个请求都在对方尚未提交端口占用记录前查到"端口空闲"，进而对同一物理端口
@@ -167,11 +163,6 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
 
         // 7. 调用Gost服务创建转发
         R gostResult = createGostServices(forward, tunnel, permissionResult.getLimiter(), nodeInfo, permissionResult.getUserTunnel());
-        if (gostResult.getCode() == 0) {
-            taskMetricsService.recordSuccess();
-        } else {
-            taskMetricsService.recordFailure();
-        }
 
         if (gostResult.getCode() != 0) {
             if (isNodeOfflineFailure(gostResult)) {
@@ -346,11 +337,6 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             } else {
                 // 隧道未变化时：直接更新配置
                 gostResult = updateGostServices(updatedForward, tunnel, permissionResult != null ? permissionResult.getLimiter() : null, nodeInfo, userTunnel);
-            }
-            if (gostResult.getCode() == 0) {
-                taskMetricsService.recordSuccess();
-            } else {
-                taskMetricsService.recordFailure();
             }
 
             if (gostResult.getCode() != 0) {
@@ -1636,13 +1622,7 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         if (nodeInfo.isHasError()) {
             return R.err(nodeInfo.getErrorMessage());
         }
-        R gostResult = updateGostServices(forward, tunnel, null, nodeInfo, userTunnel);
-        if (gostResult.getCode() == 0) {
-            taskMetricsService.recordSuccess();
-        } else {
-            taskMetricsService.recordFailure();
-        }
-        return gostResult;
+        return updateGostServices(forward, tunnel, null, nodeInfo, userTunnel);
     }
 
 

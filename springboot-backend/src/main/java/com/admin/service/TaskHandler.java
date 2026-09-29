@@ -28,4 +28,12 @@ public interface TaskHandler {
      * 实际执行一次重试，解析 task.getPayload() 完成对应的动作；code=0 表示成功
      */
     R handle(TaskQueue task);
+
+    /**
+     * 该任务类型成功后的记录保留多久（毫秒）再被定时清理；默认 24 小时。
+     * 高频、每次都入队的任务类型可以返回更短的时间，避免队列表增长过快
+     */
+    default long successRetentionMs() {
+        return 24L * 60 * 60 * 1000;
+    }
 }

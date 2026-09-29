@@ -16,8 +16,11 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import javax.annotation.PostConstruct;
+import javax.annotation.PreDestroy;
 import javax.annotation.Resource;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -26,6 +29,9 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
 /**
@@ -49,9 +55,6 @@ public class TaskQueueServiceImpl extends ServiceImpl<TaskQueueMapper, TaskQueue
     private static final String STATUS_PENDING = "PENDING";
     private static final String STATUS_SUCCESS = "SUCCESS";
 
-    /** SUCCESS 状态的记录保留多久供管理员查看，超过后由定时清理任务删除 */
-    private static final long SUCCESS_RETENTION_MS = 24 * 60 * 60 * 1000L;
-
     private final long serviceStartTime = System.currentTimeMillis();
 
     private volatile long lastSweepTime = 0L;
@@ -69,15 +72,28 @@ public class TaskQueueServiceImpl extends ServiceImpl<TaskQueueMapper, TaskQueue
 
     private Map<String, TaskHandler> handlerMap;
 
+    private final Set<Long> inFlight = ConcurrentHashMap.newKeySet();
+
+    private final ExecutorService dispatchExecutor = Executors.newFixedThreadPool(2, r -> {
+        Thread t = new Thread(r, "task-queue-dispatch");
+        t.setDaemon(true);
+        return t;
+    });
+
+    @PreDestroy
+    private void shutdownDispatchExecutor() {
+        dispatchExecutor.shutdown();
+    }
+
     @PostConstruct
     private void initHandlerMap() {
         handlerMap = taskHandlers.stream().collect(Collectors.toMap(TaskHandler::getTaskType, h -> h));
     }
 
     @Override
-    public void enqueue(String taskType, String dedupKey, String payload, List<Long> nodeIds, String error) {
+    public Long enqueue(String taskType, String dedupKey, String payload, List<Long> nodeIds, String error) {
         if (taskType == null) {
-            return;
+            return null;
         }
         long now = System.currentTimeMillis();
         TaskQueue existing = dedupKey == null ? null
@@ -123,6 +139,37 @@ public class TaskQueueServiceImpl extends ServiceImpl<TaskQueueMapper, TaskQueue
                 taskQueueNodeService.save(link);
             }
         }
+        return item.getId();
+    }
+
+    @Override
+    public void dispatch(Long queueId) {
+        if (queueId == null) {
+            return;
+        }
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    submitDispatch(queueId);
+                }
+            });
+        } else {
+            submitDispatch(queueId);
+        }
+    }
+
+    private void submitDispatch(Long queueId) {
+        dispatchExecutor.submit(() -> {
+            try {
+                TaskQueue item = this.getById(queueId);
+                if (item != null && STATUS_PENDING.equals(item.getStatus())) {
+                    attemptRetry(item);
+                }
+            } catch (Exception e) {
+                log.warn("任务队列即时执行异常，队列ID: {}", queueId, e);
+            }
+        });
     }
 
     @Override
@@ -246,15 +293,19 @@ public class TaskQueueServiceImpl extends ServiceImpl<TaskQueueMapper, TaskQueue
 
     @Override
     public void purgeExpiredSuccess() {
-        long cutoff = System.currentTimeMillis() - SUCCESS_RETENTION_MS;
-        List<TaskQueue> expired = this.list(new QueryWrapper<TaskQueue>()
-                .eq("status", STATUS_SUCCESS).lt("completed_time", cutoff));
-        if (expired.isEmpty()) {
-            return;
+        long now = System.currentTimeMillis();
+        for (TaskHandler handler : taskHandlers) {
+            long cutoff = now - handler.successRetentionMs();
+            List<TaskQueue> expired = this.list(new QueryWrapper<TaskQueue>()
+                    .eq("task_type", handler.getTaskType())
+                    .eq("status", STATUS_SUCCESS).lt("completed_time", cutoff));
+            if (expired.isEmpty()) {
+                continue;
+            }
+            List<Long> ids = expired.stream().map(TaskQueue::getId).collect(Collectors.toList());
+            this.removeByIds(ids);
+            taskQueueNodeService.remove(new QueryWrapper<TaskQueueNode>().in("task_queue_id", ids));
         }
-        List<Long> ids = expired.stream().map(TaskQueue::getId).collect(Collectors.toList());
-        this.removeByIds(ids);
-        taskQueueNodeService.remove(new QueryWrapper<TaskQueueNode>().in("task_queue_id", ids));
     }
 
     @Override
@@ -281,6 +332,18 @@ public class TaskQueueServiceImpl extends ServiceImpl<TaskQueueMapper, TaskQueue
      * 节点关联保留不删，供展示当时关联了哪些节点），失败则累加重试次数并记录最新错误信息
      */
     private R attemptRetry(TaskQueue item) {
+        // 同一条队列项同一时刻只允许一个线程在执行（即时执行、定时兜底、节点上线触发、手动重试可能撞车）
+        if (!inFlight.add(item.getId())) {
+            return R.ok("该任务正在处理中");
+        }
+        try {
+            return doAttemptRetry(item);
+        } finally {
+            inFlight.remove(item.getId());
+        }
+    }
+
+    private R doAttemptRetry(TaskQueue item) {
         TaskHandler handler = handlerMap.get(item.getTaskType());
         if (handler == null) {
             return R.err("未知的任务类型: " + item.getTaskType());

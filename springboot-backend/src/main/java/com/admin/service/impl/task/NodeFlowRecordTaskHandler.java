@@ -38,6 +38,11 @@ public class NodeFlowRecordTaskHandler implements TaskHandler {
     }
 
     @Override
+    public long successRetentionMs() {
+        return 60L * 60 * 1000;
+    }
+
+    @Override
     public R handle(TaskQueue task) {
         JSONObject payload = JSONObject.parseObject(task.getPayload());
         Long nodeId = payload != null ? payload.getLong("nodeId") : null;

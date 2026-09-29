@@ -100,7 +100,6 @@ export const getTaskQueueList = () => Network.post("/task-queue/list");
 // 管理员仪表盘聚合统计
 export const getDashboardFlowStats = () => Network.post("/dashboard/flow-stats");
 export const getTaskQueueHealth = () => Network.post("/task-queue/health");
-export const getTaskQueueMetrics = () => Network.post("/task-queue/metrics");
 export const retryTaskQueue = (id: number) => Network.post("/task-queue/retry", { id });
 export const deleteTaskQueue = (id: number) => Network.post("/task-queue/delete", { id });
 

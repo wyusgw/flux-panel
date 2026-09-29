@@ -38,6 +38,11 @@ public class UserFlowRecordTaskHandler implements TaskHandler {
     }
 
     @Override
+    public long successRetentionMs() {
+        return 60L * 60 * 1000;
+    }
+
+    @Override
     public R handle(TaskQueue task) {
         JSONObject payload = JSONObject.parseObject(task.getPayload());
         Integer userId = payload != null ? payload.getInteger("userId") : null;

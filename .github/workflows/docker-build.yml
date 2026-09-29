@@ -13,47 +13,73 @@ on:
         required: true
         type: string
 
+permissions:
+  contents: read
+
+# 同一个 tag 同一时间只允许一个构建在跑，重复触发时排队而不是并行覆盖
+concurrency:
+  group: build-${{ github.event.release.tag_name || github.event.inputs.tag }}
+  cancel-in-progress: false
+
 jobs:
   resolve-version:
     name: Resolve Version from Release Tag
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       tag: ${{ steps.resolve.outputs.tag }}
       version: ${{ steps.resolve.outputs.version }}
     steps:
       - name: Resolve version from release tag
         id: resolve
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            TAG="${{ github.event.inputs.tag }}"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            TAG="$INPUT_TAG"
             echo "手动触发，使用指定的 tag: $TAG"
           else
-            TAG="${{ github.event.release.tag_name }}"
+            TAG="$RELEASE_TAG"
             echo "Release 发布触发，tag: $TAG"
+          fi
+
+          # tag 会用作镜像 tag 和 Release 定位，只允许常见版本号字符，避免异常输入
+          if ! [[ "$TAG" =~ ^[0-9A-Za-z][0-9A-Za-z._-]*$ ]]; then
+            echo "非法的 tag: $TAG"
+            exit 1
           fi
 
           # tag 本身就是版本号（不带 v 前缀），直接用作 Docker 镜像 tag
           VERSION="$TAG"
           echo "Docker image version: $VERSION"
-          echo "tag=$TAG" >> $GITHUB_OUTPUT
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
   build-gost:
-    name: Build & Compress GOST Binary
+    name: Build & Upload GOST Binary (${{ matrix.arch }})
     needs: resolve-version
     runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.resolve-version.outputs.tag }}
 
       - name: Set up Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v7
         with:
           go-version: '1.21'
 
       - name: Cache Go modules
-        uses: actions/cache@v3
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cache/go-build
@@ -69,57 +95,60 @@ jobs:
           sudo mv upx-4.2.1-amd64_linux/upx /usr/local/bin/
           rm -rf upx-4.2.1-amd64_linux*
 
-      - name: Build GOST binary (AMD64)
+      - name: Build GOST binary
         working-directory: ./go-gost
         run: |
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o gost-amd64
+          CGO_ENABLED=0 GOOS=linux GOARCH=${{ matrix.arch }} go build -ldflags="-s -w" -o gost-${{ matrix.arch }}
 
-      - name: Build GOST binary (ARM64)
+      - name: Compress with UPX
         working-directory: ./go-gost
         run: |
-          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o gost-arm64
+          upx --best --lzma gost-${{ matrix.arch }}
 
-      - name: Compress with UPX (AMD64)
-        working-directory: ./go-gost
+      - name: Package offline deployment bundle
         run: |
-          upx --best --lzma gost-amd64
+          mkdir -p ./offline-${{ matrix.arch }}
+          cp ./go-gost/gost-${{ matrix.arch }} ./offline-${{ matrix.arch }}/gost
+          cp ./offline.sh ./offline-${{ matrix.arch }}/offline.sh
+          chmod +x ./offline-${{ matrix.arch }}/gost ./offline-${{ matrix.arch }}/offline.sh
+          (cd ./offline-${{ matrix.arch }} && zip -j ../flux-panel-offline-${{ matrix.arch }}.zip gost offline.sh)
 
-      - name: Compress with UPX (ARM64)
-        working-directory: ./go-gost
-        run: |
-          upx --best --lzma gost-arm64
-
-      - name: Upload GOST AMD64 artifact
-        uses: actions/upload-artifact@v4
+      - name: Upload GOST binary to the Release
+        uses: svenstaro/upload-release-action@29e53e917877a24fad85510ded594ab3c9ca12de # v2.11.5
         with:
-          name: gost-binary-amd64
-          path: ./go-gost/gost-amd64
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: ./go-gost/gost-${{ matrix.arch }}
+          tag: ${{ needs.resolve-version.outputs.tag }}
+          overwrite: true
 
-      - name: Upload GOST ARM64 artifact
-        uses: actions/upload-artifact@v4
+      - name: Upload offline bundle to the Release
+        uses: svenstaro/upload-release-action@29e53e917877a24fad85510ded594ab3c9ca12de # v2.11.5
         with:
-          name: gost-binary-arm64
-          path: ./go-gost/gost-arm64
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: ./flux-panel-offline-${{ matrix.arch }}.zip
+          tag: ${{ needs.resolve-version.outputs.tag }}
+          overwrite: true
 
   build-vite:
     name: Build & Push Vite Frontend
     needs: resolve-version
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.resolve-version.outputs.tag }}
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 20
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v4
 
       - name: Log in to DockerHub
-        uses: docker/login-action@v2
+        uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKER_HUB_USERNAME }}
           password: ${{ secrets.DOCKER_HUB_TOKEN }}
@@ -140,19 +169,20 @@ jobs:
     name: Build & Push Spring Boot Backend
     needs: resolve-version
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.resolve-version.outputs.tag }}
 
       - name: Set up JDK and Maven
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v6
         with:
           java-version: 21
           distribution: 'temurin'
 
       - name: Cache Maven dependencies
-        uses: actions/cache@v3
+        uses: actions/cache@v6
         with:
           path: ~/.m2
           key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
@@ -163,10 +193,10 @@ jobs:
         run: mvn clean package -DskipTests
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v4
 
       - name: Log in to DockerHub
-        uses: docker/login-action@v2
+        uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKER_HUB_USERNAME }}
           password: ${{ secrets.DOCKER_HUB_TOKEN }}
@@ -183,71 +213,30 @@ jobs:
             -t ${DOCKER_USER}/springboot-backend:${VERSION} \
             ./springboot-backend
 
-  attach-release-assets:
-    name: Attach Build Assets to Release
-    needs: [resolve-version, build-gost, build-vite, build-java]
+  upload-static-assets:
+    name: Upload Scripts and Config to Release
+    needs: resolve-version
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.resolve-version.outputs.tag }}
 
-      - name: Download GOST AMD64 binary
-        uses: actions/download-artifact@v4
+      - name: Upload static files to the Release
+        uses: svenstaro/upload-release-action@29e53e917877a24fad85510ded594ab3c9ca12de # v2.11.5
         with:
-          name: gost-binary-amd64
-          path: ./artifacts/amd64
-
-      - name: Download GOST ARM64 binary
-        uses: actions/download-artifact@v4
-        with:
-          name: gost-binary-arm64
-          path: ./artifacts/arm64
-
-      - name: Rename binaries
-        run: |
-          mv ./artifacts/amd64/gost-amd64 ./artifacts/gost-amd64
-          mv ./artifacts/arm64/gost-arm64 ./artifacts/gost-arm64
-
-      - name: Package offline deployment bundles
-        run: |
-          mkdir -p ./artifacts/offline-amd64 ./artifacts/offline-arm64
-          cp ./artifacts/gost-amd64 ./artifacts/offline-amd64/gost
-          cp ./offline.sh ./artifacts/offline-amd64/offline.sh
-          cp ./artifacts/gost-arm64 ./artifacts/offline-arm64/gost
-          cp ./offline.sh ./artifacts/offline-arm64/offline.sh
-          chmod +x ./artifacts/offline-amd64/gost ./artifacts/offline-amd64/offline.sh
-          chmod +x ./artifacts/offline-arm64/gost ./artifacts/offline-arm64/offline.sh
-          (cd ./artifacts/offline-amd64 && zip -j ../flux-panel-offline-amd64.zip gost offline.sh)
-          (cd ./artifacts/offline-arm64 && zip -j ../flux-panel-offline-arm64.zip gost offline.sh)
-
-      - name: Upload assets to the existing Release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          TAG="${{ needs.resolve-version.outputs.tag }}"
-
-          echo "上传 GOST 二进制文件..."
-          gh release upload "${TAG}" ./artifacts/gost-amd64 --clobber
-          gh release upload "${TAG}" ./artifacts/gost-arm64 --clobber
-
-          echo "上传离线部署包..."
-          gh release upload "${TAG}" ./artifacts/flux-panel-offline-amd64.zip --clobber
-          gh release upload "${TAG}" ./artifacts/flux-panel-offline-arm64.zip --clobber
-
-          echo "上传安装脚本..."
-          gh release upload "${TAG}" ./install.sh --clobber
-          gh release upload "${TAG}" ./offline.sh --clobber
-          gh release upload "${TAG}" ./panel_install.sh --clobber
-
-          echo "上传 Docker Compose 配置文件..."
-          gh release upload "${TAG}" ./docker-compose-v4.yml --clobber
-          gh release upload "${TAG}" ./docker-compose-v6.yml --clobber
-
-          echo "上传数据库初始化文件..."
-          gh release upload "${TAG}" ./database/install.sql --clobber
-          gh release upload "${TAG}" ./database/update.sql --clobber
-
-          echo "所有文件已上传到 Release ${TAG}"
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file_glob: true
+          file: |
+            ./install.sh
+            ./offline.sh
+            ./panel_install.sh
+            ./docker-compose-v4.yml
+            ./docker-compose-v6.yml
+            ./database/install.sql
+            ./database/update.sql
+          tag: ${{ needs.resolve-version.outputs.tag }}
+          overwrite: true

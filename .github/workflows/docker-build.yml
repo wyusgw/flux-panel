@@ -16,50 +16,19 @@ on:
 permissions:
   contents: read
 
+# tag 本身就是版本号（不带 v 前缀）：Release 发布触发取 Release 的 tag，手动触发取输入的 tag；
+# 同时用作 Docker 镜像 tag 和 Release 附件的定位。脚本里一律通过 $TAG 引用，不把外部输入直接拼进 shell
+env:
+  TAG: ${{ github.event.release.tag_name || github.event.inputs.tag }}
+
 # 同一个 tag 同一时间只允许一个构建在跑，重复触发时排队而不是并行覆盖
 concurrency:
   group: build-${{ github.event.release.tag_name || github.event.inputs.tag }}
   cancel-in-progress: false
 
 jobs:
-  resolve-version:
-    name: Resolve Version from Release Tag
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
-      tag: ${{ steps.resolve.outputs.tag }}
-      version: ${{ steps.resolve.outputs.version }}
-    steps:
-      - name: Resolve version from release tag
-        id: resolve
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          INPUT_TAG: ${{ github.event.inputs.tag }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
-        run: |
-          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            TAG="$INPUT_TAG"
-            echo "手动触发，使用指定的 tag: $TAG"
-          else
-            TAG="$RELEASE_TAG"
-            echo "Release 发布触发，tag: $TAG"
-          fi
-
-          # tag 会用作镜像 tag 和 Release 定位，只允许常见版本号字符，避免异常输入
-          if ! [[ "$TAG" =~ ^[0-9A-Za-z][0-9A-Za-z._-]*$ ]]; then
-            echo "非法的 tag: $TAG"
-            exit 1
-          fi
-
-          # tag 本身就是版本号（不带 v 前缀），直接用作 Docker 镜像 tag
-          VERSION="$TAG"
-          echo "Docker image version: $VERSION"
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-
   build-gost:
     name: Build & Upload GOST Binary (${{ matrix.arch }})
-    needs: resolve-version
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
@@ -71,7 +40,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ needs.resolve-version.outputs.tag }}
+          ref: ${{ env.TAG }}
 
       - name: Set up Go
         uses: actions/setup-go@v7
@@ -118,7 +87,7 @@ jobs:
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: ./go-gost/gost-${{ matrix.arch }}
-          tag: ${{ needs.resolve-version.outputs.tag }}
+          tag: ${{ env.TAG }}
           overwrite: true
 
       - name: Upload offline bundle to the Release
@@ -126,8 +95,14 @@ jobs:
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: ./flux-panel-offline-${{ matrix.arch }}.zip
-          tag: ${{ needs.resolve-version.outputs.tag }}
+          tag: ${{ env.TAG }}
           overwrite: true
+
+      - name: Collect node install scripts
+        if: matrix.arch == 'amd64'
+        run: |
+          mkdir -p ./release-node-scripts
+          cp ./install.sh ./offline.sh ./release-node-scripts/
 
       - name: Upload node install scripts to the Release
         if: matrix.arch == 'amd64'
@@ -135,21 +110,18 @@ jobs:
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file_glob: true
-          file: |
-            ./install.sh
-            ./offline.sh
-          tag: ${{ needs.resolve-version.outputs.tag }}
+          file: ./release-node-scripts/*
+          tag: ${{ env.TAG }}
           overwrite: true
 
   build-vite:
     name: Build & Push Vite Frontend
-    needs: resolve-version
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ needs.resolve-version.outputs.tag }}
+          ref: ${{ env.TAG }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v7
@@ -169,7 +141,7 @@ jobs:
         env:
           DOCKER_USER: ${{ secrets.DOCKER_HUB_USERNAME }}
         run: |
-          VERSION="${{ needs.resolve-version.outputs.version }}"
+          VERSION="$TAG"
           docker buildx build \
             --platform linux/amd64,linux/arm64 \
             --push \
@@ -179,7 +151,6 @@ jobs:
 
   build-java:
     name: Build & Push Spring Boot Backend
-    needs: resolve-version
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
@@ -187,7 +158,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ needs.resolve-version.outputs.tag }}
+          ref: ${{ env.TAG }}
 
       - name: Set up JDK and Maven
         uses: actions/setup-java@v6
@@ -219,7 +190,7 @@ jobs:
         env:
           DOCKER_USER: ${{ secrets.DOCKER_HUB_USERNAME }}
         run: |
-          VERSION="${{ needs.resolve-version.outputs.version }}"
+          VERSION="$TAG"
           docker buildx build \
             --platform linux/amd64,linux/arm64 \
             --push \
@@ -227,16 +198,17 @@ jobs:
             -t ${DOCKER_USER}/springboot-backend:${VERSION} \
             ./springboot-backend
 
+      - name: Collect panel scripts and config
+        run: |
+          mkdir -p ./release-panel-files
+          cp ./panel_install.sh ./docker-compose-v4.yml ./docker-compose-v6.yml ./release-panel-files/
+          cp ./database/install.sql ./database/update.sql ./release-panel-files/
+
       - name: Upload panel scripts and config to the Release
         uses: svenstaro/upload-release-action@29e53e917877a24fad85510ded594ab3c9ca12de # v2.11.5
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file_glob: true
-          file: |
-            ./panel_install.sh
-            ./docker-compose-v4.yml
-            ./docker-compose-v6.yml
-            ./database/install.sql
-            ./database/update.sql
-          tag: ${{ needs.resolve-version.outputs.tag }}
+          file: ./release-panel-files/*
+          tag: ${{ env.TAG }}
           overwrite: true

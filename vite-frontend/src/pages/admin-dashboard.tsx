@@ -1,19 +1,15 @@
 import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Button } from "@heroui/button";
-import { Chip } from "@heroui/chip";
 import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from "@heroui/table";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, LabelList } from "recharts";
 
-import { getAllUsers, getNodeList, getAdminOrderList, getTaskQueueList, getTaskQueueMetrics, getDashboardFlowStats } from "@/api";
+import { getAllUsers, getNodeList, getAdminOrderList, getTaskQueueList, getDashboardFlowStats } from "@/api";
 
 type Order = { amount?: number; orderStatus?: number; createdTime?: number; paidTime?: number };
 type User = { id: number; user: string; name?: string; inFlow?: number; outFlow?: number };
 type Node = { id: number; name: string; ip?: string; status?: number };
-type TaskQueueItem = { taskTypeLabel: string; status: 'PENDING' | 'SUCCESS'; retryCount: number; createdTime: number };
-type TaskQueueMetrics = { successLastHour: number; failureLastHour: number; successLast24h: number; failureLast24h: number };
-const EMPTY_TASK_QUEUE_METRICS: TaskQueueMetrics = { successLastHour: 0, failureLastHour: 0, successLast24h: 0, failureLast24h: 0 };
+type TaskQueueItem = { status: 'PENDING' | 'SUCCESS' };
 type RankRow = { name: string; value: number };
 type FlowStats = {
   todayTotal: number; yesterdayTotal: number;
@@ -21,10 +17,6 @@ type FlowStats = {
   todayNodeRanking: RankRow[]; yesterdayNodeRanking: RankRow[];
 };
 const EMPTY_FLOW_STATS: FlowStats = { todayTotal: 0, yesterdayTotal: 0, todayUserRanking: [], yesterdayUserRanking: [], todayNodeRanking: [], yesterdayNodeRanking: [] };
-
-// 需与后端 TaskQueueServiceImpl.MAX_AUTO_RETRY 保持一致：超过这个次数后不再自动重试，仅供手动处理
-const AUTO_RETRY_LIMIT = 20;
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 const isSameDay = (time: number | undefined, date: Date) => {
   if (!time) return false;
@@ -71,11 +63,16 @@ const SpeedometerGauge = ({ percent, value, sublabel }: { percent: number; value
   const majorTicks = [0, 50, 100];
   const minorTicks = [10, 20, 30, 40, 60, 70, 80, 90];
   const trackOuter = r + trackWidth / 2;
-  const needleAngle = angleForPercent(clamped);
-  const needleTip = polarPoint(cx, cy, r - trackWidth - 12, needleAngle);
-  // 指针根部做成一个很窄的三角形（而不是单纯一条线），更接近真实指针的锥形
-  const needleBaseL = polarPoint(cx, cy, 5, needleAngle + 90);
-  const needleBaseR = polarPoint(cx, cy, 5, needleAngle - 90);
+  // 指针始终按 0° 方向（水平朝右）画好，再整体用 CSS transform 旋转到目标角度：
+  // SVG 的 x1/y1/x2/y2 这类几何属性没法被 CSS transition 插值，直接改端点坐标指针会瞬间跳过去；
+  // 用 transform 旋转才能真正做出过渡动画。首次渲染先停在 0%，挂载后再转到实际值，就有一次"扫过去"的效果
+  const [shownPercent, setShownPercent] = useState(0);
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setShownPercent(clamped));
+    return () => cancelAnimationFrame(id);
+  }, [clamped]);
+  const needleAngle = angleForPercent(shownPercent);
+  const needleLength = r - trackWidth - 12;
   // 数字刻度标签靠水平位置决定对齐方式，避免贴着刻度线边缘显得挤
   const labelAnchor = (t: number) => t === 0 ? 'start' : t === 100 ? 'end' : 'middle';
 
@@ -108,19 +105,17 @@ const SpeedometerGauge = ({ percent, value, sublabel }: { percent: number; value
           </g>
         );
       })}
-      <line
-        x1={needleBaseL.x} y1={needleBaseL.y}
-        x2={needleTip.x} y2={needleTip.y}
-        strokeWidth={3} strokeLinecap="round"
-        className="stroke-foreground"
-        style={{ transition: 'all .4s ease' }}
-      />
-      <line
-        x1={needleBaseR.x} y1={needleBaseR.y}
-        x2={needleTip.x} y2={needleTip.y}
-        strokeWidth={3} strokeLinecap="round"
-        className="stroke-foreground"
-        style={{ transition: 'all .4s ease' }}
+      {/* 指针根部做成很窄的三角形（而不是单纯一条线），更接近真实指针的锥形 */}
+      <polygon
+        points={`${cx},${cy - 5} ${cx + needleLength},${cy} ${cx},${cy + 5}`}
+        strokeWidth={2} strokeLinejoin="round"
+        className="fill-foreground stroke-foreground"
+        style={{
+          transformOrigin: `${cx}px ${cy}px`,
+          transformBox: 'view-box',
+          transform: `rotate(${-needleAngle}deg)`,
+          transition: 'transform .9s cubic-bezier(.22, 1.2, .36, 1)',
+        }}
       />
       <circle cx={cx} cy={cy} r={5} className="fill-foreground" />
       <text x={cx} y={157} textAnchor="middle" className="fill-foreground" style={{ fontSize: 18, fontWeight: 700 }}>{value}</text>
@@ -215,40 +210,31 @@ function RankTable({ title, rows, kind }: { title: string; rows: { name: string;
 }
 
 export default function AdminDashboardPage() {
-  const navigate = useNavigate();
   const [users, setUsers] = useState<User[]>([]);
   const [nodes, setNodes] = useState<Node[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [taskQueueItems, setTaskQueueItems] = useState<TaskQueueItem[]>([]);
-  const [taskQueueMetrics, setTaskQueueMetrics] = useState<TaskQueueMetrics>(EMPTY_TASK_QUEUE_METRICS);
   const [flowStats, setFlowStats] = useState<FlowStats>(EMPTY_FLOW_STATS);
   const loadData = useCallback(async () => {
-    const [userResponse, nodeResponse, orderResponse, taskQueueResponse, taskQueueMetricsResponse, flowStatsResponse] = await Promise.all([
-      getAllUsers({ current: 1, size: 1000 }), getNodeList(), getAdminOrderList(), getTaskQueueList(), getTaskQueueMetrics(), getDashboardFlowStats(),
+    const [userResponse, nodeResponse, orderResponse, taskQueueResponse, flowStatsResponse] = await Promise.all([
+      getAllUsers({ current: 1, size: 1000 }), getNodeList(), getAdminOrderList(), getTaskQueueList(), getDashboardFlowStats(),
     ]);
     if (userResponse.code === 0) setUsers(userResponse.data || []);
     if (nodeResponse.code === 0) setNodes(nodeResponse.data || []);
     if (orderResponse.code === 0) setOrders(orderResponse.data || []);
     if (taskQueueResponse.code === 0) setTaskQueueItems(taskQueueResponse.data || []);
-    if (taskQueueMetricsResponse.code === 0) setTaskQueueMetrics({ ...EMPTY_TASK_QUEUE_METRICS, ...taskQueueMetricsResponse.data });
     if (flowStatsResponse.code === 0) setFlowStats({ ...EMPTY_FLOW_STATS, ...flowStatsResponse.data });
   }, []);
   useEffect(() => { loadData(); }, [loadData]);
 
-  const taskQueueStats = useMemo(() => {
-    const byType = new Map<string, number>();
-    let pendingTotal = 0;
-    let stuck = 0;
-    let last24h = 0;
-    const now = Date.now();
+  const taskQueueCounts = useMemo(() => {
+    let pending = 0;
+    let success = 0;
     for (const item of taskQueueItems) {
-      if (item.status === 'SUCCESS') continue;
-      pendingTotal++;
-      byType.set(item.taskTypeLabel, (byType.get(item.taskTypeLabel) || 0) + 1);
-      if (item.retryCount >= AUTO_RETRY_LIMIT) stuck++;
-      if (now - item.createdTime <= DAY_MS) last24h++;
+      if (item.status === 'SUCCESS') success++;
+      else pending++;
     }
-    return { total: pendingTotal, byType: Array.from(byType.entries()), stuck, last24h };
+    return { pending, success };
   }, [taskQueueItems]);
 
   const now = new Date();
@@ -303,28 +289,7 @@ export default function AdminDashboardPage() {
       <div className="grid grid-cols-3">
         <div className="p-4 min-h-24 border-r border-default-100 flex flex-col justify-center"><p className="text-xs text-default-500">节点总数</p><p className="mt-2 text-lg font-semibold text-foreground">{nodes.length}</p></div>
         <div className="p-3 min-h-24 border-r border-default-100 flex flex-col items-center justify-center"><div className="w-full max-w-[200px]"><SpeedometerGauge percent={onlineNodePercent} value={`${onlineNodeCount} / ${nodes.length}`} sublabel="在线节点" /></div></div>
-        <div className="p-4 min-h-24 flex flex-col justify-center"><p className="text-xs text-default-500">待处理任务</p><p className={`mt-2 text-lg font-semibold ${taskQueueStats.total > 0 ? 'text-warning-600' : 'text-foreground'}`}>{taskQueueStats.total}</p></div>
-      </div>
-    </section>
-    <section className="dashboard-panel mb-5 overflow-hidden">
-      <div className="px-4 py-3 border-b border-default-100 flex items-center justify-between">
-        <h2 className="text-sm font-semibold">任务队列监控</h2>
-        <Button size="sm" variant="light" onPress={() => navigate('/task-queue')}>查看详情</Button>
-      </div>
-      <div className="grid grid-cols-2 md:grid-cols-3">
-        <div className="p-4 min-h-24 md:border-r border-b md:border-b-0 border-default-100"><p className="text-xs text-default-500">当前作业量（待处理）</p><p className="mt-2 text-lg font-semibold text-foreground">{taskQueueStats.total}</p></div>
-        <div className="p-4 min-h-24 md:border-r border-b md:border-b-0 border-default-100"><p className="text-xs text-default-500">24小时内新增</p><p className="mt-2 text-lg font-semibold text-foreground">{taskQueueStats.last24h}</p></div>
-        <div className="p-4 min-h-24 border-b md:border-b-0 border-default-100"><p className="text-xs text-default-500">超过自动重试上限</p><p className={`mt-2 text-lg font-semibold ${taskQueueStats.stuck > 0 ? 'text-warning-600' : 'text-foreground'}`}>{taskQueueStats.stuck}</p></div>
-        <div className="p-4 min-h-24 md:border-r border-default-100"><p className="text-xs text-default-500">近一小时处理量</p><p className="mt-2 text-lg font-semibold text-foreground">{taskQueueMetrics.successLastHour + taskQueueMetrics.failureLastHour}</p></div>
-        <div className="p-4 min-h-24 md:border-r border-default-100"><p className="text-xs text-default-500">24小时内成功</p><p className="mt-2 text-lg font-semibold text-foreground">{taskQueueMetrics.successLast24h}</p></div>
-        <div className="p-4 min-h-24">
-          <p className="text-xs text-default-500">按类型分布</p>
-          {taskQueueStats.byType.length > 0 ? (
-            <div className="flex flex-wrap gap-1 mt-2">{taskQueueStats.byType.map(([label, count]) => <Chip key={label} size="sm" variant="flat">{label} {count}</Chip>)}</div>
-          ) : (
-            <p className="mt-2 text-lg font-semibold text-foreground">0</p>
-          )}
-        </div>
+        <div className="p-4 min-h-24 flex flex-col justify-center"><p className="text-xs text-default-500">队列情况</p><p className="mt-2 text-lg font-semibold text-foreground">{`T: ${taskQueueCounts.pending}, S: ${taskQueueCounts.success}`}</p></div>
       </div>
     </section>
     <section className="grid grid-cols-1 xl:grid-cols-2 gap-5"><RankTable title="今日用户流量排行" rows={flowStats.todayUserRanking} kind="flow" /><RankTable title="昨日用户流量排行" rows={flowStats.yesterdayUserRanking} kind="flow" /><RankTable title="今日节点流量排行" rows={flowStats.todayNodeRanking} kind="node" /><RankTable title="昨日节点流量排行" rows={flowStats.yesterdayNodeRanking} kind="node" /></section>

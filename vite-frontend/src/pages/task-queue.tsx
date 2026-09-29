@@ -59,7 +59,6 @@ const TASK_TYPE_COLORS: Record<string, "primary" | "secondary" | "success" | "wa
 // 需与后端 TaskQueueServiceImpl.MAX_AUTO_RETRY 保持一致：超过这个次数后不再自动重试，仅供手动处理
 const AUTO_RETRY_LIMIT = 20;
 const HOUR_MS = 60 * 60 * 1000;
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 const STAT_TONE_CLASS: Record<string, string> = {
   warning: 'text-warning-600',
@@ -142,33 +141,16 @@ export default function TaskQueuePage() {
   }, [loadData]);
 
   const stats = useMemo(() => {
-    const byType = new Map<string, number>();
     let pendingTotal = 0;
-    let stuck = 0;
-    let last24h = 0;
-    let successLast24h = 0;
     let processedLastHour = 0;
     const now = Date.now();
     for (const item of items) {
       // 更新时间落在近一小时内，代表这条任务近一小时内被重试/处理过一次（不论结果是成功还是仍失败）
       if (now - item.updatedTime <= HOUR_MS) processedLastHour++;
-      if (item.status === 'SUCCESS') {
-        if (item.completedTime && now - item.completedTime <= DAY_MS) successLast24h++;
-        continue;
-      }
+      if (item.status === 'SUCCESS') continue;
       pendingTotal++;
-      byType.set(item.taskTypeLabel, (byType.get(item.taskTypeLabel) || 0) + 1);
-      if (item.retryCount >= AUTO_RETRY_LIMIT) stuck++;
-      if (now - item.createdTime <= DAY_MS) last24h++;
     }
-    return {
-      total: pendingTotal,
-      byType: Array.from(byType.entries()),
-      stuck,
-      last24h,
-      successLast24h,
-      processedLastHour
-    };
+    return { total: pendingTotal, processedLastHour };
   }, [items]);
 
   const pendingItems = useMemo(() =>
@@ -240,27 +222,10 @@ export default function TaskQueuePage() {
         <h1 className="text-xl font-semibold">队列监控</h1>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-3 mb-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
         <HealthCard health={health} />
         <StatCard label="当前作业量" value={stats.total} onPress={() => setCurrentJobsModalOpen(true)} />
         <StatCard label="近一小时处理量" value={stats.processedLastHour} />
-        <StatCard label="24小时内新增" value={stats.last24h} />
-        <StatCard label="24小时内成功" value={stats.successLast24h} tone="success" />
-        <StatCard label="超过自动重试上限" value={stats.stuck} tone="warning" />
-        <Card className="shadow-sm border border-default-200">
-          <CardBody className="py-3 px-4">
-            <p className="text-xs text-default-500">按类型分布</p>
-            {stats.byType.length > 0 ? (
-              <div className="flex flex-wrap gap-1 mt-1.5">
-                {stats.byType.map(([label, count]) => (
-                  <Chip key={label} size="sm" variant="flat">{label} {count}</Chip>
-                ))}
-              </div>
-            ) : (
-              <p className="text-2xl font-semibold mt-1 text-foreground">0</p>
-            )}
-          </CardBody>
-        </Card>
       </div>
 
       <Card className="shadow-sm border border-default-200">

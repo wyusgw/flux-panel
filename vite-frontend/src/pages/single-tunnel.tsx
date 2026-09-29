@@ -263,6 +263,8 @@ export default function SingleTunnelPage() {
     if (!form.name.trim()) newErrors.name = '请输入名称';
     if (!form.serverIp.trim()) newErrors.serverIp = '请输入服务器 IP 或域名';
     if (!form.entryIps.some(ip => ip.trim())) newErrors.entryIp = '请至少输入一个入口 IP 或域名';
+    if (form.portSta < 1 || form.portSta > 65535) newErrors.portSta = '端口号必须在1-65535之间';
+    if (form.portEnd < 1 || form.portEnd > 65535) newErrors.portEnd = '端口号必须在1-65535之间';
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -548,8 +550,8 @@ export default function SingleTunnelPage() {
                   </div>
 
                   <div className="grid grid-cols-2 gap-3">
-                    <Input size="sm" autoComplete="off" label="起始端口" type="number" value={form.portSta.toString()} onChange={(e) => setForm(prev => ({ ...prev, portSta: Number(e.target.value) || 1000 }))} variant="bordered" />
-                    <Input size="sm" autoComplete="off" label="结束端口" type="number" value={form.portEnd.toString()} onChange={(e) => setForm(prev => ({ ...prev, portEnd: Number(e.target.value) || 65535 }))} variant="bordered" />
+                    <Input size="sm" autoComplete="off" label="起始端口" type="number" value={form.portSta.toString()} onChange={(e) => setForm(prev => ({ ...prev, portSta: Number(e.target.value) || 1000 }))} isInvalid={!!errors.portSta} errorMessage={errors.portSta} variant="bordered" />
+                    <Input size="sm" autoComplete="off" label="结束端口" type="number" value={form.portEnd.toString()} onChange={(e) => setForm(prev => ({ ...prev, portEnd: Number(e.target.value) || 65535 }))} isInvalid={!!errors.portEnd} errorMessage={errors.portEnd} variant="bordered" />
                   </div>
 
                   {form.direction === 'outbound' && (

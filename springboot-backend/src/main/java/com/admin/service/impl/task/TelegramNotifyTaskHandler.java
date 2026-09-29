@@ -5,6 +5,7 @@ import com.admin.common.utils.TelegramBotUtil;
 import com.admin.entity.TaskQueue;
 import com.admin.entity.ViteConfig;
 import com.admin.service.TaskHandler;
+import com.admin.service.TelegramSendLogService;
 import com.admin.service.ViteConfigService;
 import com.alibaba.fastjson.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
@@ -28,6 +29,10 @@ public class TelegramNotifyTaskHandler implements TaskHandler {
     @Resource
     @Lazy
     private ViteConfigService viteConfigService;
+
+    @Resource
+    @Lazy
+    private TelegramSendLogService telegramSendLogService;
 
     @Override
     public String getTaskType() {
@@ -54,6 +59,12 @@ public class TelegramNotifyTaskHandler implements TaskHandler {
             return R.err("Telegram Bot Token 未配置");
         }
         boolean ok = TelegramBotUtil.sendMessage(token, chatId, text, parseMode);
+        // 新任务的 payload 带 userId/type，每次发送尝试（首次或重试）都记一条发送记录；旧任务没有这两个字段则不记
+        Long userId = payload.getLong("userId");
+        String type = payload.getString("type");
+        if (type != null) {
+            telegramSendLogService.record(userId, chatId, type, text, ok, ok ? null : "发送失败，等待队列重试");
+        }
         return ok ? R.ok() : R.err("Telegram 消息发送失败");
     }
 }

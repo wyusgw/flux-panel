@@ -394,7 +394,10 @@ export default function NodeProbePage() {
         {loading ? (
           <div className="probe-loading"><div className="probe-loading-ring" /><p>加载节点状态…</p></div>
         ) : visibleNodeGroups.length === 0 ? (
-          <div className="probe-loading"><p>{effectiveAdmin ? '暂无节点组数据，请前往"设备管理"将节点归入节点组后再查看' : '暂无可显示的节点'}</p></div>
+          <div className="probe-empty">
+            <h2>暂无数据</h2>
+            <p>{effectiveAdmin ? '暂无节点组数据，请前往"设备管理"将节点归入节点组后再查看' : '暂无可显示的节点'}</p>
+          </div>
         ) : (
           <div className="probe-groups">
             {visibleNodeGroups.map(nodeGroup => {

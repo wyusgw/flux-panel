@@ -12,7 +12,14 @@ public interface TaskQueueService extends IService<TaskQueue> {
      * 登记一条待重试任务。dedupKey 非空时，同一 taskType+dedupKey 已有记录会被覆盖更新（不会重复插入）；
      * dedupKey 为空则总是新插入一条。nodeIds 为该任务关联的节点（节点上线时会触发对应任务重试），可为空。
      */
-    void enqueue(String taskType, String dedupKey, String payload, List<Long> nodeIds, String error);
+    Long enqueue(String taskType, String dedupKey, String payload, List<Long> nodeIds, String error);
+
+    /**
+     * 异步立即执行一条已登记的队列项（不阻塞调用方）。若当前处于数据库事务中，会等事务提交后再执行，
+     * 事务回滚则不会执行——避免后台线程查不到尚未提交的记录，或执行了已被回滚的业务的副作用。
+     * 用于"每次都先入队再处理"的任务类型，不必等 5 分钟一次的定时兜底扫描。
+     */
+    void dispatch(Long queueId);
 
     /**
      * 按 taskType+dedupKey 移除一条待重试任务（连同其节点关联），任务已完成（如转发被删除）时调用
@@ -49,6 +56,11 @@ public interface TaskQueueService extends IService<TaskQueue> {
      * 最近一次扫描时间、服务启动时间
      */
     R getHealth();
+
+    /**
+     * 保留期内的报错日志明细（管理员点击「X日内报错数量」查看，附带任务类型展示名称），按时间倒序，最多 200 条
+     */
+    R listErrorLogs();
 
     /**
      * 定时清理：删除超过 24 小时的 SUCCESS 记录（连同其节点关联），避免队列表无限增长

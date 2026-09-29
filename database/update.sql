@@ -1308,3 +1308,14 @@ CREATE TABLE IF NOT EXISTS `node_daily_raw_flow` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uniq_node_day` (`node_id`,`day`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 创建 task_error_log 表（如果不存在）：任务队列报错日志，任务首次登记进队列以及每次重试失败时各记一条，
+-- 供队列监控页统计报错数量，默认超过 7 天由定时任务清理，可在站点设置中修改
+CREATE TABLE IF NOT EXISTS `task_error_log` (
+  `id` int(10) NOT NULL AUTO_INCREMENT,
+  `task_type` varchar(50) NOT NULL,
+  `error` varchar(500) DEFAULT NULL,
+  `created_time` bigint(20) NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_task_error_log_created` (`created_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

@@ -314,7 +314,10 @@ export default function DeviceGroupPage() {
     } else {
       if (!form.serverIp.trim()) newErrors.serverIp = '请输入服务器 IP 或域名';
       if (!form.entryIps.some(ip => ip.trim())) newErrors.entryIp = '请至少输入一个入口 IP 或域名';
+      if (form.portSta < 1 || form.portSta > 65535) newErrors.portSta = '端口号必须在1-65535之间';
+      if (form.portEnd < 1 || form.portEnd > 65535) newErrors.portEnd = '端口号必须在1-65535之间';
     }
+    if (form.ratio < 0) newErrors.ratio = '流量倍率不能小于0';
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -811,8 +814,8 @@ export default function DeviceGroupPage() {
                       </div>
 
                       <div className="grid grid-cols-2 gap-4">
-                        <Input size="sm" autoComplete="off" label="起始端口" type="number" value={form.portSta.toString()} onChange={(e) => setForm(prev => ({ ...prev, portSta: Number(e.target.value) || 1000 }))} variant="bordered" />
-                        <Input size="sm" autoComplete="off" label="结束端口" type="number" value={form.portEnd.toString()} onChange={(e) => setForm(prev => ({ ...prev, portEnd: Number(e.target.value) || 65535 }))} variant="bordered" />
+                        <Input size="sm" autoComplete="off" label="起始端口" type="number" value={form.portSta.toString()} onChange={(e) => setForm(prev => ({ ...prev, portSta: Number(e.target.value) || 1000 }))} isInvalid={!!errors.portSta} errorMessage={errors.portSta} variant="bordered" />
+                        <Input size="sm" autoComplete="off" label="结束端口" type="number" value={form.portEnd.toString()} onChange={(e) => setForm(prev => ({ ...prev, portEnd: Number(e.target.value) || 65535 }))} isInvalid={!!errors.portEnd} errorMessage={errors.portEnd} variant="bordered" />
                       </div>
 
                       <Select
@@ -879,6 +882,8 @@ export default function DeviceGroupPage() {
                     type="number"
                     value={form.ratio.toString()}
                     onChange={(e) => setForm(prev => ({ ...prev, ratio: parseFloat(e.target.value) || 0 }))}
+                    isInvalid={!!errors.ratio}
+                    errorMessage={errors.ratio}
                     variant="bordered"
                   />
 

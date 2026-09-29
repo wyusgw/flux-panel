@@ -52,8 +52,8 @@ export default function RegisterPage() {
 
     if (!form.password) {
       newErrors.password = '请输入密码';
-    } else if (form.password.length < 6) {
-      newErrors.password = '密码长度至少6位';
+    } else if (form.password.length < 5) {
+      newErrors.password = '密码长度至少5位';
     }
 
     if (!form.confirmPassword) {

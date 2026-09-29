@@ -541,7 +541,11 @@ export default function ForwardPage() {
         newErrors.inPort = `端口号必须在${selectedTunnel.inNodePortSta}-${selectedTunnel.inNodePortEnd}范围内`;
       }
     }
-    
+
+    if (form.speedLimit < 0) newErrors.speedLimit = '规则限速不能小于0';
+    if (form.ipLimit < 0) newErrors.ipLimit = 'IP 限制不能小于0';
+    if (form.connLimit < 0) newErrors.connLimit = '连接数限制不能小于0';
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -1765,8 +1769,9 @@ export default function ForwardPage() {
                             size="sm"
                             label={<HelpTooltip content="该规则的最大速率，0 为不限速（与套餐/用户限速取较严格值，不同规则的限速可叠加）">规则限速</HelpTooltip>}
                             type="number"
+                            min={0}
                             value={form.speedLimit.toString()}
-                            onChange={(e) => setForm(prev => ({ ...prev, speedLimit: parseInt(e.target.value) || 0 }))}
+                            onChange={(e) => setForm(prev => ({ ...prev, speedLimit: Math.max(0, parseInt(e.target.value) || 0) }))}
                             variant="bordered"
                             endContent={<span className="self-center px-2 py-0.5 -mr-1 rounded-md bg-default-100 dark:bg-default-50/10 text-default-500 text-xs font-medium">Mbps</span>}
                           />
@@ -1775,8 +1780,9 @@ export default function ForwardPage() {
                             size="sm"
                             label={<HelpTooltip content="单个 IP 的最大并发连接数，0 为不限制">IP 限制</HelpTooltip>}
                             type="number"
+                            min={0}
                             value={form.ipLimit.toString()}
-                            onChange={(e) => setForm(prev => ({ ...prev, ipLimit: parseInt(e.target.value) || 0 }))}
+                            onChange={(e) => setForm(prev => ({ ...prev, ipLimit: Math.max(0, parseInt(e.target.value) || 0) }))}
                             variant="bordered"
                           />
 
@@ -1784,8 +1790,9 @@ export default function ForwardPage() {
                             size="sm"
                             label={<HelpTooltip content="该规则的总并发连接数，0 为不限制">连接数限制</HelpTooltip>}
                             type="number"
+                            min={0}
                             value={form.connLimit.toString()}
-                            onChange={(e) => setForm(prev => ({ ...prev, connLimit: parseInt(e.target.value) || 0 }))}
+                            onChange={(e) => setForm(prev => ({ ...prev, connLimit: Math.max(0, parseInt(e.target.value) || 0) }))}
                             variant="bordered"
                           />
                         </div>

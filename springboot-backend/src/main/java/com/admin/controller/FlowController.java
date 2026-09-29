@@ -73,10 +73,7 @@ public class FlowController extends BaseController {
     TunnelResolver tunnelResolver;
 
     @Resource
-    com.admin.service.UserDailyRawFlowService userDailyRawFlowService;
-
-    @Resource
-    com.admin.service.NodeDailyRawFlowService nodeDailyRawFlowService;
+    com.admin.common.utils.FlowRecordBuffer flowRecordBuffer;
 
     /**
      * 加密消息包装器
@@ -344,14 +341,15 @@ public class FlowController extends BaseController {
     }
 
     /**
-     * 记录本次上报的原始（未按流量倍率调整）流量到该用户、该上报节点各自的当日累计
+     * 记录本次上报的原始（未按流量倍率调整）流量：只累加进内存缓冲区（FlowRecordBuffer），
+     * 由它每分钟合并成队列任务，交给任务队列异步写入该用户、该上报节点各自的当日累计
      */
     private void recordRawDailyFlow(String userId, Long reportingNodeId, FlowDto rawFlowDto) {
+        long raw = (rawFlowDto.getD() != null ? rawFlowDto.getD() : 0L) + (rawFlowDto.getU() != null ? rawFlowDto.getU() : 0L);
+        if (raw <= 0) return;
         try {
-            long raw = (rawFlowDto.getD() != null ? rawFlowDto.getD() : 0L) + (rawFlowDto.getU() != null ? rawFlowDto.getU() : 0L);
-            if (raw <= 0) return;
-            userDailyRawFlowService.recordRaw(Integer.valueOf(userId), raw);
-            nodeDailyRawFlowService.recordRaw(reportingNodeId, raw);
+            flowRecordBuffer.addUser(Integer.valueOf(userId), raw);
+            flowRecordBuffer.addNode(reportingNodeId, raw);
         } catch (Exception e) {
             log.info("记录原始每日流量失败: {}", e.getMessage());
         }

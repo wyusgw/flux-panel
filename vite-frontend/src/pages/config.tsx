@@ -187,6 +187,14 @@ const CONFIG_ITEMS: ConfigItem[] = [
     type: 'input'
   },
   {
+    key: 'error_log_retention_days',
+    section: 'basic',
+    label: '报错日志保留天数',
+    placeholder: '默认 7',
+    description: '队列监控中的报错日志超过该天数后由定时任务自动删除，留空则按 7 天处理',
+    type: 'input'
+  },
+  {
     key: 'site_announcement',
     section: 'announcement',
     label: '站点公告',

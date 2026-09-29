@@ -85,8 +85,8 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     private static final String ERROR_PASSWORD_NOT_MATCH = "新密码和确认密码不匹配";
 
     /** 默认账号密码 */
-    private static final String DEFAULT_USERNAME = "admin_user";
-    private static final String DEFAULT_PASSWORD = "admin_user";
+    private static final String DEFAULT_USERNAME = "admin";
+    private static final String DEFAULT_PASSWORD = "admin";
     
     /** 登录响应字段名 */
     private static final String LOGIN_TOKEN_FIELD = "token";

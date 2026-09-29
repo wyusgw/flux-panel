@@ -131,8 +131,10 @@ export default function PackagePlanPage() {
     if (!form.name.trim()) newErrors.name = '请输入套餐名称';
     if (!form.groupId) newErrors.groupId = '请选择分配的用户组';
     if (form.traffic < 0) newErrors.traffic = '可用流量不能小于0';
+    if (form.durationDays < 0) newErrors.durationDays = '套餐时长不能小于0';
     if (form.maxRules < 0) newErrors.maxRules = '规则数不能小于0';
     if (form.price < 0) newErrors.price = '价格不能小于0';
+    if (form.userSpeedLimit < 0) newErrors.userSpeedLimit = '限速不能小于0';
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -372,6 +374,8 @@ export default function PackagePlanPage() {
                     type="number"
                     value={form.durationDays.toString()}
                     onChange={(e) => setForm(prev => ({ ...prev, durationDays: parseInt(e.target.value) || 0 }))}
+                    isInvalid={!!errors.durationDays}
+                    errorMessage={errors.durationDays}
                     variant="bordered"
                     endContent={<span className="px-2 py-0.5 -mr-1 rounded-md bg-default-100 dark:bg-default-50/10 text-default-500 text-xs font-medium">天</span>}
                   />
@@ -405,6 +409,8 @@ export default function PackagePlanPage() {
                     type="number"
                     value={form.userSpeedLimit.toString()}
                     onChange={(e) => setForm(prev => ({ ...prev, userSpeedLimit: parseInt(e.target.value) || 0 }))}
+                    isInvalid={!!errors.userSpeedLimit}
+                    errorMessage={errors.userSpeedLimit}
                     variant="bordered"
                     endContent={<span className="px-2 py-0.5 -mr-1 rounded-md bg-default-100 dark:bg-default-50/10 text-default-500 text-xs font-medium">Mbps</span>}
                   />

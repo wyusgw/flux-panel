@@ -311,7 +311,7 @@ CREATE TABLE `user` (
 --
 
 INSERT INTO `user` (`id`, `user`, `pwd`, `role_id`, `exp_time`, `flow`, `in_flow`, `out_flow`, `flow_reset_time`, `num`, `created_time`, `updated_time`, `status`) VALUES
-(1, 'admin_user', '3c85cdebade1c51cf64ca9f3c09d182d', 0, 2727251700000, 99999, 0, 0, 1, 99999, 1748914865000, 1754011744252, 1);
+(1, 'admin', '21232f297a57a5a743894a0e4a801fc3', 0, 2727251700000, 99999, 0, 0, 1, 99999, 1748914865000, 1754011744252, 1);
 
 -- --------------------------------------------------------
 
@@ -478,6 +478,20 @@ CREATE TABLE `telegram_send_log` (
   `type` varchar(50) NOT NULL,
   `content` text,
   `status` varchar(20) NOT NULL,
+  `error` varchar(500) DEFAULT NULL,
+  `created_time` bigint(20) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- --------------------------------------------------------
+
+--
+-- 表的结构 `task_error_log`
+-- 任务队列报错日志：任务首次登记进队列以及每次重试失败时各记一条，供队列监控页统计报错数量，默认超过 7 天由定时任务清理，可在站点设置中修改
+--
+
+CREATE TABLE `task_error_log` (
+  `id` int(10) NOT NULL,
+  `task_type` varchar(50) NOT NULL,
   `error` varchar(500) DEFAULT NULL,
   `created_time` bigint(20) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -687,6 +701,13 @@ ALTER TABLE `telegram_send_log`
   ADD KEY `idx_telegram_send_log_type_status` (`type`,`status`);
 
 --
+-- 表的索引 `task_error_log`
+--
+ALTER TABLE `task_error_log`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_task_error_log_created` (`created_time`);
+
+--
 -- 表的索引 `task_queue_node`
 --
 ALTER TABLE `task_queue_node`
@@ -840,6 +861,12 @@ ALTER TABLE `task_queue`
 -- 使用表AUTO_INCREMENT `task_queue_node`
 --
 ALTER TABLE `task_queue_node`
+  MODIFY `id` int(10) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=1;
+
+--
+-- 使用表AUTO_INCREMENT `task_error_log`
+--
+ALTER TABLE `task_error_log`
   MODIFY `id` int(10) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=1;
 
 --

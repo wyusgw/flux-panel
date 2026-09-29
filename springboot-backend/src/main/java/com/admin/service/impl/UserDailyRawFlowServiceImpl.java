@@ -22,13 +22,17 @@ public class UserDailyRawFlowServiceImpl extends ServiceImpl<UserDailyRawFlowMap
 
     @Override
     public void recordRaw(Integer userId, long rawBytes) {
-        if (userId == null || rawBytes <= 0) return;
-        String today = LocalDate.now().format(DAY_FORMAT);
-        String lockKey = userId + "_" + today;
+        recordRaw(userId, LocalDate.now().format(DAY_FORMAT), rawBytes);
+    }
+
+    @Override
+    public void recordRaw(Integer userId, String day, long rawBytes) {
+        if (userId == null || day == null || rawBytes <= 0) return;
+        String lockKey = userId + "_" + day;
 
         synchronized (DAY_LOCKS.computeIfAbsent(lockKey, k -> new Object())) {
             UserDailyRawFlow existing = this.getOne(new QueryWrapper<UserDailyRawFlow>()
-                    .eq("user_id", userId).eq("day", today));
+                    .eq("user_id", userId).eq("day", day));
 
             if (existing != null) {
                 UpdateWrapper<UserDailyRawFlow> updateWrapper = new UpdateWrapper<>();
@@ -39,7 +43,7 @@ public class UserDailyRawFlowServiceImpl extends ServiceImpl<UserDailyRawFlowMap
             } else {
                 UserDailyRawFlow record = new UserDailyRawFlow();
                 record.setUserId(userId);
-                record.setDay(today);
+                record.setDay(day);
                 record.setRawBytes(rawBytes);
                 record.setUpdatedTime(System.currentTimeMillis());
                 this.save(record);

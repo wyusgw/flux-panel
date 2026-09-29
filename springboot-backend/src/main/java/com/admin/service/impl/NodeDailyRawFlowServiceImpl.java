@@ -23,13 +23,17 @@ public class NodeDailyRawFlowServiceImpl extends ServiceImpl<NodeDailyRawFlowMap
 
     @Override
     public void recordRaw(Long nodeId, long rawBytes) {
-        if (nodeId == null || rawBytes <= 0) return;
-        String today = LocalDate.now().format(DAY_FORMAT);
-        String lockKey = nodeId + "_" + today;
+        recordRaw(nodeId, LocalDate.now().format(DAY_FORMAT), rawBytes);
+    }
+
+    @Override
+    public void recordRaw(Long nodeId, String day, long rawBytes) {
+        if (nodeId == null || day == null || rawBytes <= 0) return;
+        String lockKey = nodeId + "_" + day;
 
         synchronized (DAY_LOCKS.computeIfAbsent(lockKey, k -> new Object())) {
             NodeDailyRawFlow existing = this.getOne(new QueryWrapper<NodeDailyRawFlow>()
-                    .eq("node_id", nodeId).eq("day", today));
+                    .eq("node_id", nodeId).eq("day", day));
 
             if (existing != null) {
                 UpdateWrapper<NodeDailyRawFlow> updateWrapper = new UpdateWrapper<>();
@@ -40,7 +44,7 @@ public class NodeDailyRawFlowServiceImpl extends ServiceImpl<NodeDailyRawFlowMap
             } else {
                 NodeDailyRawFlow record = new NodeDailyRawFlow();
                 record.setNodeId(nodeId);
-                record.setDay(today);
+                record.setDay(day);
                 record.setRawBytes(rawBytes);
                 record.setUpdatedTime(System.currentTimeMillis());
                 this.save(record);

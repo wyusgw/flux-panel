@@ -76,7 +76,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: '1.21'
+          go-version-file: go-gost/go.mod
 
       - name: Cache Go modules
         uses: actions/cache@v6
@@ -129,6 +129,18 @@ jobs:
           tag: ${{ needs.resolve-version.outputs.tag }}
           overwrite: true
 
+      - name: Upload node install scripts to the Release
+        if: matrix.arch == 'amd64'
+        uses: svenstaro/upload-release-action@29e53e917877a24fad85510ded594ab3c9ca12de # v2.11.5
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file_glob: true
+          file: |
+            ./install.sh
+            ./offline.sh
+          tag: ${{ needs.resolve-version.outputs.tag }}
+          overwrite: true
+
   build-vite:
     name: Build & Push Vite Frontend
     needs: resolve-version
@@ -170,6 +182,8 @@ jobs:
     needs: resolve-version
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v7
         with:
@@ -213,26 +227,12 @@ jobs:
             -t ${DOCKER_USER}/springboot-backend:${VERSION} \
             ./springboot-backend
 
-  upload-static-assets:
-    name: Upload Scripts and Config to Release
-    needs: resolve-version
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ needs.resolve-version.outputs.tag }}
-
-      - name: Upload static files to the Release
+      - name: Upload panel scripts and config to the Release
         uses: svenstaro/upload-release-action@29e53e917877a24fad85510ded594ab3c9ca12de # v2.11.5
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file_glob: true
           file: |
-            ./install.sh
-            ./offline.sh
             ./panel_install.sh
             ./docker-compose-v4.yml
             ./docker-compose-v6.yml

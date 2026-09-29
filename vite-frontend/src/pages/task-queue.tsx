@@ -16,7 +16,7 @@ import toast from 'react-hot-toast';
 
 import { EmptyState } from "@/components/empty-state";
 import { ConfirmDialog } from "@/components/confirm-dialog";
-import { getTaskQueueList, getTaskQueueHealth, retryTaskQueue, deleteTaskQueue } from "@/api";
+import { getTaskQueueList, getTaskQueueHealth, getTaskQueueErrorLogs, retryTaskQueue, deleteTaskQueue } from "@/api";
 
 interface TaskQueueItem {
   id: number;
@@ -32,10 +32,20 @@ interface TaskQueueItem {
   completedTime: number | null;
 }
 
+interface TaskErrorLogItem {
+  id: number;
+  taskType: string;
+  taskTypeLabel: string;
+  error: string | null;
+  createdTime: number;
+}
+
 interface TaskQueueHealth {
   running: boolean;
   serviceStartTime: number;
   lastSweepTime: number | null;
+  errorLogCount: number;
+  errorLogRetentionDays: number;
 }
 
 const formatDate = (timestamp?: number): string => {
@@ -115,6 +125,28 @@ export default function TaskQueuePage() {
   const [detailItem, setDetailItem] = useState<TaskQueueItem | null>(null);
 
   const [currentJobsModalOpen, setCurrentJobsModalOpen] = useState(false);
+
+  const [errorLogsModalOpen, setErrorLogsModalOpen] = useState(false);
+  const [errorLogs, setErrorLogs] = useState<TaskErrorLogItem[]>([]);
+  const [errorLogsLoading, setErrorLogsLoading] = useState(false);
+
+  const openErrorLogs = async () => {
+    setErrorLogsModalOpen(true);
+    setErrorLogsLoading(true);
+    try {
+      const res = await getTaskQueueErrorLogs();
+      if (res.code === 0) {
+        setErrorLogs(res.data || []);
+      } else {
+        toast.error(res.msg || '获取报错日志失败');
+      }
+    } catch (error) {
+      console.error('获取报错日志失败:', error);
+      toast.error('获取报错日志失败');
+    } finally {
+      setErrorLogsLoading(false);
+    }
+  };
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -222,10 +254,11 @@ export default function TaskQueuePage() {
         <h1 className="text-xl font-semibold">队列监控</h1>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
         <HealthCard health={health} />
         <StatCard label="当前作业量" value={stats.total} onPress={() => setCurrentJobsModalOpen(true)} />
         <StatCard label="近一小时处理量" value={stats.processedLastHour} />
+        <StatCard label={`${health?.errorLogRetentionDays ?? 7}日内报错数量`} value={health?.errorLogCount ?? 0} tone="warning" onPress={openErrorLogs} />
       </div>
 
       <Card className="shadow-sm border border-default-200">
@@ -437,6 +470,40 @@ export default function TaskQueuePage() {
                           </div>
                         </CardBody>
                       </Card>
+                    ))}
+                  </div>
+                )}
+              </ModalBody>
+            </>
+          )}
+        </ModalContent>
+      </Modal>
+
+      <Modal isOpen={errorLogsModalOpen} onOpenChange={setErrorLogsModalOpen} size="3xl" scrollBehavior="inside" backdrop="blur" placement="center">
+        <ModalContent>
+          {() => (
+            <>
+              <ModalHeader className="flex flex-col gap-1">
+                <h2 className="text-lg font-bold">{health?.errorLogRetentionDays ?? 7}日内报错详情</h2>
+                <span className="text-small text-default-500 font-normal">
+                  共 {health?.errorLogCount ?? errorLogs.length} 条{errorLogs.length >= 200 ? '，仅显示最近 200 条' : ''}
+                </span>
+              </ModalHeader>
+              <ModalBody className="pb-6">
+                {errorLogsLoading ? (
+                  <div className="flex justify-center py-8"><Spinner size="sm" /></div>
+                ) : errorLogs.length === 0 ? (
+                  <div className="text-xs text-default-400 border border-default-200 rounded-lg px-4 py-3">暂无报错记录，一切正常</div>
+                ) : (
+                  <div className="space-y-2">
+                    {errorLogs.map((log) => (
+                      <div key={log.id} className="border border-default-200 rounded-lg px-4 py-3">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <Chip size="sm" variant="flat" color={TASK_TYPE_COLORS[log.taskType] || 'default'}>{log.taskTypeLabel}</Chip>
+                          <span className="text-xs text-default-400">{formatDate(log.createdTime)}</span>
+                        </div>
+                        <p className="text-sm text-foreground whitespace-pre-wrap break-all mt-2">{log.error || '—'}</p>
+                      </div>
                     ))}
                   </div>
                 )}

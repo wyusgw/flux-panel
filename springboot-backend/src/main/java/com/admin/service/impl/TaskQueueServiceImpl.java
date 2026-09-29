@@ -6,6 +6,7 @@ import com.admin.entity.TaskQueue;
 import com.admin.entity.TaskQueueNode;
 import com.admin.mapper.TaskQueueMapper;
 import com.admin.service.NodeService;
+import com.admin.service.TaskErrorLogService;
 import com.admin.service.TaskHandler;
 import com.admin.service.TaskQueueNodeService;
 import com.admin.service.TaskQueueService;
@@ -52,6 +53,8 @@ public class TaskQueueServiceImpl extends ServiceImpl<TaskQueueMapper, TaskQueue
     /** 需与 TaskQueueAsync 的 cron 间隔（每5分钟）一致：超过 2 倍间隔没有成功执行过扫描，视为定时任务异常 */
     private static final long SWEEP_INTERVAL_MS = 5 * 60 * 1000L;
 
+    private static final int ERROR_LOG_LIST_LIMIT = 200;
+
     private static final String STATUS_PENDING = "PENDING";
     private static final String STATUS_SUCCESS = "SUCCESS";
 
@@ -61,6 +64,9 @@ public class TaskQueueServiceImpl extends ServiceImpl<TaskQueueMapper, TaskQueue
 
     @Resource
     private List<TaskHandler> taskHandlers;
+
+    @Resource
+    private TaskErrorLogService taskErrorLogService;
 
     @Resource
     @Lazy
@@ -96,6 +102,7 @@ public class TaskQueueServiceImpl extends ServiceImpl<TaskQueueMapper, TaskQueue
             return null;
         }
         long now = System.currentTimeMillis();
+        taskErrorLogService.record(taskType, error);
         TaskQueue existing = dedupKey == null ? null
                 : this.getOne(new QueryWrapper<TaskQueue>().eq("task_type", taskType).eq("dedup_key", dedupKey));
 
@@ -324,7 +331,24 @@ public class TaskQueueServiceImpl extends ServiceImpl<TaskQueueMapper, TaskQueue
         result.put("running", running);
         result.put("serviceStartTime", serviceStartTime);
         result.put("lastSweepTime", lastSweepTime > 0 ? lastSweepTime : null);
+        result.put("errorLogCount", taskErrorLogService.countAll());
+        result.put("errorLogRetentionDays", taskErrorLogService.getRetentionDays());
         return R.ok(result);
+    }
+
+    @Override
+    public R listErrorLogs() {
+        List<Map<String, Object>> rows = taskErrorLogService.listRecent(ERROR_LOG_LIST_LIMIT).stream().map(entry -> {
+            Map<String, Object> row = new HashMap<>();
+            row.put("id", entry.getId());
+            row.put("taskType", entry.getTaskType());
+            TaskHandler handler = handlerMap.get(entry.getTaskType());
+            row.put("taskTypeLabel", handler != null ? handler.getLabel() : entry.getTaskType());
+            row.put("error", entry.getError());
+            row.put("createdTime", entry.getCreatedTime());
+            return row;
+        }).collect(Collectors.toList());
+        return R.ok(rows);
     }
 
     /**
@@ -364,6 +388,7 @@ public class TaskQueueServiceImpl extends ServiceImpl<TaskQueueMapper, TaskQueue
             update.setId(item.getId());
             update.setRetryCount((item.getRetryCount() == null ? 0 : item.getRetryCount()) + 1);
             update.setLastError(result != null ? result.getMsg() : "未知错误");
+            taskErrorLogService.record(item.getTaskType(), update.getLastError());
             update.setUpdatedTime(now);
             this.updateById(update);
         }

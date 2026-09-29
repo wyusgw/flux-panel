@@ -41,6 +41,13 @@ public class TaskQueueController extends BaseController {
 
     @LogAnnotation
     @RequireRole
+    @PostMapping("/error-logs")
+    public R errorLogs() {
+        return taskQueueService.listErrorLogs();
+    }
+
+    @LogAnnotation
+    @RequireRole
     @PostMapping("/retry")
     public R retry(@RequestBody Map<String, Object> params) {
         Long id = Long.valueOf(params.get("id").toString());

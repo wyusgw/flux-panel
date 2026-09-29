@@ -58,6 +58,11 @@ public interface TaskQueueService extends IService<TaskQueue> {
     R getHealth();
 
     /**
+     * 保留期内的报错日志明细（管理员点击「X日内报错数量」查看，附带任务类型展示名称），按时间倒序，最多 200 条
+     */
+    R listErrorLogs();
+
+    /**
      * 定时清理：删除超过 24 小时的 SUCCESS 记录（连同其节点关联），避免队列表无限增长
      */
     void purgeExpiredSuccess();

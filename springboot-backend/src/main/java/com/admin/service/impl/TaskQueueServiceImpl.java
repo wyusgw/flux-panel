@@ -365,7 +365,7 @@ public class TaskQueueServiceImpl extends ServiceImpl<TaskQueueMapper, TaskQueue
         return R.ok(result);
     }
 
-    /** 队列类别：key、展示名、包含的任务类型。订单类别的任务类型预留，订单任务接入队列后自动归入 */
+    /** 队列类别：key、展示名、包含的任务类型。订单类别目前只有自动续费（ORDER_RENEW） */
     private static final String[][] CATEGORIES = {
             {"telegram", "Telegram 消息队列", "TELEGRAM_NOTIFY"},
             {"flow", "流量消费队列", "USER_FLOW_RECORD,NODE_FLOW_RECORD"},

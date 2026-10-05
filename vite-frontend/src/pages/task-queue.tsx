@@ -90,7 +90,8 @@ const TASK_TYPE_COLORS: Record<string, "primary" | "secondary" | "success" | "wa
   TELEGRAM_NOTIFY: "secondary",
   USER_FLOW_RECORD: "success",
   NODE_FLOW_RECORD: "warning",
-  STATISTICS_FLOW: "default"
+  STATISTICS_FLOW: "default",
+  ORDER_RENEW: "default"
 };
 
 // 自动重试上限以后端 health.maxAutoRetry 为准，加载前先用该默认值

@@ -10,7 +10,6 @@ import {
   TableRow,
   TableCell
 } from "@heroui/table";
-import { Chip } from "@heroui/chip";
 import { Spinner } from "@heroui/spinner";
 import toast from 'react-hot-toast';
 
@@ -79,19 +78,11 @@ const formatWait = (ms?: number): string => {
   return `${Math.floor(total / 3600)}h ${m % 60}m`;
 };
 
-const IconDelete = () => (
-  <svg className="w-4 h-4" fill="none" viewBox="0 0 20 20" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.6} d="M4 6h12M8 6V4.5A1.5 1.5 0 019.5 3h1A1.5 1.5 0 0112 4.5V6m-6 0v9.5A1.5 1.5 0 007.5 17h5a1.5 1.5 0 001.5-1.5V6M8.5 9.5v4M11.5 9.5v4" />
-  </svg>
-);
-
-const TASK_TYPE_COLORS: Record<string, "primary" | "secondary" | "success" | "warning" | "default"> = {
-  FORWARD_SYNC: "primary",
-  TELEGRAM_NOTIFY: "secondary",
-  USER_FLOW_RECORD: "success",
-  NODE_FLOW_RECORD: "warning",
-  STATISTICS_FLOW: "default",
-  ORDER_RENEW: "default"
+const STATE_DOT_CLASS: Record<string, string> = {
+  default: 'bg-default-400',
+  success: 'bg-success-500',
+  warning: 'bg-warning-500',
+  danger: 'bg-danger-500'
 };
 
 // 自动重试上限以后端 health.maxAutoRetry 为准，加载前先用该默认值
@@ -340,7 +331,7 @@ export default function TaskQueuePage() {
           </Button>
         ))}
         {(health?.exhaustedCount ?? 0) > 0 && (
-          <Chip size="sm" variant="flat" color="danger">{health?.exhaustedCount} 个已达重试上限，需手动处理</Chip>
+          <span className="text-xs text-danger-600">{health?.exhaustedCount} 个任务已达重试上限，需手动处理</span>
         )}
       </div>
 
@@ -354,55 +345,45 @@ export default function TaskQueuePage() {
             >
               <TableHeader>
                 <TableColumn>类型</TableColumn>
-                <TableColumn>任务内容</TableColumn>
-                <TableColumn>关联节点</TableColumn>
+                <TableColumn>内容</TableColumn>
                 <TableColumn>状态</TableColumn>
                 <TableColumn>重试次数</TableColumn>
-                <TableColumn>最近错误</TableColumn>
+                <TableColumn>错误信息</TableColumn>
                 <TableColumn>更新时间</TableColumn>
                 <TableColumn align="end">操作</TableColumn>
               </TableHeader>
-              <TableBody items={visibleItems} emptyContent={<EmptyState text={filter === 'success' ? '暂无已完成的任务' : '暂无待处理的任务，一切正常'} />}>
-                {(item: TaskQueueItem) => (
-                  <TableRow key={item.id}>
-                    <TableCell>
-                      <Chip size="sm" variant="flat" color={TASK_TYPE_COLORS[item.taskType] || "default"}>
-                        {item.taskTypeLabel}
-                      </Chip>
-                    </TableCell>
-                    <TableCell>
-                      <span className="text-sm text-foreground line-clamp-2 max-w-[260px] inline-block">{item.summary || '—'}</span>
-                    </TableCell>
-                    <TableCell>
-                      {item.nodeNames && item.nodeNames.length > 0 ? item.nodeNames.join(' / ') : '—'}
-                    </TableCell>
-                    <TableCell>
-                      <Chip size="sm" variant="flat" color={getItemState(item, retryLimit).color}>{getItemState(item, retryLimit).label}</Chip>
-                    </TableCell>
-                    <TableCell>
-                      <Chip size="sm" variant="flat" color={item.retryCount > 0 ? 'warning' : 'default'}>{item.retryCount}</Chip>
-                    </TableCell>
-                    <TableCell>
-                      <span className="text-xs text-default-500 line-clamp-2 max-w-[220px] inline-block">{item.lastError || '—'}</span>
-                    </TableCell>
-                    <TableCell>{formatDate(item.updatedTime)}</TableCell>
-                    <TableCell>
-                      <div className="flex justify-end gap-2">
-                        <Button size="sm" variant="flat" color="default" onPress={() => handleViewDetail(item)}>
-                          查看详情
-                        </Button>
-                        {item.status !== 'SUCCESS' && (
-                          <Button size="sm" variant="flat" color="default" isLoading={retryingId === item.id} onPress={() => handleRetry(item)}>
-                            立即重试
-                          </Button>
-                        )}
-                        <Button size="sm" variant="light" color="danger" isIconOnly onPress={() => handleDelete(item)}>
-                          <IconDelete />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                )}
+              <TableBody items={visibleItems} emptyContent={<EmptyState text={filter === 'success' ? '暂无已完成的任务' : '暂无待处理的任务'} />}>
+                {(item: TaskQueueItem) => {
+                  const state = getItemState(item, retryLimit);
+                  return (
+                    <TableRow key={item.id}>
+                      <TableCell>{item.taskTypeLabel}</TableCell>
+                      <TableCell>
+                        <span className="line-clamp-2 max-w-[260px] inline-block">{item.summary || '-'}</span>
+                      </TableCell>
+                      <TableCell>
+                        <span className="inline-flex items-center gap-1.5">
+                          <span className={`inline-block w-1.5 h-1.5 rounded-full ${STATE_DOT_CLASS[state.color]}`} />
+                          {state.label}
+                        </span>
+                      </TableCell>
+                      <TableCell>{item.retryCount}</TableCell>
+                      <TableCell>
+                        <span className="text-default-500 line-clamp-2 max-w-[220px] inline-block">{item.lastError || '-'}</span>
+                      </TableCell>
+                      <TableCell>{formatDate(item.updatedTime)}</TableCell>
+                      <TableCell>
+                        <div className="flex justify-end gap-1">
+                          <Button size="sm" variant="light" color="primary" onPress={() => handleViewDetail(item)}>详情</Button>
+                          {item.status !== 'SUCCESS' && (
+                            <Button size="sm" variant="light" color="primary" isLoading={retryingId === item.id} onPress={() => handleRetry(item)}>重试</Button>
+                          )}
+                          <Button size="sm" variant="light" color="danger" onPress={() => handleDelete(item)}>移除</Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                }}
               </TableBody>
             </Table>
           </div>
@@ -432,8 +413,11 @@ export default function TaskQueuePage() {
                 {detailItem && (
                   <div className="space-y-3 text-sm">
                     <div className="flex items-center gap-2">
-                      <Chip size="sm" variant="flat" color={TASK_TYPE_COLORS[detailItem.taskType] || 'default'}>{detailItem.taskTypeLabel}</Chip>
-                      <Chip size="sm" variant="flat" color={getItemState(detailItem, retryLimit).color}>{getItemState(detailItem, retryLimit).label}</Chip>
+                      <span className="font-medium text-foreground">{detailItem.taskTypeLabel}</span>
+                      <span className="inline-flex items-center gap-1.5 text-default-600">
+                        <span className={`inline-block w-1.5 h-1.5 rounded-full ${STATE_DOT_CLASS[getItemState(detailItem, retryLimit).color]}`} />
+                        {getItemState(detailItem, retryLimit).label}
+                      </span>
                     </div>
 
                     <div>
@@ -500,7 +484,7 @@ export default function TaskQueuePage() {
                     {errorLogs.map((log) => (
                       <div key={log.id} className="border border-default-200 rounded-lg px-4 py-3">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <Chip size="sm" variant="flat" color={TASK_TYPE_COLORS[log.taskType] || 'default'}>{log.taskTypeLabel}</Chip>
+                          <span className="text-sm font-medium text-foreground">{log.taskTypeLabel}</span>
                           <span className="text-xs text-default-400">{formatDate(log.createdTime)}</span>
                         </div>
                         <p className="text-sm text-foreground whitespace-pre-wrap break-all mt-2">{log.error || '—'}</p>

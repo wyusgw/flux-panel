@@ -74,6 +74,7 @@ interface DiagnosisResult {
 
 export default function TunnelPage() {
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [tunnels, setTunnels] = useState<Tunnel[]>([]);
   const [nodes, setNodes] = useState<Node[]>([]);
   
@@ -111,9 +112,21 @@ export default function TunnelPage() {
     loadData();
   }, []);
 
+  // 手动刷新：不切换到整页加载状态，按钮上的图标转圈直到数据返回；至少转满一圈，避免请求太快看不到反馈
+  const handleRefresh = async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    const minSpin = new Promise(resolve => setTimeout(resolve, 700));
+    try {
+      await Promise.all([loadData(false), minSpin]);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   // 加载所有数据
-  const loadData = async () => {
-    setLoading(true);
+  const loadData = async (showLoading = true) => {
+    setLoading(showLoading);
     try {
       const [tunnelsRes, nodesRes] = await Promise.all([
         getTunnelList(),
@@ -428,14 +441,29 @@ export default function TunnelPage() {
         <div className="flex-1">
         </div>
 
-        <Button
-              size="sm"
-              color="primary"
-              onPress={handleAdd}
-             
-            >
-              新增
-            </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="flat"
+            isDisabled={refreshing}
+            startContent={
+              <svg className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h5M20 20v-5h-5" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4.6 15a8 8 0 0014.4 2.6M19.4 9A8 8 0 005 6.4" />
+              </svg>
+            }
+            onPress={handleRefresh}
+          >
+            刷新
+          </Button>
+          <Button
+            size="sm"
+            color="primary"
+            onPress={handleAdd}
+          >
+            新增
+          </Button>
+        </div>
      
         </div>
 

@@ -3,9 +3,16 @@ package com.admin.common.utils;
 import com.admin.common.dto.GostDto;
 import com.admin.common.dto.TcpPingDiagnosisResult;
 import com.admin.entity.Node;
+import com.admin.entity.ViteConfig;
+import com.admin.service.ViteConfigService;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 
+import org.springframework.context.annotation.Lazy;
+import org.springframework.stereotype.Component;
+
+import javax.annotation.Resource;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -18,17 +25,54 @@ import java.util.Map;
  */
 public class TcpPingDiagnosisUtil {
 
-    /** 每个目标做几次 TCP 连接尝试（参考 ping 命令逐次列出结果） */
-    public static final int PING_COUNT = 5;
+    /** 每个目标默认做几次 TCP 连接尝试（参考 ping 命令逐次列出结果），可在站点设置 diagnosis_ping_count 中调整 */
+    public static final int DEFAULT_PING_COUNT = 15;
+    public static final int MIN_PING_COUNT = 1;
+    public static final int MAX_PING_COUNT = 30;
+    private static final String CONFIG_PING_COUNT = "diagnosis_ping_count";
 
     /** 每次连接尝试的超时时间（毫秒） */
-    public static final int PING_TIMEOUT_MS = 3000;
+    public static final int PING_TIMEOUT_MS = 1500;
+
+    /** 尝试之间的间隔（毫秒），与节点侧一致 */
+    private static final int PING_INTERVAL_MS = 100;
+
+    /** 读取站点设置用，由 {@link ConfigHolder} 在启动时注入（本类是静态工具类，拿不到 Spring 注入） */
+    private static volatile ViteConfigService viteConfigService;
+
+    @Component
+    static class ConfigHolder {
+        @Resource
+        @Lazy
+        void setViteConfigService(ViteConfigService service) {
+            TcpPingDiagnosisUtil.viteConfigService = service;
+        }
+    }
+
+    /** 当前生效的诊断次数：站点设置未配置或非法时用默认值，超出范围时收敛到 [MIN, MAX] */
+    public static int getPingCount() {
+        try {
+            ViteConfigService service = viteConfigService;
+            ViteConfig config = service != null ? service.getOne(new QueryWrapper<ViteConfig>().eq("name", CONFIG_PING_COUNT)) : null;
+            String value = config != null ? config.getValue() : null;
+            if (value == null || value.trim().isEmpty()) {
+                return DEFAULT_PING_COUNT;
+            }
+            int count = Integer.parseInt(value.trim());
+            return Math.max(MIN_PING_COUNT, Math.min(MAX_PING_COUNT, count));
+        } catch (Exception e) {
+            return DEFAULT_PING_COUNT;
+        }
+    }
 
     /**
      * 等待节点侧跑完这些尝试的超时时间（秒），要盖过节点侧的最坏情况耗时：
-     * count * timeoutMs + (count-1) * 100ms 尝试间隔
+     * count * timeoutMs + (count-1) * 100ms 尝试间隔，再留 3 秒余量
      */
-    public static final int WAIT_TIMEOUT_SECONDS = 20;
+    private static int waitTimeoutSeconds(int count) {
+        long worstMs = (long) count * PING_TIMEOUT_MS + (long) (count - 1) * PING_INTERVAL_MS;
+        return (int) Math.ceil(worstMs / 1000.0) + 3;
+    }
 
     private TcpPingDiagnosisUtil() {
     }
@@ -38,13 +82,14 @@ public class TcpPingDiagnosisUtil {
             JSONObject tcpPingData = new JSONObject();
             tcpPingData.put("ip", targetIp);
             tcpPingData.put("port", port);
-            tcpPingData.put("count", PING_COUNT);
+            int pingCount = getPingCount();
+            tcpPingData.put("count", pingCount);
             tcpPingData.put("timeout", PING_TIMEOUT_MS);
 
             // 发送TCP ping命令到节点；等待超时要盖过节点侧最坏情况耗时，否则目标真的不可达时，
             // 会在节点侧还没跑完全部尝试时就被这里提前判定为"请求超时"，掩盖掉本该拿到的
             // "全部尝试都失败"这个真实诊断结果
-            GostDto gostResult = WebSocketServer.send_msg(node.getId(), tcpPingData, "TcpPing", WAIT_TIMEOUT_SECONDS);
+            GostDto gostResult = WebSocketServer.send_msg(node.getId(), tcpPingData, "TcpPing", waitTimeoutSeconds(pingCount));
 
             TcpPingDiagnosisResult result = new TcpPingDiagnosisResult();
             result.setNodeId(node.getId());

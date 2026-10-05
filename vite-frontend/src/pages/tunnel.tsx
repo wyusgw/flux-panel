@@ -430,8 +430,7 @@ export default function TunnelPage() {
 
         <Button
               size="sm"
-              variant="flat"
-              color="default"
+              color="primary"
               onPress={handleAdd}
              
             >

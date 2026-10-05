@@ -1327,7 +1327,7 @@ export default function ForwardPage() {
           <div className="flex items-center gap-2 flex-wrap">
             <Button size="sm" variant="flat" startContent={<IconSearch />} onPress={() => setSearchModalOpen(true)}>搜索规则</Button>
             <Button size="sm" variant="flat" startContent={<IconRefresh />} isDisabled={loading} onPress={() => loadData()}>刷新</Button>
-            {!isImpersonating && <Button size="sm" variant="flat" startContent={<IconStats />} onPress={openStats}>统计数据</Button>}
+            {!isImpersonating && <Button size="sm" color="primary" startContent={<IconStats />} onPress={openStats}>统计数据</Button>}
           </div>
         </div>
 
@@ -1381,7 +1381,7 @@ export default function ForwardPage() {
 
         {/* 工具列 */}
         <div className="flex flex-wrap items-center gap-2 mb-4">
-          <Button size="sm" variant="flat" color="default" startContent={<IconAddSingle />} onPress={handleAdd}>添加规则</Button>
+          <Button size="sm" color="primary" startContent={<IconAddSingle />} onPress={handleAdd}>添加规则</Button>
           <Button size="sm" variant="flat" startContent={<IconImport />} onPress={handleImport}>批量导入</Button>
           <Button size="sm" variant="flat" startContent={<IconExport />} isLoading={exportLoading} onPress={handleExport}>批量导出</Button>
           <Button size="sm" variant="flat" startContent={<IconToggle />} isDisabled={selectedIds.length === 0} isLoading={batchLoading} onPress={handleBatchToggle}>批量切换</Button>

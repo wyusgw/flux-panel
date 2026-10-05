@@ -53,6 +53,10 @@ public class TaskQueueServiceImpl extends ServiceImpl<TaskQueueMapper, TaskQueue
     /** 需与 TaskQueueAsync 的 cron 间隔（每5分钟）一致：超过 2 倍间隔没有成功执行过扫描，视为定时任务异常 */
     private static final long SWEEP_INTERVAL_MS = 5 * 60 * 1000L;
 
+    /** 失败后的退避：第 n 次失败后至少等待 min(BASE * 2^(n-1), MAX) 才允许定时扫描再次重试；节点上线、手动重试不受退避限制 */
+    private static final long BACKOFF_BASE_MS = SWEEP_INTERVAL_MS;
+    private static final long BACKOFF_MAX_MS = 60 * 60 * 1000L;
+
     private static final int ERROR_LOG_LIST_LIMIT = 200;
 
     private static final String STATUS_PENDING = "PENDING";
@@ -102,7 +106,10 @@ public class TaskQueueServiceImpl extends ServiceImpl<TaskQueueMapper, TaskQueue
             return null;
         }
         long now = System.currentTimeMillis();
-        taskErrorLogService.record(taskType, error);
+        // 仅在调用方带着真实报错入队时才登记；无报错的入队（如通知、流量记录的常规排队）不算报错
+        if (error != null && !error.isEmpty()) {
+            taskErrorLogService.record(taskType, error);
+        }
         TaskQueue existing = dedupKey == null ? null
                 : this.getOne(new QueryWrapper<TaskQueue>().eq("task_type", taskType).eq("dedup_key", dedupKey));
 
@@ -171,7 +178,7 @@ public class TaskQueueServiceImpl extends ServiceImpl<TaskQueueMapper, TaskQueue
             try {
                 TaskQueue item = this.getById(queueId);
                 if (item != null && STATUS_PENDING.equals(item.getStatus())) {
-                    attemptRetry(item);
+                    execute(item);
                 }
             } catch (Exception e) {
                 log.warn("任务队列即时执行异常，队列ID: {}", queueId, e);
@@ -260,7 +267,7 @@ public class TaskQueueServiceImpl extends ServiceImpl<TaskQueueMapper, TaskQueue
         if (STATUS_SUCCESS.equals(item.getStatus())) {
             return R.ok("该任务已经重试成功，无需再次处理");
         }
-        return attemptRetry(item);
+        return execute(item);
     }
 
     @Override
@@ -277,25 +284,33 @@ public class TaskQueueServiceImpl extends ServiceImpl<TaskQueueMapper, TaskQueue
                 .filter(item -> STATUS_PENDING.equals(item.getStatus()))
                 .collect(Collectors.toList());
         for (TaskQueue item : items) {
-            try {
-                attemptRetry(item);
-            } catch (Exception e) {
-                log.warn("任务队列重试异常，队列ID: {}", item.getId(), e);
-            }
+            execute(item);
         }
     }
 
     @Override
     public void retryAllPending() {
+        long now = System.currentTimeMillis();
         List<TaskQueue> items = this.list(new QueryWrapper<TaskQueue>()
                 .eq("status", STATUS_PENDING).lt("retry_count", MAX_AUTO_RETRY));
         for (TaskQueue item : items) {
-            try {
-                attemptRetry(item);
-            } catch (Exception e) {
-                log.warn("任务队列定时重试异常，队列ID: {}", item.getId(), e);
+            if (!isDue(item, now)) {
+                continue;
             }
+            // 交给执行线程池异步处理：单个任务（如 Telegram 网络超时）卡住不会拖住整轮扫描和定时线程
+            dispatchExecutor.submit(() -> execute(item));
         }
+    }
+
+    /** 从未失败过的任务立即可执行；失败过的任务要等退避时间过去 */
+    private boolean isDue(TaskQueue item, long now) {
+        int failures = item.getRetryCount() == null ? 0 : item.getRetryCount();
+        if (failures <= 0) {
+            return true;
+        }
+        long delay = Math.min(BACKOFF_BASE_MS << Math.min(failures - 1, 20), BACKOFF_MAX_MS);
+        long last = item.getUpdatedTime() == null ? 0L : item.getUpdatedTime();
+        return now - last >= delay;
     }
 
     @Override
@@ -331,9 +346,82 @@ public class TaskQueueServiceImpl extends ServiceImpl<TaskQueueMapper, TaskQueue
         result.put("running", running);
         result.put("serviceStartTime", serviceStartTime);
         result.put("lastSweepTime", lastSweepTime > 0 ? lastSweepTime : null);
+        // 统计全部按队列里的真实状态得出，不依赖入队动作：
+        // queued=尚未失败过的排队任务，retrying=失败过、等待自动重试，exhausted=失败且已达自动重试上限，
+        // successLastHour=近一小时内真正执行成功的任务数
+        long queued = this.count(new QueryWrapper<TaskQueue>().eq("status", STATUS_PENDING).eq("retry_count", 0));
+        long exhausted = this.count(new QueryWrapper<TaskQueue>().eq("status", STATUS_PENDING).ge("retry_count", MAX_AUTO_RETRY));
+        long retrying = this.count(new QueryWrapper<TaskQueue>().eq("status", STATUS_PENDING)
+                .gt("retry_count", 0).lt("retry_count", MAX_AUTO_RETRY));
+        long successLastHour = this.count(new QueryWrapper<TaskQueue>().eq("status", STATUS_SUCCESS)
+                .ge("completed_time", now - 60 * 60 * 1000L));
+        result.put("queuedCount", queued);
+        result.put("retryingCount", retrying);
+        result.put("exhaustedCount", exhausted);
+        result.put("successLastHour", successLastHour);
+        result.put("maxAutoRetry", MAX_AUTO_RETRY);
         result.put("errorLogCount", taskErrorLogService.countAll());
         result.put("errorLogRetentionDays", taskErrorLogService.getRetentionDays());
         return R.ok(result);
+    }
+
+    /** 队列类别：key、展示名、包含的任务类型。订单类别的任务类型预留，订单任务接入队列后自动归入 */
+    private static final String[][] CATEGORIES = {
+            {"telegram", "Telegram 消息队列", "TELEGRAM_NOTIFY"},
+            {"flow", "流量消费队列", "USER_FLOW_RECORD,NODE_FLOW_RECORD"},
+            {"statistics", "统计队列", "STATISTICS_FLOW"},
+            {"order", "订单队列", "ORDER_RENEW"},
+            {"forward", "转发同步队列", "FORWARD_SYNC"}
+    };
+
+    @Override
+    public R getOverview() {
+        long now = System.currentTimeMillis();
+        List<TaskQueue> all = this.list(new QueryWrapper<TaskQueue>());
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (String[] category : CATEGORIES) {
+            Set<String> types = new HashSet<>(java.util.Arrays.asList(category[2].split(",")));
+            long queued = 0, retrying = 0, exhausted = 0, successLastHour = 0;
+            Long lastActive = null;
+            TaskQueue lastFailed = null;
+            for (TaskQueue item : all) {
+                if (!types.contains(item.getTaskType())) {
+                    continue;
+                }
+                long updated = item.getUpdatedTime() == null ? 0L : item.getUpdatedTime();
+                if (lastActive == null || updated > lastActive) {
+                    lastActive = updated;
+                }
+                int failures = item.getRetryCount() == null ? 0 : item.getRetryCount();
+                if (STATUS_SUCCESS.equals(item.getStatus())) {
+                    if (item.getCompletedTime() != null && now - item.getCompletedTime() <= 60 * 60 * 1000L) {
+                        successLastHour++;
+                    }
+                    continue;
+                }
+                if (failures >= MAX_AUTO_RETRY) {
+                    exhausted++;
+                } else if (failures > 0) {
+                    retrying++;
+                } else {
+                    queued++;
+                }
+                if (item.getLastError() != null && (lastFailed == null || updated > lastFailed.getUpdatedTime())) {
+                    lastFailed = item;
+                }
+            }
+            Map<String, Object> row = new HashMap<>();
+            row.put("key", category[0]);
+            row.put("label", category[1]);
+            row.put("queuedCount", queued);
+            row.put("retryingCount", retrying);
+            row.put("exhaustedCount", exhausted);
+            row.put("successLastHour", successLastHour);
+            row.put("lastError", lastFailed != null ? lastFailed.getLastError() : null);
+            row.put("lastActiveTime", lastActive);
+            rows.add(row);
+        }
+        return R.ok(rows);
     }
 
     @Override
@@ -352,46 +440,54 @@ public class TaskQueueServiceImpl extends ServiceImpl<TaskQueueMapper, TaskQueue
     }
 
     /**
-     * 实际执行一次重试：分发给对应 taskType 的 TaskHandler；成功则把状态转为 SUCCESS（保留 24 小时供查看，
-     * 节点关联保留不删，供展示当时关联了哪些节点），失败则累加重试次数并记录最新错误信息
+     * 执行一次任务：交给对应 taskType 的 TaskHandler，并由这里统一落状态——
+     * 成功转 SUCCESS（保留供查看，节点关联保留不删）；失败（处理器返回非 0、返回 null 或抛异常）累加重试次数、
+     * 记录最新错误并登记一条报错日志。「报错日志/报错数量」只会在这里的失败分支写入。
      */
-    private R attemptRetry(TaskQueue item) {
+    private R execute(TaskQueue item) {
         // 同一条队列项同一时刻只允许一个线程在执行（即时执行、定时兜底、节点上线触发、手动重试可能撞车）
         if (!inFlight.add(item.getId())) {
             return R.ok("该任务正在处理中");
         }
         try {
-            return doAttemptRetry(item);
+            TaskHandler handler = handlerMap.get(item.getTaskType());
+            if (handler == null) {
+                return R.err("未知的任务类型: " + item.getTaskType());
+            }
+            R result;
+            try {
+                result = handler.handle(item);
+            } catch (Throwable e) {
+                log.warn("任务处理器抛出异常，队列ID: {}", item.getId(), e);
+                result = R.err("处理异常: " + e.getMessage());
+            }
+            if (result != null && result.getCode() == 0) {
+                markSuccess(item);
+            } else {
+                markFailed(item, result != null ? result.getMsg() : null);
+            }
+            return result != null ? result : R.err("未知错误");
         } finally {
             inFlight.remove(item.getId());
         }
     }
 
-    private R doAttemptRetry(TaskQueue item) {
-        TaskHandler handler = handlerMap.get(item.getTaskType());
-        if (handler == null) {
-            return R.err("未知的任务类型: " + item.getTaskType());
-        }
-        R result = handler.handle(item);
+    private void markSuccess(TaskQueue item) {
         long now = System.currentTimeMillis();
-        if (result != null && result.getCode() == 0) {
-            TaskQueue update = new TaskQueue();
-            update.setId(item.getId());
-            update.setStatus(STATUS_SUCCESS);
-            update.setUpdatedTime(now);
-            update.setCompletedTime(now);
-            this.updateById(update);
-            // MyBatis-Plus 默认 UPDATE 会跳过 null 字段，updateById 无法清空 last_error，需要显式 set
-            this.update(new UpdateWrapper<TaskQueue>().eq("id", item.getId()).set("last_error", null));
-        } else {
-            TaskQueue update = new TaskQueue();
-            update.setId(item.getId());
-            update.setRetryCount((item.getRetryCount() == null ? 0 : item.getRetryCount()) + 1);
-            update.setLastError(result != null ? result.getMsg() : "未知错误");
-            taskErrorLogService.record(item.getTaskType(), update.getLastError());
-            update.setUpdatedTime(now);
-            this.updateById(update);
-        }
-        return result;
+        // MyBatis-Plus 的 updateById 会跳过 null 字段，无法清空 last_error，这里统一用 UpdateWrapper
+        this.update(new UpdateWrapper<TaskQueue>().eq("id", item.getId())
+                .set("status", STATUS_SUCCESS)
+                .set("updated_time", now)
+                .set("completed_time", now)
+                .set("last_error", null));
+    }
+
+    private void markFailed(TaskQueue item, String msg) {
+        String error = (msg == null || msg.isEmpty()) ? "未知错误" : msg;
+        this.update(new UpdateWrapper<TaskQueue>().eq("id", item.getId())
+                .set("retry_count", (item.getRetryCount() == null ? 0 : item.getRetryCount()) + 1)
+                .set("last_error", error)
+                .set("updated_time", System.currentTimeMillis()));
+        taskErrorLogService.record(item.getTaskType(), error);
     }
 }

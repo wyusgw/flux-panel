@@ -58,6 +58,12 @@ public interface TaskQueueService extends IService<TaskQueue> {
     R getHealth();
 
     /**
+     * 当前作业详情：按队列类别（Telegram 消息、流量消费、统计、订单、转发同步）各一行，
+     * 给出排队中/重试中/已达上限数量、近一小时成功数、最近一次错误和活动时间
+     */
+    R getOverview();
+
+    /**
      * 保留期内的报错日志明细（管理员点击「X日内报错数量」查看，附带任务类型展示名称），按时间倒序，最多 200 条
      */
     R listErrorLogs();

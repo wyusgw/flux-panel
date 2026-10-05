@@ -169,7 +169,7 @@ export default function InviteCodePage() {
           <div><h1 className="text-base font-semibold text-foreground">邀请码管理</h1><p className="mt-1 text-xs text-default-500">配合「站点设置 → 邀请码注册策略」使用：设为「可选填写」或「仅邀请码注册」后，这里生成的代码才会在注册页生效</p></div>
           <div className="flex gap-2">
             <Button size="sm" variant="bordered" onPress={loadData} isDisabled={loading}>刷新</Button>
-            <Button size="sm" color="default" onPress={handleAdd}>批量添加邀请码</Button>
+            <Button size="sm" color="primary" onPress={handleAdd}>批量添加邀请码</Button>
           </div>
         </CardHeader>
         <CardBody className="p-0">

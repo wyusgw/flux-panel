@@ -28,7 +28,7 @@ export function Provider({ children }: ProvidersProps) {
           {children}
           <Toaster
             position="top-center"
-            containerStyle={{ top: 20 }}
+            containerStyle={{ top: 14 }}
             toastOptions={{
               duration: 2000,
               className: 'app-toast',

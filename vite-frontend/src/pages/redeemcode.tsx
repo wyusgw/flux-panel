@@ -247,7 +247,7 @@ export default function RedeemCodePage() {
           <div><h1 className="text-base font-semibold text-foreground">兑换码管理</h1><p className="mt-1 text-xs text-default-500">批量生成折扣、套餐或余额兑换码，供用户在购买套餐时使用</p></div>
           <div className="flex gap-2">
             <Button size="sm" variant="bordered" onPress={loadData} isDisabled={loading}>刷新</Button>
-            <Button size="sm" color="default" onPress={handleAdd}>批量添加兑换码</Button>
+            <Button size="sm" color="primary" onPress={handleAdd}>批量添加兑换码</Button>
           </div>
         </CardHeader>
         <CardBody className="p-0">

@@ -1,15 +1,16 @@
 import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Button } from "@heroui/button";
 import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from "@heroui/table";
+import { useNavigate } from "react-router-dom";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, LabelList } from "recharts";
 
-import { getAllUsers, getNodeList, getAdminOrderList, getTaskQueueList, getDashboardFlowStats } from "@/api";
+import { getAllUsers, getNodeList, getAdminOrderList, getTaskQueueHealth, getDashboardFlowStats } from "@/api";
 
 type Order = { amount?: number; orderStatus?: number; createdTime?: number; paidTime?: number };
 type User = { id: number; user: string; name?: string; inFlow?: number; outFlow?: number };
 type Node = { id: number; name: string; ip?: string; status?: number };
-type TaskQueueItem = { status: 'PENDING' | 'SUCCESS' };
+type TaskQueueHealth = { running: boolean; queuedCount: number; retryingCount: number; exhaustedCount: number; successLastHour: number };
 type RankRow = { name: string; value: number };
 type FlowStats = {
   todayTotal: number; yesterdayTotal: number;
@@ -213,29 +214,22 @@ export default function AdminDashboardPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [nodes, setNodes] = useState<Node[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
-  const [taskQueueItems, setTaskQueueItems] = useState<TaskQueueItem[]>([]);
+  const navigate = useNavigate();
+  const [queueHealth, setQueueHealth] = useState<TaskQueueHealth | null>(null);
   const [flowStats, setFlowStats] = useState<FlowStats>(EMPTY_FLOW_STATS);
   const loadData = useCallback(async () => {
     const [userResponse, nodeResponse, orderResponse, taskQueueResponse, flowStatsResponse] = await Promise.all([
-      getAllUsers({ current: 1, size: 1000 }), getNodeList(), getAdminOrderList(), getTaskQueueList(), getDashboardFlowStats(),
+      getAllUsers({ current: 1, size: 1000 }), getNodeList(), getAdminOrderList(), getTaskQueueHealth(), getDashboardFlowStats(),
     ]);
     if (userResponse.code === 0) setUsers(userResponse.data || []);
     if (nodeResponse.code === 0) setNodes(nodeResponse.data || []);
     if (orderResponse.code === 0) setOrders(orderResponse.data || []);
-    if (taskQueueResponse.code === 0) setTaskQueueItems(taskQueueResponse.data || []);
+    if (taskQueueResponse.code === 0) setQueueHealth(taskQueueResponse.data || null);
     if (flowStatsResponse.code === 0) setFlowStats({ ...EMPTY_FLOW_STATS, ...flowStatsResponse.data });
   }, []);
   useEffect(() => { loadData(); }, [loadData]);
 
-  const taskQueueCounts = useMemo(() => {
-    let pending = 0;
-    let success = 0;
-    for (const item of taskQueueItems) {
-      if (item.status === 'SUCCESS') success++;
-      else pending++;
-    }
-    return { pending, success };
-  }, [taskQueueItems]);
+  const queuePending = queueHealth ? queueHealth.queuedCount + queueHealth.retryingCount + queueHealth.exhaustedCount : 0;
 
   const now = new Date();
   const yesterday = new Date(now); yesterday.setDate(now.getDate() - 1);
@@ -289,7 +283,19 @@ export default function AdminDashboardPage() {
       <div className="grid grid-cols-3">
         <div className="p-4 min-h-24 border-r border-default-100 flex flex-col justify-center"><p className="text-xs text-default-500">节点总数</p><p className="mt-2 text-lg font-semibold text-foreground">{nodes.length}</p></div>
         <div className="p-3 min-h-24 border-r border-default-100 flex flex-col items-center justify-center"><div className="w-full max-w-[200px]"><SpeedometerGauge percent={onlineNodePercent} value={`${onlineNodeCount} / ${nodes.length}`} sublabel="在线节点" /></div></div>
-        <div className="p-4 min-h-24 flex flex-col justify-center"><p className="text-xs text-default-500">队列情况</p><p className="mt-2 text-lg font-semibold text-foreground">{`T: ${taskQueueCounts.pending}, S: ${taskQueueCounts.success}`}</p></div>
+        <button type="button" onClick={() => navigate('/task-queue')} className="p-4 min-h-24 flex flex-col justify-center text-left hover:bg-default-50 transition-colors">
+          <p className="text-xs text-default-500">队列情况</p>
+          {queueHealth ? (
+            <>
+              <p className="mt-2 text-lg font-semibold text-foreground">{queueHealth.running ? `待处理 ${queuePending}` : '队列异常'}</p>
+              <p className={`mt-1 text-sm ${queueHealth.exhaustedCount > 0 || !queueHealth.running ? 'text-danger-600' : 'text-default-500'}`}>
+                {queueHealth.exhaustedCount > 0 ? `${queueHealth.exhaustedCount} 个已达重试上限` : `近1小时成功 ${queueHealth.successLastHour}`}
+              </p>
+            </>
+          ) : (
+            <p className="mt-2 text-lg font-semibold text-foreground">—</p>
+          )}
+        </button>
       </div>
     </section>
     <section className="grid grid-cols-1 xl:grid-cols-2 gap-5"><RankTable title="今日用户流量排行" rows={flowStats.todayUserRanking} kind="flow" /><RankTable title="昨日用户流量排行" rows={flowStats.yesterdayUserRanking} kind="flow" /><RankTable title="今日节点流量排行" rows={flowStats.todayNodeRanking} kind="node" /><RankTable title="昨日节点流量排行" rows={flowStats.yesterdayNodeRanking} kind="node" /></section>

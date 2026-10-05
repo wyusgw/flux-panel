@@ -28,7 +28,6 @@ import { SettingsPage } from "@/pages/settings";
 
 import AdminLayout from "@/layouts/admin";
 import H5Layout from "@/layouts/h5";
-import H5SimpleLayout from "@/layouts/h5-simple";
 
 import { isLoggedIn } from "@/utils/auth";
 import { siteConfig } from "@/config/site";
@@ -72,7 +71,7 @@ const useH5Mode = () => {
 };
 
 // 简化的路由保护组件 - 使用 React Router 导航避免循环
-const ProtectedRoute = ({ children, useSimpleLayout = false, skipLayout = false }: { children: React.ReactNode, useSimpleLayout?: boolean, skipLayout?: boolean }) => {
+const ProtectedRoute = ({ children, skipLayout = false }: { children: React.ReactNode, skipLayout?: boolean }) => {
   const authenticated = isLoggedIn();
   const isH5 = useH5Mode();
   const navigate = useNavigate();
@@ -99,9 +98,7 @@ const ProtectedRoute = ({ children, useSimpleLayout = false, skipLayout = false 
 
   // 根据模式和页面类型选择布局
   let Layout;
-  if (isH5 && useSimpleLayout) {
-    Layout = H5SimpleLayout;
-  } else if (isH5) {
+  if (isH5) {
     Layout = H5Layout;
   } else {
     Layout = AdminLayout;
@@ -207,7 +204,7 @@ function App() {
       <Route
         path="/user"
         element={
-          <ProtectedRoute useSimpleLayout={true}>
+          <ProtectedRoute>
             <UserPage />
           </ProtectedRoute>
         } 
@@ -215,7 +212,7 @@ function App() {
       <Route
         path="/shop"
         element={
-          <ProtectedRoute useSimpleLayout={true}>
+          <ProtectedRoute>
             <ShopPage />
           </ProtectedRoute>
         }
@@ -223,7 +220,7 @@ function App() {
       <Route
         path="/orders"
         element={
-          <ProtectedRoute useSimpleLayout={true}>
+          <ProtectedRoute>
             <OrdersPage />
           </ProtectedRoute>
         }
@@ -231,7 +228,7 @@ function App() {
       <Route
         path="/order-management"
         element={
-          <ProtectedRoute useSimpleLayout={true}>
+          <ProtectedRoute>
             <OrderManagementPage />
           </ProtectedRoute>
         }
@@ -239,7 +236,7 @@ function App() {
       <Route
         path="/account-center"
         element={
-          <ProtectedRoute useSimpleLayout={true}>
+          <ProtectedRoute>
             <AccountCenterPage />
           </ProtectedRoute>
         }
@@ -247,7 +244,7 @@ function App() {
       <Route
         path="/single-tunnel"
         element={
-          <ProtectedRoute useSimpleLayout={true}>
+          <ProtectedRoute>
             <SingleTunnelPage />
           </ProtectedRoute>
         }
@@ -255,7 +252,7 @@ function App() {
       <Route
         path="/looking-glass"
         element={
-          <ProtectedRoute useSimpleLayout={true}>
+          <ProtectedRoute>
             <LookingGlassPage />
           </ProtectedRoute>
         }
@@ -263,7 +260,7 @@ function App() {
       <Route
         path="/devicegroup"
         element={
-          <ProtectedRoute useSimpleLayout={true}>
+          <ProtectedRoute>
             <DeviceGroupPage />
           </ProtectedRoute>
         }
@@ -271,7 +268,7 @@ function App() {
       <Route
         path="/redeemcode"
         element={
-          <ProtectedRoute useSimpleLayout={true}>
+          <ProtectedRoute>
             <RedeemCodePage />
           </ProtectedRoute>
         }
@@ -279,7 +276,7 @@ function App() {
       <Route
         path="/invitecode"
         element={
-          <ProtectedRoute useSimpleLayout={true}>
+          <ProtectedRoute>
             <InviteCodePage />
           </ProtectedRoute>
         }
@@ -287,7 +284,7 @@ function App() {
       <Route
         path="/task-queue"
         element={
-          <ProtectedRoute useSimpleLayout={true}>
+          <ProtectedRoute>
             <TaskQueuePage />
           </ProtectedRoute>
         }
@@ -295,7 +292,7 @@ function App() {
       <Route
         path="/usergroup"
         element={
-          <ProtectedRoute useSimpleLayout={true}>
+          <ProtectedRoute>
             <UserGroupPage />
           </ProtectedRoute>
         }
@@ -303,7 +300,7 @@ function App() {
       <Route
         path="/nodegroup"
         element={
-          <ProtectedRoute useSimpleLayout={true}>
+          <ProtectedRoute>
             <NodeGroupPage />
           </ProtectedRoute>
         }
@@ -311,7 +308,7 @@ function App() {
       <Route
         path="/package"
         element={
-          <ProtectedRoute useSimpleLayout={true}>
+          <ProtectedRoute>
             <PackagePlanPage />
           </ProtectedRoute>
         }
@@ -319,7 +316,7 @@ function App() {
       <Route
         path="/config"
         element={
-          <ProtectedRoute useSimpleLayout={true}>
+          <ProtectedRoute>
             <ConfigPage />
           </ProtectedRoute>
         }
@@ -327,7 +324,7 @@ function App() {
       <Route
         path="/push-notification"
         element={
-          <ProtectedRoute useSimpleLayout={true}>
+          <ProtectedRoute>
             <PushNotificationPage />
           </ProtectedRoute>
         }

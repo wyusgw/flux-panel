@@ -41,6 +41,13 @@ public class TaskQueueController extends BaseController {
 
     @LogAnnotation
     @RequireRole
+    @PostMapping("/overview")
+    public R overview() {
+        return taskQueueService.getOverview();
+    }
+
+    @LogAnnotation
+    @RequireRole
     @PostMapping("/error-logs")
     public R errorLogs() {
         return taskQueueService.listErrorLogs();

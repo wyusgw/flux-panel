@@ -14,6 +14,7 @@ import { updateConfigs } from '@/api';
 import { isAdmin } from '@/utils/auth';
 import { getCachedConfigs, clearConfigCache, updateSiteConfig } from '@/config/site';
 import { HelpTooltip } from '@/components/help-tooltip';
+import { DayOfMonthPicker } from '@/components/day-of-month-picker';
 
 interface ConfigItem {
   key: string;
@@ -21,7 +22,7 @@ interface ConfigItem {
   label: string;
   placeholder?: string;
   description?: string;
-  type: 'input' | 'switch' | 'select' | 'textarea' | 'paymentChannels' | 'readonly';
+  type: 'input' | 'switch' | 'select' | 'textarea' | 'dayOfMonth' | 'paymentChannels' | 'readonly';
   options?: { label: string; value: string; description?: string }[];
   dependsOn?: string; // 依赖的配置项key
   dependsValue?: string; // 依赖的配置项值
@@ -57,7 +58,7 @@ const CONFIG_ITEMS: ConfigItem[] = [
     section: 'basic',
     label: '面板后端地址',
     placeholder: '请输入面板后端IP:PORT',
-    description: '格式“ip:port”,用于对接节点时使用,ip是你安装面板服务器的公网ip,端口是安装脚本内输入的后端端口。不要套CDN,不支持https,通讯数据有加密',
+    description: '用于对接节点，格式 ip:port，填面板服务器公网 IP 和后端端口，不要套 CDN',
     type: 'input'
   },
   {
@@ -190,8 +191,23 @@ const CONFIG_ITEMS: ConfigItem[] = [
     key: 'error_log_retention_days',
     section: 'basic',
     label: '报错日志保留天数',
-    placeholder: '默认 7',
+    placeholder: '7',
     description: '队列监控中的报错日志超过该天数后由定时任务自动删除，留空则按 7 天处理',
+    type: 'input'
+  },
+  {
+    key: 'node_traffic_reset_day',
+    section: 'basic',
+    label: '节点流量重置日',
+    description: '节点状态页的流量每月在这一天 0 点清零并重新累计，默认每月 1 日；当月没有该日期（如 31 日）时按月末处理',
+    type: 'dayOfMonth'
+  },
+  {
+    key: 'diagnosis_ping_count',
+    section: 'basic',
+    label: '诊断连接次数',
+    placeholder: '15',
+    description: '转发、隧道诊断时每段做几次 TCP 连接，范围 1-30，次数越多结果越详细、耗时也越长，留空则按 15 次处理',
     type: 'input'
   },
   {
@@ -509,6 +525,15 @@ export default function ConfigPage() {
           </Select>
         );
 
+      case 'dayOfMonth':
+        return (
+          <DayOfMonthPicker
+            value={configs[item.key] || ''}
+            onChange={(value) => handleConfigChange(item.key, value)}
+            isChanged={isChanged}
+          />
+        );
+
       case 'paymentChannels':
         return (
           <div />
@@ -607,8 +632,11 @@ export default function ConfigPage() {
                           className={`grid grid-cols-1 lg:grid-cols-[minmax(260px,0.75fr)_minmax(360px,1.25fr)] gap-3 lg:gap-8 px-4 py-5 lg:px-5 ${index < visibleItems.length - 1 ? 'border-b border-default-100' : ''}`}
                         >
                           <div className="pt-1">
-                            <label className="text-sm font-medium text-foreground">{item.label}</label>
-                            {item.description && <p className="mt-1 text-xs leading-5 text-default-500 max-w-md">{item.description}</p>}
+                            {item.description ? (
+                              <HelpTooltip content={item.description}><span className="text-sm font-medium text-foreground">{item.label}</span></HelpTooltip>
+                            ) : (
+                              <label className="text-sm font-medium text-foreground">{item.label}</label>
+                            )}
                           </div>
                           <div className="w-full max-w-2xl lg:justify-self-end">{renderConfigItem(item)}</div>
 
@@ -618,8 +646,11 @@ export default function ConfigPage() {
                                 <div className="space-y-4 pt-4 pl-4 border-l-2 border-default-200">
                                   {transparentThemeChildren.map(child => (
                                     <div key={child.key}>
-                                      <label className="text-sm font-medium text-foreground">{child.label}</label>
-                                      {child.description && <p className="mt-1 text-xs leading-5 text-default-500 max-w-md">{child.description}</p>}
+                                      {child.description ? (
+                                        <HelpTooltip content={child.description}><span className="text-sm font-medium text-foreground">{child.label}</span></HelpTooltip>
+                                      ) : (
+                                        <label className="text-sm font-medium text-foreground">{child.label}</label>
+                                      )}
                                       <div className="mt-2 max-w-2xl">{renderConfigItem(child)}</div>
                                     </div>
                                   ))}

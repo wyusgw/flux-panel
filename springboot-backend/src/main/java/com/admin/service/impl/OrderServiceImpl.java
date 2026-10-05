@@ -11,7 +11,11 @@ import com.admin.service.OrderService;
 import com.admin.service.PackagePlanService;
 import com.admin.service.RechargeService;
 import com.admin.service.RedeemCodeService;
+import com.admin.service.TaskQueueService;
 import com.admin.service.UserService;
+import com.admin.service.impl.task.OrderPurchaseTaskHandler;
+import com.admin.entity.TaskQueue;
+import com.alibaba.fastjson.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import org.apache.commons.lang3.StringUtils;
@@ -22,8 +26,11 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
 @Service
@@ -60,8 +67,20 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
     @Lazy
     private RechargeService rechargeService;
 
+    /** 提交订单后最多等多久拿结果，超过则返回「处理中」，由前端稍后刷新 */
+    private static final long PURCHASE_WAIT_MS = 8000L;
+    private static final long PURCHASE_POLL_MS = 150L;
+
+    @Autowired
+    @Lazy
+    private TaskQueueService taskQueueService;
+
+    /**
+     * 手动购买套餐：先做预校验（套餐、兑换码、余额），这些业务性拒绝当场返回；通过后登记到任务队列，
+     * 由队列处理器真正扣款和应用套餐，这里短暂等待结果，对调用方来说仍是"提交即得到结果"。
+     * 超过等待时间还没处理完则返回 data.pending=true，前端提示处理中并稍后刷新。
+     */
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public R purchasePackage(Long packageId, String redeemCode) {
         Integer userId = JwtUtil.getUserIdFromToken();
         if (userId == null) {
@@ -73,7 +92,81 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
             return R.err(ERROR_USER_NOT_FOUND);
         }
 
-        return purchasePackageForUser(user, packageId, redeemCode);
+        R rejected = precheckPurchase(user, packageId, redeemCode);
+        if (rejected != null) {
+            return rejected;
+        }
+
+        // 同一用户已有一笔订单在处理中就不再接收新的，避免连点或重复提交造成重复扣款
+        long processing = taskQueueService.count(new QueryWrapper<TaskQueue>()
+                .eq("task_type", OrderPurchaseTaskHandler.TASK_TYPE)
+                .likeRight("dedup_key", userId + ":")
+                .eq("status", "PENDING").lt("retry_count", 1)
+                // 只看最近 2 分钟内登记的：服务重启等异常留下的悬空记录不应永久挡住该用户下单
+                .ge("created_time", System.currentTimeMillis() - 2 * 60 * 1000L));
+        if (processing > 0) {
+            return R.err("您有一笔订单正在处理中，请稍后再试");
+        }
+
+        PackagePlan plan = packagePlanService.getById(packageId);
+        JSONObject payload = new JSONObject();
+        payload.put("userId", userId);
+        payload.put("packageId", packageId);
+        if (StringUtils.isNotBlank(redeemCode)) {
+            payload.put("redeemCode", redeemCode.trim());
+        }
+        payload.put("summary", "用户「" + user.getUser() + "」购买套餐「" + (plan != null ? plan.getName() : "#" + packageId) + "」");
+        Long queueId = taskQueueService.enqueue(OrderPurchaseTaskHandler.TASK_TYPE,
+                userId + ":" + UUID.randomUUID(), payload.toJSONString(), Collections.emptyList(), null);
+        taskQueueService.dispatch(queueId);
+
+        long deadline = System.currentTimeMillis() + PURCHASE_WAIT_MS;
+        while (System.currentTimeMillis() < deadline) {
+            TaskQueue item = taskQueueService.getById(queueId);
+            if (item != null) {
+                if ("SUCCESS".equals(item.getStatus())) {
+                    return R.ok("购买成功");
+                }
+                if (item.getRetryCount() != null && item.getRetryCount() > 0) {
+                    return R.err(item.getLastError() != null ? item.getLastError() : "购买失败");
+                }
+            }
+            try {
+                Thread.sleep(PURCHASE_POLL_MS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+        Map<String, Object> pending = new HashMap<>();
+        pending.put("pending", true);
+        R result = R.ok(pending);
+        result.setMsg("订单处理中，请稍后在「我的订单」查看结果");
+        return result;
+    }
+
+    /**
+     * 提交前的业务预校验，规则与 purchasePackageForUser 一致（不消耗兑换码次数、不扣款）；通过返回 null
+     */
+    private R precheckPurchase(User user, Long packageId, String redeemCode) {
+        PackagePlan packagePlan = packagePlanService.getById(packageId);
+        if (packagePlan == null) {
+            return R.err(ERROR_PACKAGE_NOT_FOUND);
+        }
+        BigDecimal price = packagePlan.getPrice() != null ? packagePlan.getPrice() : BigDecimal.ZERO;
+        if (StringUtils.isNotBlank(redeemCode)) {
+            RedeemCode redeemCodeEntity = redeemCodeService.validateRedeemCode(redeemCode, packageId);
+            if (redeemCodeEntity == null) {
+                return R.err("兑换码无效、不适用于该套餐或已用完");
+            }
+            price = price.multiply(BigDecimal.valueOf(redeemCodeEntity.getDiscountRatio()))
+                    .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+        }
+        BigDecimal balance = user.getWalletBalance() != null ? user.getWalletBalance() : BigDecimal.ZERO;
+        if (balance.compareTo(price) < 0) {
+            return R.err(ERROR_INSUFFICIENT_BALANCE);
+        }
+        return null;
     }
 
     /**

@@ -41,7 +41,7 @@ import { isAdmin } from "@/utils/auth";
 
 // ========== 图标（转发规则页专用的一批简单线性小图标） ==========
 const IconSearch = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" /><path strokeLinecap="round" d="M21 21l-4.3-4.3" /></svg>;
-const IconRefresh = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h5M20 20v-5h-5" /><path strokeLinecap="round" strokeLinejoin="round" d="M4.6 15a8 8 0 0014.4 2.6M19.4 9A8 8 0 005 6.4" /></svg>;
+const IconRefresh = ({ spinning = false }: { spinning?: boolean }) => <svg className={`w-4 h-4 ${spinning ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h5M20 20v-5h-5" /><path strokeLinecap="round" strokeLinejoin="round" d="M4.6 15a8 8 0 0014.4 2.6M19.4 9A8 8 0 005 6.4" /></svg>;
 const IconStats = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 20V10M12 20V4M20 20v-7" /></svg>;
 const IconGroup = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" /></svg>;
 const IconAddSingle = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>;
@@ -174,6 +174,7 @@ export default function ForwardPage() {
   const scopeUserId = isImpersonating ? impersonateUserId : JwtUtil.getUserIdFromToken();
 
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [forwards, setForwards] = useState<Forward[]>([]);
   const [tunnels, setTunnels] = useState<Tunnel[]>([]);
   
@@ -459,6 +460,18 @@ export default function ForwardPage() {
       }
     } catch (error) {
       toast.error('删除失败');
+    }
+  };
+
+  // 手动刷新：不切换到整页加载状态，按钮上的图标转圈直到数据返回；至少转满一圈，避免请求太快看不到反馈
+  const handleRefresh = async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    const minSpin = new Promise(resolve => setTimeout(resolve, 700));
+    try {
+      await Promise.all([loadData(false), minSpin]);
+    } finally {
+      setRefreshing(false);
     }
   };
 
@@ -1326,7 +1339,7 @@ export default function ForwardPage() {
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <Button size="sm" variant="flat" startContent={<IconSearch />} onPress={() => setSearchModalOpen(true)}>搜索规则</Button>
-            <Button size="sm" variant="flat" startContent={<IconRefresh />} isDisabled={loading} onPress={() => loadData()}>刷新</Button>
+            <Button size="sm" variant="flat" startContent={<IconRefresh spinning={refreshing} />} isDisabled={loading || refreshing} onPress={handleRefresh}>刷新</Button>
             {!isImpersonating && <Button size="sm" color="primary" startContent={<IconStats />} onPress={openStats}>统计数据</Button>}
           </div>
         </div>

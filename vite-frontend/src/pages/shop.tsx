@@ -37,15 +37,10 @@ const PAYMENT_TYPE_LABELS: Record<PaymentChannel['type'], string> = {
 };
 
 const NoPaymentIcon = () => (
-  <svg className="w-16 h-16 text-default-300" viewBox="0 0 64 64" fill="currentColor">
-    <path d="M12 47h40l5 9a2 2 0 01-2 3H9a2 2 0 01-2-3l5-9z" />
-    <rect x="27" y="39" width="10" height="9" />
-    <rect x="9" y="8" width="46" height="33" rx="5" />
-    <rect x="14" y="13" width="36" height="23" rx="2" className="fill-content1" />
-    <path d="M39 2a10 10 0 100 20 10.4 10.4 0 002.6-.33L48 24v-4.2A10 10 0 0039 2z" />
-    <circle cx="35" cy="12" r="1.6" className="fill-content1" />
-    <circle cx="39" cy="12" r="1.6" className="fill-content1" />
-    <circle cx="43" cy="12" r="1.6" className="fill-content1" />
+  <svg className="w-16 h-16 text-default-300" viewBox="0 0 64 64" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round">
+    <path d="M50 20V13a5 5 0 00-5-5H13a6 6 0 00-6 6v34a6 6 0 006 6h37a5 5 0 005-5V28a5 5 0 00-5-5H13" />
+    <rect x="38" y="31" width="19" height="13" rx="4" />
+    <circle cx="45" cy="37.5" r="1.8" fill="currentColor" stroke="none" />
   </svg>
 );
 
@@ -166,7 +161,11 @@ export default function ShopPage() {
     setRedeemLoading(true);
     try {
       const res = await redeemPackageCode(redeemInput.trim());
-      if (res.code === 0) {
+      if (res.code === 0 && res.data?.pending) {
+        toast(res.msg || '订单处理中，请稍后查看');
+        setRedeemInput('');
+        loadData();
+      } else if (res.code === 0) {
         if (res.data?.type === 'balance') {
           toast.success(`兑换成功，已到账 ${res.data.amount} 元`);
         } else {
@@ -195,7 +194,12 @@ export default function ShopPage() {
     setPurchaseLoading(true);
     try {
       const res = await purchasePackage(planToPurchase.id);
-      if (res.code === 0) {
+      if (res.code === 0 && res.data?.pending) {
+        // 订单已提交但还在队列里处理，不能当作购买成功
+        setOpenPopoverId(null);
+        toast(res.msg || '订单处理中，请稍后查看');
+        loadData();
+      } else if (res.code === 0) {
         setOpenPopoverId(null);
         setPurchasedPlanName(planToPurchase.name);
         setSuccessModalOpen(true);

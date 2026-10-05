@@ -140,7 +140,9 @@ export const getTunnelList = () => Network.post("/tunnel/list");
 export const getTunnelById = (id: number) => Network.post("/tunnel/get", { id });
 export const updateTunnel = (data: any) => Network.post("/tunnel/update", data);
 export const deleteTunnel = (id: number) => Network.post("/tunnel/delete", { id });
-export const diagnoseTunnel = (tunnelId: number) => Network.post("/tunnel/diagnose", { tunnelId });
+// 诊断要依次对多段做 TCP ping，次数可配置，耗时可能超过默认的 30 秒请求超时
+const DIAGNOSE_TIMEOUT_MS = 150000;
+export const diagnoseTunnel = (tunnelId: number) => Network.post("/tunnel/diagnose", { tunnelId }, DIAGNOSE_TIMEOUT_MS);
 
 // 用户隧道权限管理操作 - 全部使用POST请求
 export const assignUserTunnel = (data: any) => Network.post("/tunnel/user/assign", data);
@@ -161,7 +163,7 @@ export const pauseForwardService = (forwardId: number) => Network.post("/forward
 export const resumeForwardService = (forwardId: number) => Network.post("/forward/resume", { id: forwardId });
 
 // 转发诊断操作
-export const diagnoseForward = (forwardId: number) => Network.post("/forward/diagnose", { forwardId });
+export const diagnoseForward = (forwardId: number) => Network.post("/forward/diagnose", { forwardId }, DIAGNOSE_TIMEOUT_MS);
 
 // 转发排序操作
 export const updateForwardOrder = (data: { forwards: Array<{ id: number; inx: number }> }) => Network.post("/forward/update-order", data);

@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Popover, PopoverTrigger, PopoverContent } from "@heroui/popover";
 
 const IconHelp = () => (
@@ -23,23 +23,45 @@ const IconHelp = () => (
  * 就打不开，不是缺个 pointer-events 就能修好的。改用 Popover：它是基于 usePress 的标准点按开合
  * 语义，鼠标点击和手机点按行为一致，这个代码库里 shop.tsx/forward.tsx 的确认弹窗本来就是用它。
  */
-export const HelpTooltip = ({ children, content }: { children: ReactNode; content: string }) => (
-  <span className="inline-flex items-center gap-1 leading-none">
-    {children}
-    <Popover placement="top" showArrow>
-      <PopoverTrigger>
-        <button
-          type="button"
-          aria-label="说明"
-          className="inline-flex items-center pointer-events-auto"
-          onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
-        >
-          <IconHelp />
-        </button>
-      </PopoverTrigger>
-      <PopoverContent>
-        <p className="max-w-64 px-1 py-1 text-xs text-foreground">{content}</p>
-      </PopoverContent>
-    </Popover>
-  </span>
-);
+export const HelpTooltip = ({ children, content }: { children: ReactNode; content: string }) => {
+  // 鼠标悬停即显示；点击则固定显示（手机没有悬停，靠点按），点空白处或再次点击关闭
+  const [open, setOpen] = useState(false);
+  const [pinned, setPinned] = useState(false);
+
+  return (
+    <span className="inline-flex items-center gap-1 leading-none">
+      {children}
+      <Popover
+        placement="top"
+        showArrow
+        isOpen={open}
+        onOpenChange={(next) => {
+          setOpen(next);
+          if (!next) setPinned(false);
+        }}
+      >
+        <PopoverTrigger>
+          <button
+            type="button"
+            aria-label="说明"
+            className="inline-flex items-center pointer-events-auto"
+            onMouseEnter={() => setOpen(true)}
+            onMouseLeave={() => { if (!pinned) setOpen(false); }}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              const nextPinned = !pinned;
+              setPinned(nextPinned);
+              setOpen(nextPinned);
+            }}
+          >
+            <IconHelp />
+          </button>
+        </PopoverTrigger>
+        <PopoverContent>
+          <p className="max-w-64 px-1 py-1 text-xs text-foreground">{content}</p>
+        </PopoverContent>
+      </Popover>
+    </span>
+  );
+};

@@ -1,10 +1,11 @@
 package com.admin.common.task;
 
-import com.admin.common.lang.R;
-import com.admin.common.utils.NotificationUtil;
+import com.admin.service.impl.task.OrderRenewTaskHandler;
 import com.admin.entity.PackagePlan;
 import com.admin.entity.User;
-import com.admin.service.OrderService;
+import com.admin.entity.TaskQueue;
+import com.admin.service.TaskQueueService;
+import com.alibaba.fastjson.JSONObject;
 import com.admin.service.PackagePlanService;
 import com.admin.service.UserService;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
@@ -14,7 +15,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
 
 import javax.annotation.Resource;
-import java.math.BigDecimal;
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -35,13 +36,10 @@ public class AutoRenewAsync {
     UserService userService;
 
     @Resource
-    OrderService orderService;
+    TaskQueueService taskQueueService;
 
     @Resource
     PackagePlanService packagePlanService;
-
-    @Resource
-    NotificationUtil notificationUtil;
 
     @Scheduled(cron = "0 30 23 * * ?")
     public void autoRenew() {
@@ -54,6 +52,8 @@ public class AutoRenewAsync {
                     .isNotNull("package_id")
                     .isNotNull("exp_time")
                     .lt("exp_time", windowEnd)
+                    // 到期超过 24 小时的不再自动续费（与队列处理器的放弃时限一致），避免已停用的用户被反复登记
+                    .ge("exp_time", now - OrderRenewTaskHandler.GIVE_UP_AFTER_EXPIRY_MS)
                     .ne("exp_time", PERMANENT_EXP_TIME));
 
             if (candidates.isEmpty()) {
@@ -63,21 +63,24 @@ public class AutoRenewAsync {
 
             for (User user : candidates) {
                 try {
-                    PackagePlan plan = packagePlanService.getById(user.getPackageId());
-                    BigDecimal price = (plan != null && plan.getPrice() != null) ? plan.getPrice() : BigDecimal.ZERO;
-
-                    R result = orderService.purchasePackageForUser(user, user.getPackageId(), null);
-                    if (result != null && result.getCode() == 0) {
-                        log.info("用户[{}]自动续费成功", user.getId());
-                        notificationUtil.notifyRenewSuccess(user, price);
-                    } else {
-                        String reason = result != null ? result.getMsg() : "未知错误";
-                        log.info("用户[{}]自动续费失败: {}", user.getId(), reason);
-                        notificationUtil.notifyRenewFailed(user, reason);
+                    // 同一用户同一个到期周期只登记一次：已经有记录（执行中、等待重试或已成功）就不重复登记，也不重置状态
+                    String dedupKey = user.getId() + ":" + user.getExpTime();
+                    long existing = taskQueueService.count(new QueryWrapper<TaskQueue>()
+                            .eq("task_type", OrderRenewTaskHandler.TASK_TYPE).eq("dedup_key", dedupKey));
+                    if (existing > 0) {
+                        continue;
                     }
+                    PackagePlan plan = packagePlanService.getById(user.getPackageId());
+                    JSONObject payload = new JSONObject();
+                    payload.put("userId", user.getId());
+                    payload.put("expTime", user.getExpTime());
+                    payload.put("packageId", user.getPackageId());
+                    payload.put("summary", "用户「" + user.getUser() + "」自动续费套餐「" + (plan != null ? plan.getName() : "#" + user.getPackageId()) + "」");
+                    Long queueId = taskQueueService.enqueue(OrderRenewTaskHandler.TASK_TYPE, dedupKey,
+                            payload.toJSONString(), Collections.emptyList(), null);
+                    taskQueueService.dispatch(queueId);
                 } catch (Exception e) {
-                    log.warn("用户[{}]自动续费执行异常: {}", user.getId(), e.getMessage());
-                    notificationUtil.notifyRenewFailed(user, e.getMessage());
+                    log.warn("用户[{}]自动续费登记队列异常: {}", user.getId(), e.getMessage());
                 }
             }
         } catch (Exception e) {

@@ -365,12 +365,12 @@ public class TaskQueueServiceImpl extends ServiceImpl<TaskQueueMapper, TaskQueue
         return R.ok(result);
     }
 
-    /** 队列类别：key、展示名、包含的任务类型。订单类别的任务类型预留，订单任务接入队列后自动归入 */
+    /** 队列类别：key、展示名、包含的任务类型。订单类别包含自动续费（ORDER_RENEW）和手动购买（ORDER_PURCHASE） */
     private static final String[][] CATEGORIES = {
             {"telegram", "Telegram 消息队列", "TELEGRAM_NOTIFY"},
             {"flow", "流量消费队列", "USER_FLOW_RECORD,NODE_FLOW_RECORD"},
             {"statistics", "统计队列", "STATISTICS_FLOW"},
-            {"order", "订单队列", "ORDER_RENEW"},
+            {"order", "订单队列", "ORDER_RENEW,ORDER_PURCHASE"},
             {"forward", "转发同步队列", "FORWARD_SYNC"}
     };
 
@@ -383,6 +383,7 @@ public class TaskQueueServiceImpl extends ServiceImpl<TaskQueueMapper, TaskQueue
             Set<String> types = new HashSet<>(java.util.Arrays.asList(category[2].split(",")));
             long queued = 0, retrying = 0, exhausted = 0, successLastHour = 0;
             Long lastActive = null;
+            Long oldestPendingCreated = null;
             TaskQueue lastFailed = null;
             for (TaskQueue item : all) {
                 if (!types.contains(item.getTaskType())) {
@@ -398,6 +399,9 @@ public class TaskQueueServiceImpl extends ServiceImpl<TaskQueueMapper, TaskQueue
                         successLastHour++;
                     }
                     continue;
+                }
+                if (item.getCreatedTime() != null && (oldestPendingCreated == null || item.getCreatedTime() < oldestPendingCreated)) {
+                    oldestPendingCreated = item.getCreatedTime();
                 }
                 if (failures >= MAX_AUTO_RETRY) {
                     exhausted++;
@@ -417,6 +421,8 @@ public class TaskQueueServiceImpl extends ServiceImpl<TaskQueueMapper, TaskQueue
             row.put("retryingCount", retrying);
             row.put("exhaustedCount", exhausted);
             row.put("successLastHour", successLastHour);
+            // 占用时间：最早一条仍未完成的作业已经等待了多久，没有待处理作业则为 0
+            row.put("oldestWaitMs", oldestPendingCreated != null ? now - oldestPendingCreated : 0L);
             row.put("lastError", lastFailed != null ? lastFailed.getLastError() : null);
             row.put("lastActiveTime", lastActive);
             rows.add(row);
@@ -464,7 +470,7 @@ public class TaskQueueServiceImpl extends ServiceImpl<TaskQueueMapper, TaskQueue
             if (result != null && result.getCode() == 0) {
                 markSuccess(item);
             } else {
-                markFailed(item, result != null ? result.getMsg() : null);
+                markFailed(item, result != null ? result.getMsg() : null, handler.isRetryable());
             }
             return result != null ? result : R.err("未知错误");
         } finally {
@@ -482,10 +488,12 @@ public class TaskQueueServiceImpl extends ServiceImpl<TaskQueueMapper, TaskQueue
                 .set("last_error", null));
     }
 
-    private void markFailed(TaskQueue item, String msg) {
+    private void markFailed(TaskQueue item, String msg, boolean retryable) {
         String error = (msg == null || msg.isEmpty()) ? "未知错误" : msg;
+        int failures = (item.getRetryCount() == null ? 0 : item.getRetryCount()) + 1;
         this.update(new UpdateWrapper<TaskQueue>().eq("id", item.getId())
-                .set("retry_count", (item.getRetryCount() == null ? 0 : item.getRetryCount()) + 1)
+                // 不允许自动重试的任务直接记到重试上限，之后不会再被自动触发
+                .set("retry_count", retryable ? failures : Math.max(failures, MAX_AUTO_RETRY))
                 .set("last_error", error)
                 .set("updated_time", System.currentTimeMillis()));
         taskErrorLogService.record(item.getTaskType(), error);

@@ -39,18 +39,22 @@ export interface DispatchStats {
 }
 
 // 某一段诊断的逐次连接尝试明细；旧版节点 Agent 未返回 attempts 明细时，回退显示汇总消息
-export function renderDiagnosisLines(result: DiagnosisResultItem) {
+// maxLines：卡片里只预览前几条，完整明细在点开的详细结果里（不传则全部列出）
+export function renderDiagnosisLines(result: DiagnosisResultItem, maxLines?: number) {
   const addr = `${result.targetIp}${result.targetPort ? ':' + result.targetPort : ''}`;
   if (result.attempts && result.attempts.length > 0) {
     return (
       <>
-        {result.attempts.map((attempt) => (
+        {(maxLines ? result.attempts.slice(0, maxLines) : result.attempts).map((attempt) => (
           <div key={attempt.seq} className="font-mono text-xs text-default-400">
             {attempt.success
               ? `连接 ${attempt.seq}: 来自 ${addr} 时间=${attempt.timeMs?.toFixed(0)}ms`
               : `连接 ${attempt.seq}: 来自 ${addr} 失败${attempt.error ? `（${attempt.error}）` : ''}`}
           </div>
         ))}
+        {maxLines && result.attempts.length > maxLines && (
+          <div className="text-xs text-default-400 pt-1">共 {result.attempts.length} 条，点击查看详细结果</div>
+        )}
         {result.recovered && result.success && (
           <div className="text-xs text-default-500 pt-1">
             平均延迟 {result.averageTime?.toFixed(0)}ms · 丢包 {result.packetLoss?.toFixed(0)}%
@@ -111,8 +115,8 @@ function DiagnosisDetailModal({
                 )}
               </div>
               <div>
-                <h4 className="text-xs font-semibold text-default-500 mb-1">连接尝试明细</h4>
-                <div className="border border-default-200 rounded-lg px-4 py-3 space-y-1">
+                <h4 className="text-xs font-semibold text-default-500 mb-1">连接尝试明细{result.attempts && result.attempts.length > 0 ? `（共 ${result.attempts.length} 条）` : ''}</h4>
+                <div className="border border-default-200 rounded-lg px-4 py-3 space-y-1 max-h-80 overflow-y-auto">
                   {renderDiagnosisLines(result)}
                 </div>
               </div>
@@ -126,6 +130,8 @@ function DiagnosisDetailModal({
     </Modal>
   );
 }
+
+const PREVIEW_LINES = 5;
 
 // 诊断分区：每一段诊断渲染成一张卡片（名称 + 可选 GID），内容逐行展示连接明细；点击卡片可查看详细结果
 export function DiagnosisLeg({
@@ -169,7 +175,7 @@ export function DiagnosisLeg({
                   </div>
                 </div>
                 <div className="px-4 py-3 space-y-1 text-left w-full">
-                  {renderDiagnosisLines(result)}
+                  {renderDiagnosisLines(result, PREVIEW_LINES)}
                 </div>
               </Card>
             );

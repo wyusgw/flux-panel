@@ -27,7 +27,7 @@ type Node = {
     cpuUsage: number; cpuModel?: string;
     memoryUsage: number; memoryTotal?: number; memoryUsed?: number; memoryAvailable?: number;
     storageUsage: number; storageTotal?: number; storageUsed?: number; storageFree?: number;
-    uploadTraffic: number; downloadTraffic: number; uploadSpeed: number; downloadSpeed: number;
+    uploadTraffic: number; downloadTraffic: number; cycleUpload?: number; cycleDownload?: number; cycleStart?: number; uploadSpeed: number; downloadSpeed: number;
     inboundTcpConnections?: number; outboundTcpConnections?: number;
     inboundUdpConnections?: number; outboundUdpConnections?: number;
     uptime: number;
@@ -148,7 +148,7 @@ const NodeRow = memo(function NodeRow({ node, regionCode, detailHandlers }: Node
       <td className={isOnline ? 'probe-clickable' : ''} {...onlineOnlyHandlers(`conn-recv-${node.id}`)}>{formatSpeed(node.systemInfo?.uploadSpeed)}</td>
       <td className={isOnline ? 'probe-clickable' : ''} {...onlineOnlyHandlers(`conn-send-${node.id}`)}>{formatSpeed(node.systemInfo?.downloadSpeed)}</td>
       <td className="probe-uptime">{node.systemInfo ? formatUptime(node.systemInfo.uptime) : ''}</td>
-      <td className="probe-pair"><span>{formatBytes(node.systemInfo?.uploadTraffic)} <UploadIcon className="w-3 h-3 inline-block align-middle" /></span><span>{formatBytes(node.systemInfo?.downloadTraffic)} <DownloadIcon className="w-3 h-3 inline-block align-middle" /></span></td>
+      <td className="probe-pair"><span title={node.systemInfo?.cycleStart ? `自 ${new Date(node.systemInfo.cycleStart).toLocaleDateString()} 起累计` : undefined}>{formatBytes(node.systemInfo?.cycleUpload ?? node.systemInfo?.uploadTraffic)} <UploadIcon className="w-3 h-3 inline-block align-middle" /></span><span title={node.systemInfo?.cycleStart ? `自 ${new Date(node.systemInfo.cycleStart).toLocaleDateString()} 起累计` : undefined}>{formatBytes(node.systemInfo?.cycleDownload ?? node.systemInfo?.downloadTraffic)} <DownloadIcon className="w-3 h-3 inline-block align-middle" /></span></td>
       <td>
         <div className={`probe-meter probe-meter-${meterTone(node.systemInfo?.cpuUsage)} ${isOnline ? 'probe-clickable' : ''}`} {...onlineOnlyHandlers(`cpu-${node.id}`)}>
           <span style={{ width: `${Math.min(node.systemInfo?.cpuUsage || 0, 100)}%` }} /> <b>{node.systemInfo?.cpuUsage === undefined ? '' : `${node.systemInfo.cpuUsage.toFixed(1)}%`}</b>
@@ -293,6 +293,9 @@ export default function NodeProbePage() {
                 memoryUsage: Number(info.memory_usage) || 0, memoryTotal: Number(info.memory_total) || undefined, memoryUsed: Number(info.memory_used) || undefined, memoryAvailable: Number(info.memory_available) || undefined,
                 storageUsage: Number(info.storage_usage) || 0, storageTotal: Number(info.storage_total) || undefined, storageUsed: Number(info.storage_used) || undefined, storageFree: Number(info.storage_free) || undefined,
                 uploadTraffic: upload, downloadTraffic: download,
+                cycleUpload: info.cycle_upload !== undefined ? Number(info.cycle_upload) : undefined,
+                cycleDownload: info.cycle_download !== undefined ? Number(info.cycle_download) : undefined,
+                cycleStart: info.cycle_start !== undefined ? Number(info.cycle_start) : undefined,
                 uploadSpeed: elapsed > 0 ? Math.max(0, (upload - (node.systemInfo?.uploadTraffic || upload)) / elapsed) : 0,
                 downloadSpeed: elapsed > 0 ? Math.max(0, (download - (node.systemInfo?.downloadTraffic || download)) / elapsed) : 0,
                 inboundTcpConnections: info.inbound_tcp_connections !== undefined ? Number(info.inbound_tcp_connections) : undefined,

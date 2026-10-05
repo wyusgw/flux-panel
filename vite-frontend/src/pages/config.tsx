@@ -14,6 +14,7 @@ import { updateConfigs } from '@/api';
 import { isAdmin } from '@/utils/auth';
 import { getCachedConfigs, clearConfigCache, updateSiteConfig } from '@/config/site';
 import { HelpTooltip } from '@/components/help-tooltip';
+import { DayOfMonthPicker } from '@/components/day-of-month-picker';
 
 interface ConfigItem {
   key: string;
@@ -21,7 +22,7 @@ interface ConfigItem {
   label: string;
   placeholder?: string;
   description?: string;
-  type: 'input' | 'switch' | 'select' | 'textarea' | 'paymentChannels' | 'readonly';
+  type: 'input' | 'switch' | 'select' | 'textarea' | 'dayOfMonth' | 'paymentChannels' | 'readonly';
   options?: { label: string; value: string; description?: string }[];
   dependsOn?: string; // 依赖的配置项key
   dependsValue?: string; // 依赖的配置项值
@@ -193,6 +194,13 @@ const CONFIG_ITEMS: ConfigItem[] = [
     placeholder: '7',
     description: '队列监控中的报错日志超过该天数后由定时任务自动删除，留空则按 7 天处理',
     type: 'input'
+  },
+  {
+    key: 'node_traffic_reset_day',
+    section: 'basic',
+    label: '节点流量重置日',
+    description: '节点状态页的流量每月在这一天 0 点清零并重新累计，默认每月 1 日；当月没有该日期（如 31 日）时按月末处理',
+    type: 'dayOfMonth'
   },
   {
     key: 'diagnosis_ping_count',
@@ -515,6 +523,15 @@ export default function ConfigPage() {
               </SelectItem>
             )) || []}
           </Select>
+        );
+
+      case 'dayOfMonth':
+        return (
+          <DayOfMonthPicker
+            value={configs[item.key] || ''}
+            onChange={(value) => handleConfigChange(item.key, value)}
+            isChanged={isChanged}
+          />
         );
 
       case 'paymentChannels':

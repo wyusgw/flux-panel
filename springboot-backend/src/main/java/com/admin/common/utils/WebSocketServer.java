@@ -6,10 +6,12 @@ import com.admin.common.dto.GostDto;
 import com.admin.common.task.CheckGostConfigAsync;
 import com.admin.entity.DeviceGroup;
 import com.admin.entity.Node;
+import com.admin.entity.NodeTrafficCycle;
 import com.admin.entity.ViteConfig;
 import com.admin.service.DeviceGroupService;
 import com.admin.service.TaskQueueService;
 import com.admin.service.NodeService;
+import com.admin.service.NodeTrafficCycleService;
 import com.admin.service.ViteConfigService;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
@@ -53,6 +55,9 @@ public class WebSocketServer extends TextWebSocketHandler {
 
     @Resource
     TaskQueueService taskQueueService;
+
+    @Resource
+    NodeTrafficCycleService nodeTrafficCycleService;
 
     // 设备离线宽限期的延迟检查线程池：节点断线后若配置了宽限期，不立即标记离线，
     // 而是延迟到宽限期结束时才检查——如果期间节点已重连（nodeSessions 里能查到新会话），
@@ -151,7 +156,7 @@ public class WebSocketServer extends TextWebSocketHandler {
                     JSONObject jsonObject = new JSONObject();
                     jsonObject.put("id", id);
                     jsonObject.put("type", "info");
-                    jsonObject.put("data", decryptedPayload);
+                    jsonObject.put("data", withCycleTraffic(id, decryptedPayload));
                     String broadcastMessage = jsonObject.toJSONString();
                     
                     // 异步处理广播消息，避免阻塞当前线程
@@ -164,6 +169,28 @@ public class WebSocketServer extends TextWebSocketHandler {
             }
         } catch (Exception e) {
             log.info("处理WebSocket消息时发生异常: {}", e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 给节点上报的系统信息补上「周期流量」（cycle_upload / cycle_download / cycle_start），
+     * 供节点状态页展示每月重置的流量；解析或统计失败时原样返回，不影响原有信息的转发
+     */
+    private String withCycleTraffic(String nodeId, String payload) {
+        try {
+            JSONObject info = JSONObject.parseObject(payload);
+            if (info == null || !info.containsKey("bytes_transmitted") || !info.containsKey("bytes_received")) {
+                return payload;
+            }
+            NodeTrafficCycle cycle = nodeTrafficCycleService.record(Long.valueOf(nodeId),
+                    info.getLongValue("bytes_transmitted"), info.getLongValue("bytes_received"));
+            info.put("cycle_upload", cycle.getUpBytes());
+            info.put("cycle_download", cycle.getDownBytes());
+            info.put("cycle_start", cycle.getCycleStart());
+            return info.toJSONString();
+        } catch (Exception e) {
+            log.warn("统计节点周期流量失败: nodeId={}, {}", nodeId, e.getMessage());
+            return payload;
         }
     }
 

@@ -1319,3 +1319,18 @@ CREATE TABLE IF NOT EXISTS `task_error_log` (
   PRIMARY KEY (`id`),
   KEY `idx_task_error_log_created` (`created_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 创建 node_traffic_cycle 表（如果不存在）：节点状态页的周期流量（默认每月 1 日重置，重置日可在站点设置
+-- node_traffic_reset_day 调整），由节点上报的网卡累计流量按差值累加得到，服务器重启导致网卡计数器归零时也不会丢失已累计的部分
+CREATE TABLE IF NOT EXISTS `node_traffic_cycle` (
+  `id` int(10) NOT NULL AUTO_INCREMENT,
+  `node_id` bigint(20) NOT NULL,
+  `cycle_start` bigint(20) NOT NULL,
+  `up_bytes` bigint(20) NOT NULL DEFAULT '0',
+  `down_bytes` bigint(20) NOT NULL DEFAULT '0',
+  `last_raw_up` bigint(20) NOT NULL DEFAULT '0',
+  `last_raw_down` bigint(20) NOT NULL DEFAULT '0',
+  `updated_time` bigint(20) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uniq_node` (`node_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

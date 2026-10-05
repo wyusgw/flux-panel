@@ -205,7 +205,10 @@ export default function AccountCenterPage() {
     setRenewLoading(true);
     try {
       const res = await purchasePackage(userInfo.packageId);
-      if (res.code === 0) {
+      if (res.code === 0 && res.data?.pending) {
+        toast(res.msg || '订单处理中，请稍后查看');
+        loadData();
+      } else if (res.code === 0) {
         toast.success('续费成功');
         loadData();
       } else {

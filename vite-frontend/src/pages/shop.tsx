@@ -161,7 +161,11 @@ export default function ShopPage() {
     setRedeemLoading(true);
     try {
       const res = await redeemPackageCode(redeemInput.trim());
-      if (res.code === 0) {
+      if (res.code === 0 && res.data?.pending) {
+        toast(res.msg || '订单处理中，请稍后查看');
+        setRedeemInput('');
+        loadData();
+      } else if (res.code === 0) {
         if (res.data?.type === 'balance') {
           toast.success(`兑换成功，已到账 ${res.data.amount} 元`);
         } else {
@@ -190,7 +194,12 @@ export default function ShopPage() {
     setPurchaseLoading(true);
     try {
       const res = await purchasePackage(planToPurchase.id);
-      if (res.code === 0) {
+      if (res.code === 0 && res.data?.pending) {
+        // 订单已提交但还在队列里处理，不能当作购买成功
+        setOpenPopoverId(null);
+        toast(res.msg || '订单处理中，请稍后查看');
+        loadData();
+      } else if (res.code === 0) {
         setOpenPopoverId(null);
         setPurchasedPlanName(planToPurchase.name);
         setSuccessModalOpen(true);

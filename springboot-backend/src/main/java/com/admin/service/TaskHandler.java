@@ -36,4 +36,13 @@ public interface TaskHandler {
     default long successRetentionMs() {
         return 24L * 60 * 60 * 1000;
     }
+
+    /**
+     * 执行失败后是否允许自动重试（定时扫描、节点上线触发）；默认允许。
+     * 用户当场等待结果、不应在之后悄悄再执行的任务（如手动购买套餐）返回 false：失败后直接停在「已达重试上限」，
+     * 只留给管理员手动处理
+     */
+    default boolean isRetryable() {
+        return true;
+    }
 }

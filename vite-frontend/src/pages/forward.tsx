@@ -2234,7 +2234,7 @@ export default function ForwardPage() {
                   )}
                 </ModalBody>
                 <ModalFooter>
-                  <Button color="default" className="w-full" onPress={onClose}>知道了</Button>
+                  <Button color="primary" className="w-full" onPress={onClose}>知道了</Button>
                 </ModalFooter>
               </>
             )}

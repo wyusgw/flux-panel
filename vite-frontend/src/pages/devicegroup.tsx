@@ -1005,7 +1005,7 @@ export default function DeviceGroupPage() {
                 </div>
               </ModalBody>
               <ModalFooter>
-                <Button onPress={onClose}>知道了</Button>
+                <Button color="primary" onPress={onClose}>知道了</Button>
               </ModalFooter>
             </>
           )}

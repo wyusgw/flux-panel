@@ -47,6 +47,7 @@ interface QueueOverviewRow {
   retryingCount: number;
   exhaustedCount: number;
   successLastHour: number;
+  oldestWaitMs: number;
   lastError: string | null;
   lastActiveTime: number | null;
 }
@@ -67,6 +68,15 @@ interface TaskQueueHealth {
 const formatDate = (timestamp?: number): string => {
   if (!timestamp) return '-';
   return new Date(timestamp).toLocaleString();
+};
+
+// 占用时间：最早一条未完成作业已等待的时长，如 0s / 45s / 3m 12s / 2h 5m
+const formatWait = (ms?: number): string => {
+  const total = Math.max(0, Math.floor((ms || 0) / 1000));
+  if (total < 60) return `${total}s`;
+  const m = Math.floor(total / 60);
+  if (total < 3600) return `${m}m ${total % 60}s`;
+  return `${Math.floor(total / 3600)}h ${m % 60}m`;
 };
 
 const IconDelete = () => (
@@ -288,30 +298,36 @@ export default function TaskQueuePage() {
 
       <Card className="shadow-sm border border-default-200 mb-4">
         <CardBody className="p-0">
-          <div className="px-4 pt-3 pb-2">
-            <h2 className="text-sm font-semibold">当前作业详情</h2>
+          <div className="px-4 pt-4 pb-1">
+            <h2 className="text-base font-semibold">当前作业详情</h2>
           </div>
-          <div className="divide-y divide-default-200">
-            {overview.map((row) => {
-              const pending = row.queuedCount + row.retryingCount + row.exhaustedCount;
-              return (
-                <div key={row.key} className="px-4 py-3 flex flex-col md:flex-row md:items-center gap-2 md:gap-4">
-                  <div className="md:w-40 flex items-center gap-2">
-                    <span className={`inline-block w-2 h-2 rounded-full ${row.exhaustedCount > 0 ? 'bg-danger-500' : row.retryingCount > 0 ? 'bg-warning-500' : 'bg-success-500'}`} />
-                    <span className="text-sm font-medium text-foreground">{row.label}</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 flex-wrap md:w-80">
-                    <Chip size="sm" variant="flat" color={pending > 0 ? 'primary' : 'default'}>待处理 {pending}</Chip>
-                    <Chip size="sm" variant="flat" color={row.retryingCount > 0 ? 'warning' : 'default'}>重试中 {row.retryingCount}</Chip>
-                    <Chip size="sm" variant="flat" color={row.exhaustedCount > 0 ? 'danger' : 'default'}>已达上限 {row.exhaustedCount}</Chip>
-                    <Chip size="sm" variant="flat" color={row.successLastHour > 0 ? 'success' : 'default'}>近1小时成功 {row.successLastHour}</Chip>
-                  </div>
-                  <div className="flex-1 min-w-0 text-xs text-default-500">
-                    {row.lastError ? <span className="line-clamp-1 break-all text-danger-600">{row.lastError}</span> : <span>最近活动：{row.lastActiveTime ? formatDate(row.lastActiveTime) : '暂无'}</span>}
-                  </div>
-                </div>
-              );
-            })}
+          <div className="settings-table-scroll">
+            <Table
+              removeWrapper
+              aria-label="当前作业详情"
+              classNames={{ base: "w-full", th: "management-table-heading", td: "management-table-cell" }}
+            >
+              <TableHeader>
+                <TableColumn>队列名称</TableColumn>
+                <TableColumn>作业量</TableColumn>
+                <TableColumn>任务量</TableColumn>
+                <TableColumn align="end">占用时间</TableColumn>
+              </TableHeader>
+              <TableBody items={overview} emptyContent={<EmptyState text="暂无队列数据" />}>
+                {(row: QueueOverviewRow) => (
+                  <TableRow key={row.key}>
+                    <TableCell><span className="text-default-600">{row.label}</span></TableCell>
+                    <TableCell>
+                      <span className={`font-mono ${row.exhaustedCount > 0 ? 'text-danger-600' : 'text-default-500'}`} title={row.exhaustedCount > 0 ? `${row.exhaustedCount} 个已达重试上限` : undefined}>
+                        {row.queuedCount + row.retryingCount + row.exhaustedCount}
+                      </span>
+                    </TableCell>
+                    <TableCell><span className="font-mono text-default-500">{row.successLastHour}</span></TableCell>
+                    <TableCell><span className="font-mono text-default-500 block text-right">{formatWait(row.oldestWaitMs)}</span></TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
           </div>
         </CardBody>
       </Card>

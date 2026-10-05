@@ -383,6 +383,7 @@ public class TaskQueueServiceImpl extends ServiceImpl<TaskQueueMapper, TaskQueue
             Set<String> types = new HashSet<>(java.util.Arrays.asList(category[2].split(",")));
             long queued = 0, retrying = 0, exhausted = 0, successLastHour = 0;
             Long lastActive = null;
+            Long oldestPendingCreated = null;
             TaskQueue lastFailed = null;
             for (TaskQueue item : all) {
                 if (!types.contains(item.getTaskType())) {
@@ -398,6 +399,9 @@ public class TaskQueueServiceImpl extends ServiceImpl<TaskQueueMapper, TaskQueue
                         successLastHour++;
                     }
                     continue;
+                }
+                if (item.getCreatedTime() != null && (oldestPendingCreated == null || item.getCreatedTime() < oldestPendingCreated)) {
+                    oldestPendingCreated = item.getCreatedTime();
                 }
                 if (failures >= MAX_AUTO_RETRY) {
                     exhausted++;
@@ -417,6 +421,8 @@ public class TaskQueueServiceImpl extends ServiceImpl<TaskQueueMapper, TaskQueue
             row.put("retryingCount", retrying);
             row.put("exhaustedCount", exhausted);
             row.put("successLastHour", successLastHour);
+            // 占用时间：最早一条仍未完成的作业已经等待了多久，没有待处理作业则为 0
+            row.put("oldestWaitMs", oldestPendingCreated != null ? now - oldestPendingCreated : 0L);
             row.put("lastError", lastFailed != null ? lastFailed.getLastError() : null);
             row.put("lastActiveTime", lastActive);
             rows.add(row);

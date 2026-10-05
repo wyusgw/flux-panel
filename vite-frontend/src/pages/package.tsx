@@ -274,7 +274,7 @@ export default function PackagePlanPage() {
           <div className="flex gap-2">
             {selectedIds.length > 0 && <Button size="sm" color="danger" variant="flat" onPress={() => setBatchDeleteModalOpen(true)}>批量删除（{selectedIds.length}）</Button>}
             <Button size="sm" variant="bordered" onPress={loadData} isDisabled={loading}>刷新</Button>
-            <Button size="sm" color="default" onPress={handleAdd}>添加套餐</Button>
+            <Button size="sm" color="primary" onPress={handleAdd}>添加套餐</Button>
           </div>
         </CardHeader>
         <CardBody className="p-0">

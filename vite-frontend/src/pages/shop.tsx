@@ -350,7 +350,7 @@ export default function ShopPage() {
                 <p className="text-small text-default-600">购买成功</p>
               </ModalBody>
               <ModalFooter>
-                <Button color="default" onPress={onClose}>知道了</Button>
+                <Button color="primary" onPress={onClose}>知道了</Button>
               </ModalFooter>
             </>
           )}

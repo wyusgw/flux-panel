@@ -525,7 +525,7 @@ export default function UserPage() {
               <span className="text-xs text-default-500">共 {users.length} 位用户</span>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <Button size="sm" color="default" onPress={handleAdd} startContent={<UserIcon className="w-4 h-4" />}>
+              <Button size="sm" color="primary" onPress={handleAdd} startContent={<UserIcon className="w-4 h-4" />}>
                 添加用户
               </Button>
               <Input autoComplete="off"

@@ -656,7 +656,7 @@ export default function DeviceGroupPage() {
           <div className="flex gap-2">
             {selectedGroupIds.length > 0 && <Button size="sm" color="danger" variant="flat" onPress={() => setBatchDeleteModalOpen(true)}>批量删除（{selectedGroupIds.length}）</Button>}
             <Button size="sm" variant="bordered" onPress={loadData}>刷新</Button>
-            <Button size="sm" color="default" onPress={handleAdd}>添加设备</Button>
+            <Button size="sm" color="primary" onPress={handleAdd}>添加设备</Button>
           </div>
         </CardHeader>
         <CardBody className="p-0"><Table removeWrapper aria-label="设备列表" selectionMode="multiple" selectedKeys={selectedKeys} onSelectionChange={setSelectedKeys} disabledKeys={orphanNodes.map(node => `node-${node.id}`)} classNames={{ base: "w-full", table: "w-full management-table-selectable", th: "management-table-heading", td: "management-table-cell" }}>
@@ -1005,7 +1005,7 @@ export default function DeviceGroupPage() {
                 </div>
               </ModalBody>
               <ModalFooter>
-                <Button onPress={onClose}>知道了</Button>
+                <Button color="primary" onPress={onClose}>知道了</Button>
               </ModalFooter>
             </>
           )}

@@ -375,19 +375,25 @@ export default function NodeProbePage() {
           <Button size="sm" variant="flat" color="default" onPress={() => navigate(admin ? '/admin/dashboard' : '/dashboard')} startContent={<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l9-9 9 9M5 10v10a1 1 0 001 1h4a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1h4a1 1 0 001-1V10" /></svg>}>
             返回主页
           </Button>
+        </div>
+        <div className="flex gap-2 items-center">
           {admin && (
             <Button
               size="sm"
               variant={viewAsUser ? 'solid' : 'flat'}
               color="default"
               onPress={() => setViewAsUser(v => !v)}
-              startContent={<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7h13M17 7l-3-3M17 7l-3 3M20 17H7M7 17l3-3M7 17l3 3" /></svg>}
+              startContent={viewAsUser ? (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 4.5-3 8.2-7 10-4-1.8-7-5.5-7-10V6l7-3z" /><path d="M9 12l2 2 4-4" /></svg>
+              ) : (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" /><path strokeLinecap="round" d="M4.5 20a7.5 7.5 0 0115 0" /></svg>
+              )}
             >
               {viewAsUser ? '返回管理员视角' : '切换视角'}
             </Button>
           )}
+          <ThemeSwitch />
         </div>
-        <div className="flex gap-2 items-center"><ThemeSwitch /></div>
       </header>
 
       <div className="probe-content">

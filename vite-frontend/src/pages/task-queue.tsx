@@ -16,7 +16,7 @@ import toast from 'react-hot-toast';
 
 import { EmptyState } from "@/components/empty-state";
 import { ConfirmDialog } from "@/components/confirm-dialog";
-import { getTaskQueueList, getTaskQueueHealth, getTaskQueueErrorLogs, retryTaskQueue, deleteTaskQueue } from "@/api";
+import { getTaskQueueList, getTaskQueueHealth, getTaskQueueOverview, getTaskQueueErrorLogs, retryTaskQueue, deleteTaskQueue } from "@/api";
 
 interface TaskQueueItem {
   id: number;
@@ -40,10 +40,26 @@ interface TaskErrorLogItem {
   createdTime: number;
 }
 
+interface QueueOverviewRow {
+  key: string;
+  label: string;
+  queuedCount: number;
+  retryingCount: number;
+  exhaustedCount: number;
+  successLastHour: number;
+  lastError: string | null;
+  lastActiveTime: number | null;
+}
+
 interface TaskQueueHealth {
   running: boolean;
   serviceStartTime: number;
   lastSweepTime: number | null;
+  queuedCount: number;
+  retryingCount: number;
+  exhaustedCount: number;
+  successLastHour: number;
+  maxAutoRetry: number;
   errorLogCount: number;
   errorLogRetentionDays: number;
 }
@@ -63,12 +79,22 @@ const TASK_TYPE_COLORS: Record<string, "primary" | "secondary" | "success" | "wa
   FORWARD_SYNC: "primary",
   TELEGRAM_NOTIFY: "secondary",
   USER_FLOW_RECORD: "success",
-  NODE_FLOW_RECORD: "warning"
+  NODE_FLOW_RECORD: "warning",
+  STATISTICS_FLOW: "default"
 };
 
-// 需与后端 TaskQueueServiceImpl.MAX_AUTO_RETRY 保持一致：超过这个次数后不再自动重试，仅供手动处理
-const AUTO_RETRY_LIMIT = 20;
-const HOUR_MS = 60 * 60 * 1000;
+// 自动重试上限以后端 health.maxAutoRetry 为准，加载前先用该默认值
+const DEFAULT_AUTO_RETRY_LIMIT = 20;
+
+type QueueFilter = 'pending' | 'success' | 'all';
+
+// 任务展示状态：由真实执行结果推导，未失败过的排队任务不显示为"待重试"
+const getItemState = (item: TaskQueueItem, limit: number): { label: string; color: 'default' | 'success' | 'warning' | 'danger' } => {
+  if (item.status === 'SUCCESS') return { label: '成功', color: 'success' };
+  if (item.retryCount >= limit) return { label: '已达重试上限', color: 'danger' };
+  if (item.retryCount > 0) return { label: '重试中', color: 'warning' };
+  return { label: '排队中', color: 'default' };
+};
 
 const STAT_TONE_CLASS: Record<string, string> = {
   warning: 'text-warning-600',
@@ -115,6 +141,7 @@ export default function TaskQueuePage() {
   const [loading, setLoading] = useState(true);
   const [items, setItems] = useState<TaskQueueItem[]>([]);
   const [health, setHealth] = useState<TaskQueueHealth | null>(null);
+  const [overview, setOverview] = useState<QueueOverviewRow[]>([]);
   const [retryingId, setRetryingId] = useState<number | null>(null);
 
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
@@ -124,7 +151,7 @@ export default function TaskQueuePage() {
   const [detailModalOpen, setDetailModalOpen] = useState(false);
   const [detailItem, setDetailItem] = useState<TaskQueueItem | null>(null);
 
-  const [currentJobsModalOpen, setCurrentJobsModalOpen] = useState(false);
+  const [filter, setFilter] = useState<QueueFilter>('pending');
 
   const [errorLogsModalOpen, setErrorLogsModalOpen] = useState(false);
   const [errorLogs, setErrorLogs] = useState<TaskErrorLogItem[]>([]);
@@ -151,7 +178,10 @@ export default function TaskQueuePage() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [listRes, healthRes] = await Promise.all([getTaskQueueList(), getTaskQueueHealth()]);
+      const [listRes, healthRes, overviewRes] = await Promise.all([getTaskQueueList(), getTaskQueueHealth(), getTaskQueueOverview()]);
+      if (overviewRes.code === 0) {
+        setOverview(overviewRes.data || []);
+      }
       if (listRes.code === 0) {
         setItems(listRes.data || []);
       } else {
@@ -172,23 +202,18 @@ export default function TaskQueuePage() {
     loadData();
   }, [loadData]);
 
-  const stats = useMemo(() => {
-    let pendingTotal = 0;
-    let processedLastHour = 0;
-    const now = Date.now();
-    for (const item of items) {
-      // 更新时间落在近一小时内，代表这条任务近一小时内被重试/处理过一次（不论结果是成功还是仍失败）
-      if (now - item.updatedTime <= HOUR_MS) processedLastHour++;
-      if (item.status === 'SUCCESS') continue;
-      pendingTotal++;
-    }
-    return { total: pendingTotal, processedLastHour };
-  }, [items]);
+  const retryLimit = health?.maxAutoRetry ?? DEFAULT_AUTO_RETRY_LIMIT;
 
-  const pendingItems = useMemo(() =>
-    items.filter(item => item.status !== 'SUCCESS').sort((a, b) => b.updatedTime - a.updatedTime),
-    [items]
-  );
+  const pendingCount = (health?.queuedCount ?? 0) + (health?.retryingCount ?? 0) + (health?.exhaustedCount ?? 0);
+
+  const visibleItems = useMemo(() => {
+    const filtered = items.filter(item => {
+      if (filter === 'pending') return item.status !== 'SUCCESS';
+      if (filter === 'success') return item.status === 'SUCCESS';
+      return true;
+    });
+    return filtered.sort((a, b) => b.updatedTime - a.updatedTime);
+  }, [items, filter]);
 
   const handleRetry = async (item: TaskQueueItem) => {
     setRetryingId(item.id);
@@ -254,11 +279,52 @@ export default function TaskQueuePage() {
         <h1 className="text-xl font-semibold">队列监控</h1>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
         <HealthCard health={health} />
-        <StatCard label="当前作业量" value={stats.total} onPress={() => setCurrentJobsModalOpen(true)} />
-        <StatCard label="近一小时处理量" value={stats.processedLastHour} />
+        <StatCard label="待处理" value={pendingCount} />
+        <StatCard label="近一小时成功" value={health?.successLastHour ?? 0} tone="success" />
         <StatCard label={`${health?.errorLogRetentionDays ?? 7}日内报错数量`} value={health?.errorLogCount ?? 0} tone="warning" onPress={openErrorLogs} />
+      </div>
+
+      <Card className="shadow-sm border border-default-200 mb-4">
+        <CardBody className="p-0">
+          <div className="px-4 pt-3 pb-2">
+            <h2 className="text-sm font-semibold">当前作业详情</h2>
+          </div>
+          <div className="divide-y divide-default-200">
+            {overview.map((row) => {
+              const pending = row.queuedCount + row.retryingCount + row.exhaustedCount;
+              return (
+                <div key={row.key} className="px-4 py-3 flex flex-col md:flex-row md:items-center gap-2 md:gap-4">
+                  <div className="md:w-40 flex items-center gap-2">
+                    <span className={`inline-block w-2 h-2 rounded-full ${row.exhaustedCount > 0 ? 'bg-danger-500' : row.retryingCount > 0 ? 'bg-warning-500' : 'bg-success-500'}`} />
+                    <span className="text-sm font-medium text-foreground">{row.label}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 flex-wrap md:w-80">
+                    <Chip size="sm" variant="flat" color={pending > 0 ? 'primary' : 'default'}>待处理 {pending}</Chip>
+                    <Chip size="sm" variant="flat" color={row.retryingCount > 0 ? 'warning' : 'default'}>重试中 {row.retryingCount}</Chip>
+                    <Chip size="sm" variant="flat" color={row.exhaustedCount > 0 ? 'danger' : 'default'}>已达上限 {row.exhaustedCount}</Chip>
+                    <Chip size="sm" variant="flat" color={row.successLastHour > 0 ? 'success' : 'default'}>近1小时成功 {row.successLastHour}</Chip>
+                  </div>
+                  <div className="flex-1 min-w-0 text-xs text-default-500">
+                    {row.lastError ? <span className="line-clamp-1 break-all text-danger-600">{row.lastError}</span> : <span>最近活动：{row.lastActiveTime ? formatDate(row.lastActiveTime) : '暂无'}</span>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </CardBody>
+      </Card>
+
+      <div className="flex items-center gap-2 mb-3 flex-wrap">
+        {([['pending', '待处理'], ['success', '已完成'], ['all', '全部']] as [QueueFilter, string][]).map(([key, label]) => (
+          <Button key={key} size="sm" variant={filter === key ? 'solid' : 'flat'} color={filter === key ? 'primary' : 'default'} onPress={() => setFilter(key)}>
+            {label}
+          </Button>
+        ))}
+        {(health?.exhaustedCount ?? 0) > 0 && (
+          <Chip size="sm" variant="flat" color="danger">{health?.exhaustedCount} 个已达重试上限，需手动处理</Chip>
+        )}
       </div>
 
       <Card className="shadow-sm border border-default-200">
@@ -279,7 +345,7 @@ export default function TaskQueuePage() {
                 <TableColumn>更新时间</TableColumn>
                 <TableColumn align="end">操作</TableColumn>
               </TableHeader>
-              <TableBody items={items} emptyContent={<EmptyState text="暂无待重试的任务，一切正常" />}>
+              <TableBody items={visibleItems} emptyContent={<EmptyState text={filter === 'success' ? '暂无已完成的任务' : '暂无待处理的任务，一切正常'} />}>
                 {(item: TaskQueueItem) => (
                   <TableRow key={item.id}>
                     <TableCell>
@@ -294,13 +360,7 @@ export default function TaskQueuePage() {
                       {item.nodeNames && item.nodeNames.length > 0 ? item.nodeNames.join(' / ') : '—'}
                     </TableCell>
                     <TableCell>
-                      {item.status === 'SUCCESS' ? (
-                        <Chip size="sm" variant="flat" color="success">成功</Chip>
-                      ) : item.retryCount >= AUTO_RETRY_LIMIT ? (
-                        <Chip size="sm" variant="flat" color="danger">已达重试上限</Chip>
-                      ) : (
-                        <Chip size="sm" variant="flat" color="default">待重试</Chip>
-                      )}
+                      <Chip size="sm" variant="flat" color={getItemState(item, retryLimit).color}>{getItemState(item, retryLimit).label}</Chip>
                     </TableCell>
                     <TableCell>
                       <Chip size="sm" variant="flat" color={item.retryCount > 0 ? 'warning' : 'default'}>{item.retryCount}</Chip>
@@ -356,13 +416,7 @@ export default function TaskQueuePage() {
                   <div className="space-y-3 text-sm">
                     <div className="flex items-center gap-2">
                       <Chip size="sm" variant="flat" color={TASK_TYPE_COLORS[detailItem.taskType] || 'default'}>{detailItem.taskTypeLabel}</Chip>
-                      {detailItem.status === 'SUCCESS' ? (
-                        <Chip size="sm" variant="flat" color="success">成功</Chip>
-                      ) : detailItem.retryCount >= AUTO_RETRY_LIMIT ? (
-                        <Chip size="sm" variant="flat" color="danger">已达重试上限</Chip>
-                      ) : (
-                        <Chip size="sm" variant="flat" color="default">待重试</Chip>
-                      )}
+                      <Chip size="sm" variant="flat" color={getItemState(detailItem, retryLimit).color}>{getItemState(detailItem, retryLimit).label}</Chip>
                     </div>
 
                     <div>
@@ -404,76 +458,6 @@ export default function TaskQueuePage() {
               <ModalFooter>
                 <Button variant="light" onPress={onClose}>关闭</Button>
               </ModalFooter>
-            </>
-          )}
-        </ModalContent>
-      </Modal>
-
-      <Modal isOpen={currentJobsModalOpen} onOpenChange={setCurrentJobsModalOpen} size="3xl" scrollBehavior="inside" backdrop="blur" placement="center">
-        <ModalContent>
-          {() => (
-            <>
-              <ModalHeader className="flex flex-col gap-1">
-                <h2 className="text-lg font-bold">当前作业详情</h2>
-                <span className="text-small text-default-500 font-normal">共 {pendingItems.length} 个待处理作业</span>
-              </ModalHeader>
-              <ModalBody className="pb-6">
-                {pendingItems.length === 0 ? (
-                  <div className="text-xs text-default-400 border border-default-200 rounded-lg px-4 py-3">当前没有待处理的作业，一切正常</div>
-                ) : (
-                  <div className="space-y-3">
-                    {pendingItems.map((item) => (
-                      <Card key={item.id} className="shadow-sm border border-default-200">
-                        <CardBody className="p-4">
-                          <div className="flex items-start justify-between gap-3 flex-wrap">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="text-xs text-default-400">#{item.id}</span>
-                              <Chip size="sm" variant="flat" color={TASK_TYPE_COLORS[item.taskType] || 'default'}>{item.taskTypeLabel}</Chip>
-                              {item.retryCount >= AUTO_RETRY_LIMIT ? (
-                                <Chip size="sm" variant="flat" color="danger">已达重试上限</Chip>
-                              ) : (
-                                <Chip size="sm" variant="flat" color="default">待重试</Chip>
-                              )}
-                              <Chip size="sm" variant="flat" color={item.retryCount > 0 ? 'warning' : 'default'}>重试 {item.retryCount} 次</Chip>
-                            </div>
-                            <div className="flex gap-2">
-                              <Button size="sm" variant="flat" color="default" isLoading={retryingId === item.id} onPress={() => handleRetry(item)}>
-                                立即重试
-                              </Button>
-                              <Button size="sm" variant="light" color="danger" isIconOnly onPress={() => handleDelete(item)}>
-                                <IconDelete />
-                              </Button>
-                            </div>
-                          </div>
-
-                          <div className="mt-3 grid sm:grid-cols-2 gap-3 text-sm">
-                            <div>
-                              <p className="text-xs text-default-500 mb-1">任务内容</p>
-                              <p className="text-foreground whitespace-pre-wrap break-all">{item.summary || '—'}</p>
-                            </div>
-                            <div>
-                              <p className="text-xs text-default-500 mb-1">关联节点</p>
-                              <p className="text-foreground">{item.nodeNames && item.nodeNames.length > 0 ? item.nodeNames.join(' / ') : '—'}</p>
-                            </div>
-                            <div>
-                              <p className="text-xs text-default-500 mb-1">创建时间</p>
-                              <p className="text-foreground">{formatDate(item.createdTime)}</p>
-                            </div>
-                            <div>
-                              <p className="text-xs text-default-500 mb-1">最近更新</p>
-                              <p className="text-foreground">{formatDate(item.updatedTime)}</p>
-                            </div>
-                            <div className="sm:col-span-2">
-                              <p className="text-xs text-default-500 mb-1">最近错误</p>
-                              <p className="text-foreground whitespace-pre-wrap break-all">{item.lastError || '—'}</p>
-                            </div>
-                          </div>
-                        </CardBody>
-                      </Card>
-                    ))}
-                  </div>
-                )}
-              </ModalBody>
             </>
           )}
         </ModalContent>

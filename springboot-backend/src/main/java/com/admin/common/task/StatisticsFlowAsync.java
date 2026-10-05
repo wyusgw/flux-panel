@@ -2,11 +2,11 @@ package com.admin.common.task;
 
 
 import com.admin.entity.StatisticsFlow;
-import com.admin.entity.User;
 import com.admin.entity.UserDailyRawFlow;
 import com.admin.service.StatisticsFlowService;
 import com.admin.service.UserDailyRawFlowService;
-import com.admin.service.UserService;
+import com.admin.service.TaskQueueService;
+import com.alibaba.fastjson.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Configuration;
@@ -18,9 +18,8 @@ import javax.annotation.Resource;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Date;
-import java.util.List;
 
 @Slf4j
 @Configuration
@@ -28,7 +27,7 @@ import java.util.List;
 public class StatisticsFlowAsync {
 
     @Resource
-    UserService userService;
+    TaskQueueService taskQueueService;
 
     @Resource
     StatisticsFlowService statisticsFlowService;
@@ -61,43 +60,15 @@ public class StatisticsFlowAsync {
 
 
 
-        List<User> list = userService.list();
-        List<StatisticsFlow> statisticsFlowList = new ArrayList<>();
+        // 实际的统计计算交给任务队列：失败可重试，并能在队列监控里看到执行情况
+        JSONObject payload = new JSONObject();
+        payload.put("time", time);
+        payload.put("hour", hourString);
+        payload.put("summary", "每小时流量统计 " + hourString);
+        Long queueId = taskQueueService.enqueue("STATISTICS_FLOW", String.valueOf(time), payload.toJSONString(),
+                Collections.emptyList(), null);
+        taskQueueService.dispatch(queueId);
 
-        for (User user : list) {
-            long currentFlow = user.getInFlow() + user.getOutFlow();
-
-            // 从数据库获取上一次记录
-            StatisticsFlow lastFlowRecord = statisticsFlowService.getOne(
-                    new LambdaQueryWrapper<StatisticsFlow>()
-                            .eq(StatisticsFlow::getUserId, user.getId()) 
-                            .orderByDesc(StatisticsFlow::getId)         
-                            .last("LIMIT 1")                     
-            );
-
-            long currentTotalFlow = currentFlow;
-            long incrementFlow = currentTotalFlow;
-            
-            if (lastFlowRecord != null) {
-                long lastTotalFlow = lastFlowRecord.getTotalFlow();
-                incrementFlow = currentTotalFlow - lastTotalFlow;
-                
-                if (incrementFlow < 0) {
-                    incrementFlow = currentTotalFlow; 
-                }
-            }
-
-            StatisticsFlow statisticsFlow = new StatisticsFlow();
-            statisticsFlow.setUserId(user.getId());
-            statisticsFlow.setFlow(incrementFlow);        
-            statisticsFlow.setTotalFlow(currentTotalFlow); 
-            statisticsFlow.setTime(hourString);
-            statisticsFlow.setCreatedTime(time);
-
-            statisticsFlowList.add(statisticsFlow);
-        }
-
-        statisticsFlowService.saveBatch(statisticsFlowList);
     }
 
 }

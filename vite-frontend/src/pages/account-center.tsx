@@ -495,8 +495,6 @@ export default function AccountCenterPage() {
         <ModalContent>
           <ModalHeader>推送设置</ModalHeader>
           <ModalBody className="space-y-4">
-            <p className="text-xs text-default-500">通道：Telegram（需先完成账号关联）</p>
-
             {isAdminUser ? (
               <>
                 <div className="space-y-2">

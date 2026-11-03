@@ -1895,7 +1895,7 @@ export default function ForwardPage() {
                           <Select
                             size="sm"
                             labelPlacement="outside-top"
-                            label="负载均衡策略"
+                            label={<HelpTooltip content={"多个目标地址时，决定新连接转发到哪一个\n随机/轮询：可设权重\nip_hash：同一来源 IP 固定落到同一目标\n最小连接数：选当前连接最少的\n故障转移：优先第一个，失败才切换"}>负载均衡策略</HelpTooltip>}
                             placeholder="请选择负载均衡策略"
                             selectedKeys={[form.strategy]}
                             onSelectionChange={(keys) => {
@@ -1904,7 +1904,16 @@ export default function ForwardPage() {
                             }}
                             variant="bordered"
                             isDisabled={getAddressCount(form.remoteAddr) <= 1}
-                            description={getAddressCount(form.remoteAddr) <= 1 ? '目标地址填写两个或以上时才可选择' : undefined}
+                            description={getAddressCount(form.remoteAddr) <= 1 ? (
+                              <span className="inline-flex items-center gap-1">
+                                <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" viewBox="0 0 24 24" aria-hidden="true">
+                                  <circle cx="12" cy="12" r="9" />
+                                  <path d="M12 7.5v5.5" />
+                                  <circle cx="12" cy="16.5" r="0.9" fill="currentColor" stroke="none" />
+                                </svg>
+                                目标地址填写两个或以上时才可选择
+                              </span>
+                            ) : undefined}
                           >
                             <SelectItem key="rand" textValue="随机">随机</SelectItem>
                             <SelectItem key="round" textValue="轮询">轮询</SelectItem>

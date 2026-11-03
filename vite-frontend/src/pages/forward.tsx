@@ -383,17 +383,6 @@ export default function ForwardPage() {
   const [entryMode, setEntryMode] = useState<'device' | 'tunnel'>('device');
   const [deviceGroups, setDeviceGroups] = useState<DeviceGroupOption[]>([]);
 
-  const loadDeviceGroups = async () => {
-    try {
-      const res = await getDeviceGroupList();
-      if (res.code === 0) {
-        setDeviceGroups(res.data || []);
-      }
-    } catch (error) {
-      console.error('获取设备组列表失败:', error);
-    }
-  };
-
   // 加载套餐流量/到期/规则数上限，用于顶部信息条
   const loadPackageInfo = async () => {
     try {
@@ -424,7 +413,6 @@ export default function ForwardPage() {
   useEffect(() => {
     loadData();
     loadForwardGroups();
-    loadDeviceGroups();
     loadPackageInfo();
   }, []);
 
@@ -493,7 +481,7 @@ export default function ForwardPage() {
     setRefreshing(true);
     const minSpin = new Promise(resolve => setTimeout(resolve, 700));
     try {
-      await Promise.all([loadData(false), loadDeviceGroups(), minSpin]);
+      await Promise.all([loadData(false), minSpin]);
     } finally {
       setRefreshing(false);
     }
@@ -503,10 +491,19 @@ export default function ForwardPage() {
   const loadData = async (lod = true) => {
     setLoading(lod);
     try {
-      const [forwardsRes, tunnelsRes] = await Promise.all([
+      // 入口/出口的名称、在线状态来自设备组列表，必须和规则列表一起取回再显示，
+      // 否则规则先出来、设备组还没到时入口/出口那两列是空的，要点刷新才补上
+      const [forwardsRes, tunnelsRes, deviceGroupsRes] = await Promise.all([
         getForwardList(),
-        userTunnel()
+        userTunnel(),
+        getDeviceGroupList()
       ]);
+
+      if (deviceGroupsRes.code === 0) {
+        setDeviceGroups(deviceGroupsRes.data || []);
+      } else {
+        console.warn('获取设备组列表失败:', deviceGroupsRes.msg);
+      }
       
       if (forwardsRes.code === 0) {
         const forwardsData = forwardsRes.data?.map((forward: any) => ({
@@ -530,6 +527,22 @@ export default function ForwardPage() {
       setLoading(false);
     }
   };
+
+  // 自动刷新：页面重新回到前台（切换标签页、从其他窗口切回）时立即刷新一次，停留在页面上时每 30 秒静默刷新一次，
+  // 规则状态、入口/出口设备是否在线就不会停在旧数据上，不用再手动点刷新；刷新过程不切换到整页加载状态
+  const loadDataRef = useRef(loadData);
+  loadDataRef.current = loadData;
+  useEffect(() => {
+    const refreshIfVisible = () => {
+      if (document.visibilityState === 'visible') loadDataRef.current(false);
+    };
+    const timer = window.setInterval(refreshIfVisible, 30000);
+    document.addEventListener('visibilitychange', refreshIfVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', refreshIfVisible);
+    };
+  }, []);
 
   // 表单验证
   const validateForm = (): boolean => {

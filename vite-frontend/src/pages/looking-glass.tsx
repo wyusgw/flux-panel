@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Card, CardBody } from "@heroui/card";
+import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Button } from "@heroui/button";
 import { Input } from "@heroui/input";
 import { Select, SelectItem } from "@heroui/select";
@@ -153,26 +153,25 @@ export default function LookingGlassPage() {
     );
   }
 
+  // 与仪表盘、队列监控一致：不单独放页面标题，两张卡片直接开头，卡片标题栏（小号粗体标题 + 分隔线）说明用途
   return (
     <div className="management-page px-4 lg:px-6 py-5 lg:py-6">
-      <div className="mb-4">
-        <h1 className="text-base font-semibold text-foreground">网络诊断</h1>
-        <p className="mt-1 text-xs text-default-500">
-          从指定节点对目标地址发起 Ping、Traceroute、MTR 或 DNS 查询等诊断，用于排查线路故障。
-        </p>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-[380px_minmax(0,1fr)] gap-4 items-start">
-        <Card className="management-table-card">
-          <CardBody className="p-4 space-y-4">
+      <div className="max-w-[1600px] mx-auto grid grid-cols-1 lg:grid-cols-[380px_minmax(0,1fr)] gap-5 items-start">
+        <Card className="management-table-card" shadow="none">
+          <CardHeader className="px-6 py-4 border-b border-default-100">
+            <h2 className="text-sm font-semibold">发起诊断</h2>
+          </CardHeader>
+          <CardBody className="px-6 py-5 space-y-4">
             {nodes.length === 0 ? (
               <EmptyState text="暂无可用节点" />
             ) : (
               <>
                 <Select
                   size="sm"
+                  labelPlacement="outside-top"
                   label="发起节点"
                   placeholder="请选择发起诊断的节点"
+                  listboxProps={{ emptyContent: <EmptyState compact /> }}
                   selectedKeys={nodeId ? [nodeId.toString()] : []}
                   onSelectionChange={(keys) => {
                     const selectedKey = Array.from(keys)[0] as string;
@@ -200,7 +199,9 @@ export default function LookingGlassPage() {
 
                 <Select
                   size="sm"
+                  labelPlacement="outside-top"
                   label="诊断类型"
+                  listboxProps={{ emptyContent: <EmptyState compact /> }}
                   selectedKeys={[type]}
                   onSelectionChange={(keys) => {
                     const selectedKey = Array.from(keys)[0] as DiagnosisType;
@@ -221,6 +222,8 @@ export default function LookingGlassPage() {
 
                 <Input
                   size="sm"
+                  labelPlacement="outside-top"
+                  autoComplete="off"
                   label="目标地址"
                   placeholder={TARGET_PLACEHOLDERS[type]}
                   value={target}
@@ -230,31 +233,38 @@ export default function LookingGlassPage() {
                   onKeyDown={(e) => { if (e.key === 'Enter') handleRun(); }}
                 />
 
-                <Button color="primary" onPress={handleRun} isLoading={running} fullWidth>
-                  开始诊断
-                </Button>
+                <div className="flex justify-end pt-1">
+                  <Button size="sm" color="primary" onPress={handleRun} isLoading={running}>
+                    开始诊断
+                  </Button>
+                </div>
               </>
             )}
           </CardBody>
         </Card>
 
-        <Card className="management-table-card lg:min-h-[420px]">
-          <CardBody className="p-4">
+        <Card className="management-table-card lg:min-h-[420px]" shadow="none">
+          <CardHeader className="px-6 py-4 border-b border-default-100 flex items-center justify-between gap-3">
+            <h2 className="text-sm font-semibold min-w-0 truncate">
+              诊断结果{result ? `：${result.nodeName} → ${result.target}` : ''}
+            </h2>
+            {result && (
+              <Chip size="sm" variant="light" color={result.data.success ? 'success' : 'danger'}>
+                {result.data.success ? '成功' : '失败'}
+              </Chip>
+            )}
+          </CardHeader>
+          <CardBody className="px-6 py-5">
             {result ? (
-              <div>
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-sm font-semibold text-foreground">
-                    {result.nodeName} → {result.target}
-                  </span>
-                  <Chip size="sm" variant="light" color={result.data.success ? 'success' : 'danger'}>
-                    {result.data.success ? '成功' : '失败'}
-                  </Chip>
-                </div>
-                {result.type === 'ping' ? renderPingResult(result.data) : renderRawOutputResult(result.data)}
+              result.type === 'ping' ? renderPingResult(result.data) : renderRawOutputResult(result.data)
+            ) : running ? (
+              <div className="flex items-center justify-center gap-3 h-full min-h-[320px]">
+                <Spinner size="sm" />
+                <span className="text-default-600">正在诊断...</span>
               </div>
             ) : (
-              <div className="flex items-center justify-center h-full min-h-[380px]">
-                <EmptyState text={running ? '正在诊断...' : '填写左侧信息并开始诊断，结果将显示在这里'} />
+              <div className="flex items-center justify-center h-full min-h-[320px]">
+                <EmptyState text="填写左侧信息并开始诊断，结果将显示在这里" />
               </div>
             )}
           </CardBody>

@@ -276,3 +276,67 @@ td.probe-clickable:hover { text-decoration: underline; text-underline-offset: 2p
 .forward-table { min-width: 760px; }
 .tunnel-table { min-width: 680px; }
 @media (max-width: 767px) { .forward-page { padding-right: 12px; } }
+
+/* ===== 透明主题（站点设置「主题策略」选择透明主题且配置了背景图时，<html> 上带 theme-transparent 类）=====
+   背景图铺满整个页面并固定不随滚动，页面外壳改为透明；顶栏、侧栏、卡片、表格表头换成半透明底 + 背景模糊，
+   弹窗和下拉浮层保持不透明，避免文字压在图案上看不清。--theme-bg-image 由 StyleThemeProvider 按横竖屏写入 */
+html.theme-transparent {
+  --surface-glass: rgb(255 255 255 / 0.62);
+  --surface-glass-strong: rgb(255 255 255 / 0.78);
+  --surface-glass-border: rgb(255 255 255 / 0.5);
+  --surface-glass-head: rgb(255 255 255 / 0.45);
+}
+html.dark.theme-transparent {
+  --surface-glass: rgb(18 19 21 / 0.6);
+  --surface-glass-strong: rgb(18 19 21 / 0.78);
+  --surface-glass-border: rgb(255 255 255 / 0.1);
+  --surface-glass-head: rgb(0 0 0 / 0.3);
+}
+
+html.theme-transparent body {
+  background-color: transparent !important;
+  background-image: var(--theme-bg-image) !important;
+  background-position: center !important;
+  background-size: cover !important;
+  background-repeat: no-repeat !important;
+  background-attachment: fixed !important;
+}
+
+/* 页面外壳与内容区透明，让背景图透出来 */
+html.theme-transparent #root,
+html.theme-transparent .admin-shell,
+html.theme-transparent div.min-h-screen,
+html.theme-transparent main,
+html.theme-transparent .probe-page {
+  background: transparent !important;
+}
+
+/* 顶栏、侧栏、卡片：半透明 + 背景模糊 */
+html.theme-transparent header,
+html.theme-transparent aside,
+html.theme-transparent .management-table-card,
+html.theme-transparent .settings-panel,
+html.theme-transparent .dashboard-panel,
+html.theme-transparent .bg-content1:not([role="dialog"]) {
+  background: var(--surface-glass) !important;
+  border-color: var(--surface-glass-border) !important;
+  -webkit-backdrop-filter: blur(14px) saturate(1.15);
+  backdrop-filter: blur(14px) saturate(1.15);
+}
+
+/* 侧栏里展开的「管理」子菜单原本有自己的纯色底，也改成半透明 */
+html.theme-transparent aside ul {
+  background: var(--surface-glass-head) !important;
+}
+
+/* 表格表头比卡片底再深/浅一点，保持层次 */
+html.theme-transparent .management-table-heading {
+  background: var(--surface-glass-head) !important;
+}
+
+/* 弹窗与下拉浮层保持较高的不透明度 */
+html.theme-transparent [role="dialog"] {
+  background: var(--surface-glass-strong) !important;
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
+}

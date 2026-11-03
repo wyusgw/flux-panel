@@ -16,6 +16,7 @@ import { getCachedConfigs, clearConfigCache, updateSiteConfig } from '@/config/s
 import { HelpTooltip } from '@/components/help-tooltip';
 import { DayOfMonthPicker } from '@/components/day-of-month-picker';
 import { EmptyState } from "@/components/empty-state";
+import { ToastWarningIcon } from '@/components/toast-icons';
 
 interface ConfigItem {
   key: string;
@@ -58,8 +59,9 @@ const CONFIG_ITEMS: ConfigItem[] = [
     key: 'ip',
     section: 'basic',
     label: '面板后端地址',
-    placeholder: '请输入面板后端IP:PORT',
-    description: '用于对接节点，格式 ip:port，填面板服务器公网 IP 和后端端口，不要套 CDN',
+    // 留空时自动使用当前访问面板的地址，输入框里只显示这个识别到的值
+    placeholder: typeof window !== 'undefined' ? window.location.host : '',
+    description: '用于对接节点，格式 ip:port。留空则自动使用你当前访问面板的地址生成节点安装命令；面板套了 CDN 或节点需要走其他地址时再手动填写面板服务器的公网 IP 和后端端口，不要套 CDN',
     type: 'input'
   },
   {
@@ -157,35 +159,25 @@ const CONFIG_ITEMS: ConfigItem[] = [
     key: 'theme_policy',
     section: 'basic',
     label: '主题策略',
-    description: '决定用户端默认使用的明暗主题',
+    description: '决定用户端可以使用哪种主题：仅允许其中一种，或两种都允许、默认优先显示其中一种。使用透明主题需要先配置下方的背景图 URL',
     type: 'select',
     options: [
-      { label: '跟随系统', value: 'system' },
-      { label: '浅色主题', value: 'light' },
-      { label: '深色主题', value: 'dark' }
+      { label: '仅允许经典主题', value: 'classic_only' },
+      { label: '仅允许透明主题', value: 'transparent_only' },
+      { label: '优先显示经典主题', value: 'prefer_classic' },
+      { label: '优先显示透明主题', value: 'prefer_transparent' }
     ]
-  },
-  {
-    key: 'transparent_theme_enabled',
-    section: 'basic',
-    label: '透明主题',
-    description: '开启后允许在用户端使用透明主题背景',
-    type: 'switch'
   },
   {
     key: 'transparent_theme_landscape_url',
     section: 'basic',
-    label: '透明主题背景图 URL（横屏）',
-    placeholder: 'https://example.com/background-landscape.jpg',
-    description: '建议使用宽幅图片，适用于桌面与横屏设备',
+    label: '透明主题背景图 URL （横屏视角）',
     type: 'input'
   },
   {
     key: 'transparent_theme_portrait_url',
     section: 'basic',
-    label: '透明主题背景图 URL（竖屏）',
-    placeholder: 'https://example.com/background-portrait.jpg',
-    description: '建议使用直幅图片，适用于手机竖屏设备',
+    label: '透明主题背景图 URL （竖屏视角）',
     type: 'input'
   },
   {
@@ -411,6 +403,12 @@ export default function ConfigPage() {
       const response = await updateConfigs(configsToSave);
       if (response.code === 0) {
         toast.success('配置保存成功');
+        // 选了透明主题（或优先显示透明主题）却没配背景图：透明主题不会生效，明确提示，避免以为是保存失败
+        const policyValue = configs.theme_policy;
+        if ((policyValue === 'transparent_only' || policyValue === 'prefer_transparent')
+          && !(configs.transparent_theme_landscape_url || '').trim() && !(configs.transparent_theme_portrait_url || '').trim()) {
+          toast('还没有配置透明主题背景图 URL，透明主题暂时不会生效，将继续显示经典主题', { icon: <ToastWarningIcon />, duration: 6000 });
+        }
         
         // 清除所有配置缓存，强制下次重新获取
         clearConfigCache();
@@ -512,7 +510,12 @@ export default function ConfigPage() {
       case 'select':
         return (
           <Select
-            selectedKeys={configs[item.key] ? [configs[item.key]] : []}
+            // 没有配置过、或配置的是旧版本留下的取值（如主题策略原来的 system/light/dark）时，显示为第一个选项
+            selectedKeys={(() => {
+              const current = configs[item.key];
+              if (item.options?.some(option => option.value === current)) return [current];
+              return item.options?.length && item.key === 'theme_policy' ? [item.options[0].value] : current ? [current] : [];
+            })()}
             onSelectionChange={(keys) => {
               const selectedKey = Array.from(keys)[0] as string;
               if (selectedKey) {
@@ -599,11 +602,13 @@ export default function ConfigPage() {
           const items = CONFIG_ITEMS.filter(item => item.section === section.key && shouldShowItem(item));
           if (items.length === 0) return null;
           const sectionHasChanges = items.some(item => configs[item.key] !== originalConfigs[item.key]);
-          // 透明主题背景图 URL 两项不再作为独立的顶层配置行渲染，
-          // 而是收进「透明主题」开关下方的抽屉里，跟随开关一起展开/收起
-          const visibleItems = items.filter(item => item.key !== 'transparent_theme_landscape_url' && item.key !== 'transparent_theme_portrait_url' && item.type !== 'paymentChannels');
-          const transparentThemeChildren = CONFIG_ITEMS.filter(item => item.key === 'transparent_theme_landscape_url' || item.key === 'transparent_theme_portrait_url');
-          const transparentThemeOn = configs.transparent_theme_enabled === 'true';
+          // 只有主题策略选了透明主题（「仅允许透明主题」「优先显示透明主题」）时，才显示透明主题背景图 URL 两项；
+          // 没配置过或是旧版本留下的取值，按「仅允许经典主题」处理
+          const showTransparentUrls = configs.theme_policy === 'transparent_only' || configs.theme_policy === 'prefer_transparent';
+          const visibleItems = items.filter(item =>
+            item.type !== 'paymentChannels' &&
+            (showTransparentUrls || (item.key !== 'transparent_theme_landscape_url' && item.key !== 'transparent_theme_portrait_url'))
+          );
 
           // 一行配置：左边标签（有说明的带问号提示），右边控件；多行文本框独占整行，不显示左侧标签
           const renderRow = (item: ConfigItem) => item.type === 'textarea' ? (
@@ -650,18 +655,7 @@ export default function ConfigPage() {
                   </>
                 ) : (
                   <>
-                    {visibleItems.map((item) => (
-                      <div key={item.key}>
-                        {renderRow(item)}
-                        {item.key === 'transparent_theme_enabled' && (
-                          <div className={`grid transition-[grid-template-rows] duration-300 ease-in-out ${transparentThemeOn ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
-                            <div className="overflow-hidden">
-                              {transparentThemeChildren.map(renderRow)}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    ))}
+                    {visibleItems.map(renderRow)}
                   </>
                 )}
                 <div className="flex justify-end pt-3">

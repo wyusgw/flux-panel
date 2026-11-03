@@ -18,7 +18,8 @@ import (
 //  2. 容器特征文件（/.dockerenv、/run/.containerenv、/proc/1/environ、/proc/1/cgroup、OpenVZ、WSL）
 //  3. DMI 固件信息（/sys/class/dmi/id 下的厂商、产品名，能区分大多数虚拟机与云平台）
 //  4. gopsutil 的识别结果（作为 guest 时）
-//  5. CPU 的 hypervisor 标志位（能确定是虚拟机但不知道具体平台时返回 "vm"）
+//  5. kvm-clock 时钟源（KVM 虚拟机特有）
+//  6. CPU 的 hypervisor 标志位（能确定是虚拟机但不知道具体平台时返回 "vm"）
 func detectVirtualization(gopsutilSystem, gopsutilRole string) string {
 	if runtime.GOOS != "linux" {
 		if gopsutilSystem != "" && gopsutilRole == "guest" {
@@ -34,10 +35,18 @@ func detectVirtualization(gopsutilSystem, gopsutilRole string) string {
 		return v
 	}
 	if v := detectByDMI(); v != "" {
+		// 固件厂商写 QEMU 的机器绝大多数是 KVM 加速的虚拟机（纯 QEMU 软件模拟没有 kvm-clock），按 kvm 显示
+		if v == "qemu" && hasKVMClock() {
+			return "kvm"
+		}
 		return v
 	}
 	if gopsutilSystem != "" && gopsutilRole == "guest" {
 		return gopsutilSystem
+	}
+	// 服务商抹掉了固件信息的 KVM 虚拟机仍会提供 kvm-clock 时钟源
+	if hasKVMClock() {
+		return "kvm"
 	}
 	if cpuHasHypervisorFlag() {
 		return "vm"
@@ -189,6 +198,16 @@ func cpuHasHypervisorFlag() bool {
 				}
 			}
 			return false
+		}
+	}
+	return false
+}
+
+// hasKVMClock 检查内核可用时钟源里是否有 kvm-clock，只有运行在 KVM 上的虚拟机才会有
+func hasKVMClock() bool {
+	for _, f := range strings.Fields(readFileTrim("/sys/devices/system/clocksource/clocksource0/available_clocksource")) {
+		if f == "kvm-clock" {
+			return true
 		}
 	}
 	return false

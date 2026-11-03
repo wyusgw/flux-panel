@@ -497,13 +497,13 @@ export default function PushNotificationPage() {
 
       {/* Telegram 发送记录 */}
       <Card className="settings-panel">
-        <CardHeader className="flex flex-row items-center justify-between gap-4 p-4 border-b border-default-100 flex-wrap">
-          <div className="flex items-center gap-1.5">
-            <h1 className="text-base font-semibold text-foreground">
+        <CardHeader className="flex flex-row flex-nowrap items-center justify-between gap-4 p-4 border-b border-default-100 overflow-x-auto">
+          <div className="flex items-center gap-1.5 shrink-0">
+            <h1 className="text-base font-semibold text-foreground whitespace-nowrap">
               <HelpTooltip content="每次尝试发送 Telegram 通知（无论成功/失败）的历史记录，最多展示最近 100 条；记录保留 30 天">发送记录</HelpTooltip>
             </h1>
           </div>
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-2 shrink-0">
             <Select
               size="sm"
               variant="bordered"

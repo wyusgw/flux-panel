@@ -31,7 +31,37 @@ func (s *roundRobinStrategy[T]) Apply(ctx context.Context, vs ...T) (v T) {
 	}
 
 	n := atomic.AddUint64(&s.counter, 1) - 1
-	return vs[int(n%uint64(len(vs)))]
+
+	// 加权轮询：节点 metadata 里带 weight（正整数）时，按权重比例轮换，
+	// 例如权重 3:1 时每 4 次请求里前一个节点占 3 次；都没有设置权重（全部按 1）时与普通轮询完全一致
+	weights := make([]int, len(vs))
+	sum := 0
+	weighted := false
+	for i := range vs {
+		weight := 1
+		if md, _ := any(vs[i]).(metadata.Metadatable); md != nil {
+			if w := mdutil.GetInt(md.Metadata(), labelWeight); w > 0 {
+				weight = w
+			}
+		}
+		if weight > 1 {
+			weighted = true
+		}
+		weights[i] = weight
+		sum += weight
+	}
+	if !weighted {
+		return vs[int(n%uint64(len(vs)))]
+	}
+
+	pos := int(n % uint64(sum))
+	for i, weight := range weights {
+		if pos < weight {
+			return vs[i]
+		}
+		pos -= weight
+	}
+	return vs[len(vs)-1]
 }
 
 type randomStrategy[T any] struct {

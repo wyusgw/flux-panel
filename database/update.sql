@@ -1391,3 +1391,19 @@ CREATE TABLE IF NOT EXISTS `node_online_history` (
   PRIMARY KEY (`id`),
   KEY `idx_sample_time` (`sample_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- forward 表新增 weights：各目标地址的权重（与 remote_addr 按顺序对应，逗号分隔的正整数），
+-- 随机、轮询负载均衡策略按权重分配流量；为空表示不加权，已有规则不受影响
+SET @sql = (
+  SELECT IF(
+    NOT EXISTS (
+      SELECT 1 FROM information_schema.COLUMNS
+      WHERE table_schema = DATABASE() AND table_name = 'forward' AND column_name = 'weights'
+    ),
+    'ALTER TABLE `forward` ADD COLUMN `weights` VARCHAR(500) DEFAULT NULL COMMENT "各目标地址的权重（逗号分隔）";',
+    'SELECT "Column `weights` already exists in `forward`";'
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;

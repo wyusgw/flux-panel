@@ -27,6 +27,9 @@ public class ForwardUpdateDto {
     private String remoteAddr;
 
     private String strategy;
+
+    /** 各目标地址的权重（逗号分隔，与远程地址按顺序对应），留空表示不加权 */
+    private String weights;
     
     /**
      * 入口端口（可选，为空时自动分配）

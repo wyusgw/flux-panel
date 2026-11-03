@@ -88,6 +88,7 @@ interface Forward {
   remoteAddr: string;
   interfaceName?: string;
   strategy: string;
+  weights?: string;
   status: number;
   inFlow: number;
   outFlow: number;
@@ -122,6 +123,8 @@ interface ForwardForm {
   remoteAddr: string;
   interfaceName?: string;
   strategy: string;
+  // 各目标地址的权重（逗号分隔，与地址按顺序对应），仅轮询、随机策略使用；空表示不加权
+  weights: string;
   groupId?: number | null;
   acceptProxyProtocol: number;
   sendProxyProtocol: number;
@@ -357,6 +360,7 @@ export default function ForwardPage() {
     remoteAddr: '',
     interfaceName: '',
     strategy: 'fifo',
+    weights: '',
     groupId: null,
     acceptProxyProtocol: 0,
     sendProxyProtocol: 0,
@@ -595,6 +599,7 @@ export default function ForwardPage() {
       remoteAddr: '',
       interfaceName: '',
       strategy: 'fifo',
+      weights: '',
       groupId: activeGroupFilter && activeGroupFilter > 0 ? activeGroupFilter : null,
       acceptProxyProtocol: 0,
       sendProxyProtocol: 0,
@@ -622,6 +627,7 @@ export default function ForwardPage() {
       remoteAddr: forward.remoteAddr.split(',').join('\n'),
       interfaceName: forward.interfaceName || '',
       strategy: forward.strategy || 'fifo',
+      weights: forward.weights || '',
       groupId: forward.groupId ?? null,
       // 接受端只区分关闭与开启；兼容历史上保存的 v1/v2 值。
       acceptProxyProtocol: forward.acceptProxyProtocol ? 1 : 0,
@@ -717,6 +723,7 @@ export default function ForwardPage() {
           remoteAddr: processedRemoteAddr,
           interfaceName: form.interfaceName,
           strategy: addressCount > 1 ? form.strategy : 'fifo',
+          weights: buildWeightsForSubmit(addressCount),
           groupId: form.groupId,
           acceptProxyProtocol: form.acceptProxyProtocol,
           sendProxyProtocol: form.sendProxyProtocol,
@@ -736,6 +743,7 @@ export default function ForwardPage() {
           remoteAddr: processedRemoteAddr,
           interfaceName: form.interfaceName,
           strategy: addressCount > 1 ? form.strategy : 'fifo',
+          weights: buildWeightsForSubmit(addressCount),
           groupId: form.groupId,
           acceptProxyProtocol: form.acceptProxyProtocol,
           sendProxyProtocol: form.sendProxyProtocol,
@@ -1201,15 +1209,44 @@ export default function ForwardPage() {
     }
   };
 
-  // 获取策略显示
-  const getStrategyDisplay = (strategy: string) => {
+  // 只有轮询、随机策略按权重分配流量；主备、IP 哈希不使用权重
+  const strategySupportsWeights = (strategy: string) => strategy === 'round' || strategy === 'rand';
+
+  // 第 index 个目标地址当前的权重（没填或不是正整数按 1）
+  const weightAt = (weights: string, index: number): number => {
+    const value = parseInt((weights || '').split(',')[index] ?? '', 10);
+    return value > 0 ? value : 1;
+  };
+
+  const updateWeight = (index: number, count: number, value: number) => {
+    setForm(prev => {
+      const next = Array.from({ length: count }, (_, i) => weightAt(prev.weights, i));
+      next[index] = value > 0 ? value : 1;
+      return { ...prev, weights: next.join(',') };
+    });
+  };
+
+  // 提交时的权重字符串：只有多个目标地址且策略支持权重、并且确实有大于 1 的权重时才保存，否则存空（不加权）
+  const buildWeightsForSubmit = (addressCount: number): string => {
+    if (addressCount <= 1 || !strategySupportsWeights(form.strategy)) return '';
+    const list = Array.from({ length: addressCount }, (_, i) => weightAt(form.weights, i));
+    return list.some(w => w > 1) ? list.join(',') : '';
+  };
+
+  // 获取策略显示：设置了权重的轮询、随机显示为「加权轮询」「加权随机」
+  const getStrategyDisplay = (strategy: string, weights?: string) => {
+    const weighted = strategySupportsWeights(strategy) && (weights || '').split(',').some(w => parseInt(w, 10) > 1);
     switch (strategy) {
       case 'fifo':
-        return { color: 'primary', text: '主备' };
+        return { color: 'primary', text: '故障转移' };
       case 'round':
-        return { color: 'success', text: '轮询' };
+        return { color: 'success', text: weighted ? '加权轮询' : '轮询' };
       case 'rand':
-        return { color: 'warning', text: '随机' };
+        return { color: 'warning', text: weighted ? '加权随机' : '随机' };
+      case 'hash':
+        return { color: 'secondary', text: 'ip_hash' };
+      case 'leastconn':
+        return { color: 'secondary', text: '最小连接数' };
       default:
         return { color: 'default', text: '未知' };
     }
@@ -1305,6 +1342,7 @@ export default function ForwardPage() {
       remoteAddr: forward.remoteAddr.split(',').join('\n'),
       interfaceName: forward.interfaceName || '',
       strategy: forward.strategy || 'fifo',
+      weights: forward.weights || '',
       groupId: forward.groupId ?? null,
       acceptProxyProtocol: forward.acceptProxyProtocol ? 1 : 0,
       sendProxyProtocol: forward.sendProxyProtocol ?? 0,
@@ -1539,7 +1577,7 @@ export default function ForwardPage() {
                   <TableBody items={displayForwards} emptyContent={<EmptyState />}>
                     {(forward) => {
                       const statusDisplay = getStatusDisplay(forward.status);
-                      const strategyDisplay = getStrategyDisplay(forward.strategy);
+                      const strategyDisplay = getStrategyDisplay(forward.strategy, forward.weights);
                       const inGroup = findDeviceGroup(forward.inDeviceGroupId);
                       const outGroup = findDeviceGroup(forward.outDeviceGroupId);
                       return (
@@ -1854,24 +1892,44 @@ export default function ForwardPage() {
                     <Accordion variant="bordered" itemClasses={{ trigger: "py-2.5", title: "text-sm" }}>
                       <AccordionItem key="advanced" title="高级选项">
                         <div className="space-y-4 pb-2">
-                          {getAddressCount(form.remoteAddr) > 1 && (
-                            <Select
-                              size="sm"
-                              labelPlacement="outside-top"
-                              label="负载均衡策略"
-                              placeholder="请选择负载均衡策略"
-                              selectedKeys={[form.strategy]}
-                              onSelectionChange={(keys) => {
-                                const selectedKey = Array.from(keys)[0] as string;
-                                setForm(prev => ({ ...prev, strategy: selectedKey }));
-                              }}
-                              variant="bordered"
-                            >
-                              <SelectItem key="fifo" >主备模式 - 自上而下</SelectItem>
-                              <SelectItem key="round" >轮询模式 - 依次轮换</SelectItem>
-                              <SelectItem key="rand" >随机模式 - 随机选择</SelectItem>
-                              <SelectItem key="hash" >哈希模式 - IP哈希</SelectItem>
-                            </Select>
+                          <Select
+                            size="sm"
+                            labelPlacement="outside-top"
+                            label="负载均衡策略"
+                            placeholder="请选择负载均衡策略"
+                            selectedKeys={[form.strategy]}
+                            onSelectionChange={(keys) => {
+                              const selectedKey = Array.from(keys)[0] as string;
+                              setForm(prev => ({ ...prev, strategy: selectedKey }));
+                            }}
+                            variant="bordered"
+                            isDisabled={getAddressCount(form.remoteAddr) <= 1}
+                            description={getAddressCount(form.remoteAddr) <= 1 ? '目标地址填写两个或以上时才可选择' : undefined}
+                          >
+                            <SelectItem key="rand" textValue="随机">随机</SelectItem>
+                            <SelectItem key="round" textValue="轮询">轮询</SelectItem>
+                            <SelectItem key="hash" textValue="ip_hash">ip_hash</SelectItem>
+                            <SelectItem key="leastconn" textValue="最小连接数">最小连接数</SelectItem>
+                            <SelectItem key="fifo" textValue="故障转移">故障转移</SelectItem>
+                          </Select>
+
+                          {getAddressCount(form.remoteAddr) > 1 && strategySupportsWeights(form.strategy) && (
+                            <div>
+                              <FieldLabel tip="按权重比例分配流量：权重越大分到的流量越多，例如 3 和 1 表示 3:1。不填或为 1 表示平均分配">目标地址权重</FieldLabel>
+                              <div className="space-y-2">
+                                {form.remoteAddr.split('\n').map(addr => addr.trim()).filter(addr => addr).map((addr, index, list) => (
+                                  <div key={`${addr}-${index}`} className="flex items-center gap-3">
+                                    <span className="flex-1 min-w-0 truncate font-mono text-xs text-default-600" title={addr}>{addr}</span>
+                                    <Input
+                                      aria-label={`${addr} 的权重`} autoComplete="off" size="sm" variant="bordered" type="number" min={1}
+                                      className="w-24 flex-shrink-0"
+                                      value={String(weightAt(form.weights, index))}
+                                      onChange={(e) => updateWeight(index, list.length, parseInt(e.target.value, 10))}
+                                    />
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
                           )}
 
                           <Select

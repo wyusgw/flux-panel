@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	xselector "github.com/go-gost/x/selector"
 	"net"
 	"strconv"
 	"time"
@@ -178,6 +179,10 @@ func (h *forwardHandler) Handle(ctx context.Context, conn net.Conn, opts ...hand
 		}
 	}
 
+	// ip_hash 策略按来源 IP 哈希选择目标：把来源 IP 放进上下文，同一个来源 IP 总是落到同一个目标；
+	// 不放的话哈希策略拿不到来源，会退化成随机选择
+	ctx = ctxvalue.ContextWithHash(ctx, &ctxvalue.Hash{Source: ro.ClientIP})
+
 	target := &chain.Node{}
 	if h.hop != nil {
 		target = h.hop.Select(ctx,
@@ -188,6 +193,8 @@ func (h *forwardHandler) Handle(ctx context.Context, conn net.Conn, opts ...hand
 		err := errors.New("node not available")
 		return err
 	}
+	// 最小连接数策略按节点当前活跃连接数选择目标：选中后计数加 1，连接结束时释放
+	defer xselector.AcquireConn(target)()
 
 	addr := target.Addr
 	if opts := target.Options(); opts != nil {

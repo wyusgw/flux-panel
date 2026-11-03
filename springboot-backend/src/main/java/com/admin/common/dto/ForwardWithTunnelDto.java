@@ -86,6 +86,9 @@ public class ForwardWithTunnelDto {
 
     private String strategy;
 
+    /** 各目标地址的权重（逗号分隔，与远程地址按顺序对应），留空表示不加权 */
+    private String weights;
+
     private Integer inx;
 
     private String interfaceName;

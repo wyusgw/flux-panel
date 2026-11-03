@@ -1309,7 +1309,7 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
      * 创建远程服务
      */
     private R createRemoteService(Node outNode, String serviceName, Forward forward, String protocol, String interfaceName) {
-        GostDto result = GostUtil.AddRemoteService(outNode.getId(), serviceName, forward.getOutPort(), forward.getRemoteAddr(), protocol, forward.getStrategy(), interfaceName);
+        GostDto result = GostUtil.AddRemoteService(outNode.getId(), serviceName, forward.getOutPort(), forward.getRemoteAddr(), protocol, forward.getStrategy(), forward.getWeights(), interfaceName);
         return isGostOperationSuccess(result) ? R.ok() : R.err(result.getMsg());
     }
 
@@ -1325,7 +1325,7 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             }
         }
         String effectiveLimiter = resolveEffectiveLimiterName(inNode, forward, limiter);
-        GostDto result = GostUtil.AddService(inNode.getId(), serviceName, forward.getInPort(), effectiveLimiter, forward.getRemoteAddr(), tunnelType, tunnel, strategy, interfaceName, climiter, forward.getAcceptProxyProtocol(), forward.getSendProxyProtocol());
+        GostDto result = GostUtil.AddService(inNode.getId(), serviceName, forward.getInPort(), effectiveLimiter, forward.getRemoteAddr(), tunnelType, tunnel, strategy, forward.getWeights(), interfaceName, climiter, forward.getAcceptProxyProtocol(), forward.getSendProxyProtocol());
         return isGostOperationSuccess(result) ? R.ok() : R.err(result.getMsg());
     }
 
@@ -1417,9 +1417,9 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
      */
     private R updateRemoteService(Node outNode, String serviceName, Forward forward, String protocol, String interfaceName) {
         // 创建新远程服务
-        GostDto createResult = GostUtil.UpdateRemoteService(outNode.getId(), serviceName, forward.getOutPort(), forward.getRemoteAddr(), protocol, forward.getStrategy(), interfaceName);
+        GostDto createResult = GostUtil.UpdateRemoteService(outNode.getId(), serviceName, forward.getOutPort(), forward.getRemoteAddr(), protocol, forward.getStrategy(), forward.getWeights(), interfaceName);
         if (createResult.getMsg().contains(GOST_NOT_FOUND_MSG)) {
-            createResult = GostUtil.AddRemoteService(outNode.getId(), serviceName, forward.getOutPort(), forward.getRemoteAddr(), protocol, forward.getStrategy(), interfaceName);
+            createResult = GostUtil.AddRemoteService(outNode.getId(), serviceName, forward.getOutPort(), forward.getRemoteAddr(), protocol, forward.getStrategy(), forward.getWeights(), interfaceName);
         }
         return isGostOperationSuccess(createResult) ? R.ok() : R.err(createResult.getMsg());
     }
@@ -1443,10 +1443,10 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         }
 
         String effectiveLimiter = resolveEffectiveLimiterName(inNode, forward, limiter);
-        GostDto result = GostUtil.UpdateService(inNode.getId(), serviceName, forward.getInPort(), effectiveLimiter, forward.getRemoteAddr(), tunnelType, tunnel, strategy, interfaceName, climiter, forward.getAcceptProxyProtocol(), forward.getSendProxyProtocol());
+        GostDto result = GostUtil.UpdateService(inNode.getId(), serviceName, forward.getInPort(), effectiveLimiter, forward.getRemoteAddr(), tunnelType, tunnel, strategy, forward.getWeights(), interfaceName, climiter, forward.getAcceptProxyProtocol(), forward.getSendProxyProtocol());
 
         if (result.getMsg().contains(GOST_NOT_FOUND_MSG)) {
-            result = GostUtil.AddService(inNode.getId(), serviceName, forward.getInPort(), effectiveLimiter, forward.getRemoteAddr(), tunnelType, tunnel, strategy, interfaceName, climiter, forward.getAcceptProxyProtocol(), forward.getSendProxyProtocol());
+            result = GostUtil.AddService(inNode.getId(), serviceName, forward.getInPort(), effectiveLimiter, forward.getRemoteAddr(), tunnelType, tunnel, strategy, forward.getWeights(), interfaceName, climiter, forward.getAcceptProxyProtocol(), forward.getSendProxyProtocol());
         }
 
         return isGostOperationSuccess(result) ? R.ok() : R.err(result.getMsg());

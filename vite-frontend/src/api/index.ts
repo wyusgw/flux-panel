@@ -5,6 +5,8 @@ export interface LoginData {
   username: string;
   password: string;
   captchaId: string;
+  // 第三方验证码（Google reCAPTCHA / Cloudflare Turnstile）拿到的令牌
+  captchaToken?: string;
 }
 
 export interface LoginResponse {

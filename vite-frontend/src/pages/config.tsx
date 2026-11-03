@@ -28,6 +28,8 @@ interface ConfigItem {
   options?: { label: string; value: string; description?: string }[];
   dependsOn?: string; // 依赖的配置项key
   dependsValue?: string; // 依赖的配置项值
+  secret?: boolean; // 密钥类输入框：以密码形式显示
+  defaultValue?: string; // 没配置过（或配置值无效）时按这个值处理；下拉框会据此显示默认选中项，依赖它的项也据此判断显示
 }
 
 interface PaymentChannel {
@@ -101,45 +103,80 @@ const CONFIG_ITEMS: ConfigItem[] = [
   {
     key: 'captcha_enabled',
     section: 'basic',
-    label: '注册验证码',
+    label: '验证码',
     description: '开启后，用户登录时需要完成验证码验证',
     type: 'switch'
   },
   {
-    key: 'captcha_type',
+    key: 'captcha_provider',
     section: 'basic',
     label: '验证码类型',
-    description: '选择验证码的显示类型，不同类型有不同的安全级别',
+    description: '自带验证码是面板内置的滑块、点选等验证；也可以改用 Google reCAPTCHA 或 Cloudflare Turnstile',
     type: 'select',
+    defaultValue: 'BUILT_IN',
     dependsOn: 'captcha_enabled',
     dependsValue: 'true',
     options: [
-      { 
-        label: '随机类型', 
-        value: 'RANDOM', 
-        description: '系统随机选择验证码类型' 
-      },
-      { 
-        label: '滑块验证码', 
-        value: 'SLIDER', 
-        description: '拖动滑块完成拼图验证' 
-      },
-      { 
-        label: '文字点选验证码', 
-        value: 'WORD_IMAGE_CLICK', 
-        description: '按顺序点击指定文字' 
-      },
-      { 
-        label: '旋转验证码', 
-        value: 'ROTATE', 
-        description: '旋转图片到正确角度' 
-      },
-      { 
-        label: '拼图验证码', 
-        value: 'CONCAT', 
-        description: '拖动滑块完成图片拼接' 
-      }
+      { label: '自带验证码', value: 'BUILT_IN', description: '面板内置，不依赖第三方服务' },
+      { label: 'Google reCAPTCHA', value: 'GOOGLE', description: 'Google reCAPTCHA v2（我不是机器人），需要填写下方的站点密钥和服务端密钥' },
+      { label: 'Cloudflare Turnstile', value: 'CLOUDFLARE', description: 'Cloudflare Turnstile，需要填写下方的站点密钥和服务端密钥' }
     ]
+  },
+  {
+    key: 'captcha_type',
+    section: 'basic',
+    label: '自带验证码类型',
+    description: '选择自带验证码的显示类型，不同类型有不同的安全级别',
+    type: 'select',
+    dependsOn: 'captcha_provider',
+    dependsValue: 'BUILT_IN',
+    options: [
+      { label: '随机类型', value: 'RANDOM', description: '系统随机选择验证码类型' },
+      { label: '滑块验证码', value: 'SLIDER', description: '拖动滑块完成拼图验证' },
+      { label: '文字点选验证码', value: 'WORD_IMAGE_CLICK', description: '按顺序点击指定文字' },
+      { label: '旋转验证码', value: 'ROTATE', description: '旋转图片到正确角度' },
+      { label: '拼图验证码', value: 'CONCAT', description: '拖动滑块完成图片拼接' }
+    ]
+  },
+  {
+    key: 'captcha_google_site_key',
+    section: 'basic',
+    label: 'Google 站点密钥 (Site Key)',
+    placeholder: '6Lc...',
+    description: '在 Google reCAPTCHA 管理后台创建 v2 复选框类型的密钥后获得，显示在登录页上。需要服务端也能访问 Google，两个密钥没填全时自动退回自带验证码',
+    type: 'input',
+    dependsOn: 'captcha_provider',
+    dependsValue: 'GOOGLE'
+  },
+  {
+    key: 'captcha_google_secret_key',
+    section: 'basic',
+    label: 'Google 服务端密钥 (Secret Key)',
+    description: '只保存在服务端用于校验，不会出现在页面上，也不会返回给普通用户',
+    type: 'input',
+    secret: true,
+    dependsOn: 'captcha_provider',
+    dependsValue: 'GOOGLE'
+  },
+  {
+    key: 'captcha_cloudflare_site_key',
+    section: 'basic',
+    label: 'Cloudflare 站点密钥 (Site Key)',
+    placeholder: '0x4AAA...',
+    description: '在 Cloudflare 控制台的 Turnstile 里添加站点后获得，显示在登录页上。两个密钥没填全时自动退回自带验证码',
+    type: 'input',
+    dependsOn: 'captcha_provider',
+    dependsValue: 'CLOUDFLARE'
+  },
+  {
+    key: 'captcha_cloudflare_secret_key',
+    section: 'basic',
+    label: 'Cloudflare 服务端密钥 (Secret Key)',
+    description: '只保存在服务端用于校验，不会出现在页面上，也不会返回给普通用户',
+    type: 'input',
+    secret: true,
+    dependsOn: 'captcha_provider',
+    dependsValue: 'CLOUDFLARE'
   },
   {
     key: 'allow_looking_glass',
@@ -159,6 +196,7 @@ const CONFIG_ITEMS: ConfigItem[] = [
     key: 'theme_policy',
     section: 'basic',
     label: '主题策略',
+    defaultValue: 'classic_only',
     description: '决定用户端可以使用哪种主题：仅允许其中一种，或两种都允许、默认优先显示其中一种。使用透明主题需要先配置下方的背景图 URL',
     type: 'select',
     options: [
@@ -448,7 +486,12 @@ export default function ConfigPage() {
     if (!item.dependsOn || !item.dependsValue) {
       return true;
     }
-    return configs[item.dependsOn] === item.dependsValue;
+    // 依赖的配置项自己也被隐藏时（例如验证码关闭后「验证码类型」被隐藏），依赖它的项一并隐藏
+    const parent = CONFIG_ITEMS.find(candidate => candidate.key === item.dependsOn);
+    if (parent && !shouldShowItem(parent)) {
+      return false;
+    }
+    return (configs[item.dependsOn] || parent?.defaultValue) === item.dependsValue;
   };
 
   // 渲染不同类型的配置项
@@ -459,6 +502,7 @@ export default function ConfigPage() {
       case 'input':
         return (
           <Input autoComplete="off"
+            type={item.secret ? 'password' : undefined}
             value={configs[item.key] || ''}
             onChange={(e) => handleConfigChange(item.key, e.target.value)}
             placeholder={item.placeholder}
@@ -510,11 +554,11 @@ export default function ConfigPage() {
       case 'select':
         return (
           <Select
-            // 没有配置过、或配置的是旧版本留下的取值（如主题策略原来的 system/light/dark）时，显示为第一个选项
+            // 没有配置过、或配置的是旧版本留下的取值（如主题策略原来的 system/light/dark）时，显示为该项的默认选项
             selectedKeys={(() => {
               const current = configs[item.key];
               if (item.options?.some(option => option.value === current)) return [current];
-              return item.options?.length && item.key === 'theme_policy' ? [item.options[0].value] : current ? [current] : [];
+              return item.defaultValue ? [item.defaultValue] : current ? [current] : [];
             })()}
             onSelectionChange={(keys) => {
               const selectedKey = Array.from(keys)[0] as string;

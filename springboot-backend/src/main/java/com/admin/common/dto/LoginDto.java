@@ -16,5 +16,8 @@ public class LoginDto {
 
     private String captchaId;
 
+    /** 第三方验证码（Google reCAPTCHA / Cloudflare Turnstile）前端拿到的令牌 */
+    private String captchaToken;
+
 
 }

@@ -8,6 +8,7 @@ import toast from 'react-hot-toast';
 import axios from 'axios';
 import DefaultLayout from "@/layouts/default";
 import { login, LoginData, checkCaptcha } from "@/api";
+import { ThirdPartyCaptcha, type ThirdPartyProvider } from "@/components/third-party-captcha";
 import { getCachedConfigs } from "@/config/site";
 import { UserIcon, LockIcon, EyeIcon, EyeOffIcon } from "@/components/icons";
 import "@/utils/tac.css";
@@ -50,6 +51,8 @@ export default function IndexPage() {
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Partial<LoginForm>>({});
   const [showCaptcha, setShowCaptcha] = useState(false);
+  // 第三方验证码（Google / Cloudflare）：不为 null 时显示对应的验证弹层
+  const [thirdParty, setThirdParty] = useState<{ provider: ThirdPartyProvider; siteKey: string } | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [allowRegister, setAllowRegister] = useState(false);
   const navigate = useNavigate();
@@ -167,7 +170,7 @@ export default function IndexPage() {
   };
 
   // 执行登录请求
-  const performLogin = async () => {
+  const performLogin = async (captchaToken?: string) => {
 
 
     try {
@@ -175,6 +178,7 @@ export default function IndexPage() {
         username: form.username.trim(),
         password: form.password,
         captchaId: form.captchaId,
+        ...(captchaToken ? { captchaToken } : {}),
       };
 
       const response = await login(loginData);
@@ -223,10 +227,20 @@ export default function IndexPage() {
         return;
       }
 
-      // 根据返回值决定是否显示验证码
+      // 根据返回值决定是否显示验证码：0 不需要，1 内置验证码，2 Google reCAPTCHA，3 Cloudflare Turnstile
       if (checkResponse.data === 0) {
         // 不需要验证码，直接登录
         await performLogin();
+      } else if (checkResponse.data === 2 || checkResponse.data === 3) {
+        const provider: ThirdPartyProvider = checkResponse.data === 2 ? 'GOOGLE' : 'CLOUDFLARE';
+        const configs = await getCachedConfigs();
+        const siteKey = (provider === 'GOOGLE' ? configs.captcha_google_site_key : configs.captcha_cloudflare_site_key) || '';
+        if (!siteKey) {
+          toast.error('验证码站点密钥未配置，请联系管理员');
+          setLoading(false);
+          return;
+        }
+        setThirdParty({ provider, siteKey });
       } else {
         // 需要验证码，显示验证码弹层
         setShowCaptcha(true);
@@ -318,6 +332,17 @@ export default function IndexPage() {
             </CardBody>
           </Card>
         </div>
+
+        {/* 第三方验证码弹层（Google reCAPTCHA / Cloudflare Turnstile） */}
+        {thirdParty && (
+          <ThirdPartyCaptcha
+            provider={thirdParty.provider}
+            siteKey={thirdParty.siteKey}
+            onToken={(token) => { setThirdParty(null); performLogin(token); }}
+            onCancel={() => { setThirdParty(null); setLoading(false); }}
+            onError={(message) => { toast.error(message); setThirdParty(null); setLoading(false); }}
+          />
+        )}
 
         {/* 验证码弹层 */}
         {showCaptcha && (

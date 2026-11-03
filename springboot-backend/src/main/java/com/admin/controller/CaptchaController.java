@@ -8,6 +8,7 @@ import cloud.tianai.captcha.validator.common.model.dto.ImageCaptchaTrack;
 import cloud.tianai.captcha.validator.common.model.dto.MatchParam;
 import com.admin.common.dto.CaptchaVerifyDto;
 import com.admin.common.lang.R;
+import com.admin.common.utils.CaptchaProviderUtil;
 import com.admin.entity.ViteConfig;
 import com.admin.service.ViteConfigService;
 import com.alibaba.fastjson.JSONObject;
@@ -39,12 +40,12 @@ public class CaptchaController extends BaseController {
             "SLIDER", "WORD_IMAGE_CLICK", "ROTATE", "CONCAT"
     };
 
+    /**
+     * 登录是否需要验证码以及用哪种：0 不需要，1 内置验证码，2 Google reCAPTCHA，3 Cloudflare Turnstile
+     */
     @PostMapping("/check")
     public R check() {
-        ViteConfig viteConfig = viteConfigService.getOne(new QueryWrapper<ViteConfig>().eq("name", "captcha_enabled"));
-        if (viteConfig == null) return R.ok(0);
-        if (!Objects.equals(viteConfig.getValue(), "true")) return R.ok(0);
-        return R.ok(1);
+        return R.ok(CaptchaProviderUtil.resolveMode(viteConfigService));
     }
 
 
@@ -52,7 +53,9 @@ public class CaptchaController extends BaseController {
     public CaptchaResponse<ImageCaptchaVO> genCaptcha() {
         ViteConfig viteConfig = viteConfigService.getOne(new QueryWrapper<ViteConfig>().eq("name", "captcha_type"));
         String captchaType;
-        if (viteConfig == null || Objects.equals(viteConfig.getValue(), "RANDOM")) {
+        // 没配置、选了随机，或配置的不是自带验证码支持的形式时，随机选一种
+        if (viteConfig == null || Objects.equals(viteConfig.getValue(), "RANDOM")
+                || !java.util.Arrays.asList(OPTIONS).contains(viteConfig.getValue())) {
             captchaType = getRandomOption();
         }else {
             captchaType = viteConfig.getValue();

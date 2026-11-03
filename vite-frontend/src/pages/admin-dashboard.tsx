@@ -68,12 +68,12 @@ const RechargeTrend = ({ data }: { data: TrendPoint[] }) => (
 );
 
 // 节点在线统计曲线图：独立的一张图表卡片，横轴为时间、纵轴为节点数量（整数，从 0 起），带横向网格线与数据点。
-// 两条线用状态色（在线绿、离线红）：「近 24 小时」为每 5 分钟一个采样点，「近 30 天」按自然日取当日最多在线数与最多离线数；
-// 卡片标题栏的图例可点击，只看在线或只看离线，再点一次恢复；没有数据时提示「数据采集中」，接口失败提示「数据不可用」
+// 只画一条线：在线节点数；离线数量不单独画线，悬停提示里同时显示在线与离线数。
+// 「近 24 小时」为每 5 分钟一个采样点，「近 30 天」按自然日取当日最多在线数与最多离线数；
+// 没有数据时提示「数据采集中」，接口失败提示「数据不可用」
 type OnlinePoint = { time: number; online: number; offline: number };
 type OnlineRange = 'day' | 'month';
-const ONLINE_COLOR = '#0ca30c';
-const OFFLINE_COLOR = '#d03b3b';
+const LINE_COLOR = '#2a78d6';
 const pad2 = (n: number) => String(n).padStart(2, '0');
 const formatClock = (time: number) => { const d = new Date(time); return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`; };
 const formatMonthDay = (time: number) => { const d = new Date(time); return `${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; };
@@ -84,11 +84,6 @@ const NodeOnlineChart = () => {
   const [data, setData] = useState<OnlinePoint[]>([]);
   const [failed, setFailed] = useState(false);
   const [loaded, setLoaded] = useState(false);
-  // 当前只看哪一条线；null 表示两条都显示
-  const [focus, setFocus] = useState<'online' | 'offline' | null>(null);
-  const showOnline = focus !== 'offline';
-  const showOffline = focus !== 'online';
-  const toggleFocus = (key: 'online' | 'offline') => setFocus(current => current === key ? null : key);
 
   useEffect(() => {
     let active = true;
@@ -116,10 +111,6 @@ const NodeOnlineChart = () => {
       <CardHeader className="px-6 py-4 border-b border-default-100 flex items-center justify-between gap-3 flex-wrap">
         <h2 className="text-sm font-semibold">节点在线统计</h2>
         <div className="flex items-center gap-4 flex-wrap">
-          <div className="flex items-center gap-3 text-xs text-default-500">
-            <button type="button" aria-pressed={focus === 'online'} title={focus === 'online' ? '点击恢复显示全部' : '只看在线'} onClick={() => toggleFocus('online')} className={`inline-flex items-center gap-1.5 transition-opacity ${showOnline ? '' : 'opacity-40'} ${focus === 'online' ? 'text-foreground font-medium' : ''}`}><span className="inline-block w-3 h-0.5 rounded-full" style={{ background: ONLINE_COLOR }} />在线</button>
-            <button type="button" aria-pressed={focus === 'offline'} title={focus === 'offline' ? '点击恢复显示全部' : '只看离线'} onClick={() => toggleFocus('offline')} className={`inline-flex items-center gap-1.5 transition-opacity ${showOffline ? '' : 'opacity-40'} ${focus === 'offline' ? 'text-foreground font-medium' : ''}`}><span className="inline-block w-3 h-0.5 rounded-full" style={{ background: OFFLINE_COLOR }} />离线</button>
-          </div>
           <div className="flex items-center gap-1">
             <Button size="sm" variant={range === 'day' ? 'flat' : 'light'} color="default" onPress={() => setRange('day')}>近 24 小时</Button>
             <Button size="sm" variant={range === 'month' ? 'flat' : 'light'} color="default" onPress={() => setRange('month')}>近 30 天</Button>
@@ -146,14 +137,13 @@ const NodeOnlineChart = () => {
                     return (
                       <div className="bg-white dark:bg-default-100 border border-default-200 rounded-lg px-3 py-2 text-xs shadow-lg">
                         <p className="text-default-500">{range === 'month' ? `${formatFullDate(row.time)}（当日最多）` : `${formatMonthDay(row.time)} ${formatClock(row.time)}`}</p>
-                        {showOnline && <p className="mt-1 font-medium text-foreground"><span className="inline-block w-2 h-2 rounded-full mr-1.5" style={{ background: ONLINE_COLOR }} />在线 {row.online}</p>}
-                        {showOffline && <p className="mt-0.5 font-medium text-foreground"><span className="inline-block w-2 h-2 rounded-full mr-1.5" style={{ background: OFFLINE_COLOR }} />离线 {row.offline}</p>}
+                        <p className="mt-1 font-medium text-foreground">在线 {row.online}</p>
+                        <p className="mt-0.5 font-medium text-foreground">离线 {row.offline}</p>
                       </div>
                     );
                   }}
                 />
-                {showOffline && <Line type="monotone" dataKey="offline" stroke={OFFLINE_COLOR} strokeWidth={2} dot={showDots ? { r: 2.5, fill: OFFLINE_COLOR, stroke: 'none' } : false} activeDot={{ r: 4 }} isAnimationActive={false} />}
-                {showOnline && <Line type="monotone" dataKey="online" stroke={ONLINE_COLOR} strokeWidth={2} dot={showDots ? { r: 2.5, fill: ONLINE_COLOR, stroke: 'none' } : false} activeDot={{ r: 4 }} isAnimationActive={false} />}
+                <Line type="monotone" dataKey="online" stroke={LINE_COLOR} strokeWidth={2} dot={showDots ? { r: 2.5, fill: LINE_COLOR, stroke: 'none' } : false} activeDot={{ r: 4 }} isAnimationActive={false} />
               </LineChart>
             </ResponsiveContainer>
           )}

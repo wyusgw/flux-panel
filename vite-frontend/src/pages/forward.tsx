@@ -154,6 +154,12 @@ interface DeviceGroupOption {
 
 const isDeviceGroupOnline = (group?: DeviceGroupOption) => !!group?.nodeName && group.node?.status === 1;
 
+// 表格里入口/出口设备的状态标签：没有绑定设备显示「无设备」，绑定了则按设备当前是否在线显示「在线」或「离线」
+const deviceStatusTag = (group: DeviceGroupOption) => {
+  if (!group.nodeName) return { text: '无设备', color: 'danger' as const };
+  return isDeviceGroupOnline(group) ? { text: '在线', color: 'success' as const } : { text: '离线', color: 'danger' as const };
+};
+
 interface AddressItem {
   id: number;
   address: string;
@@ -487,7 +493,7 @@ export default function ForwardPage() {
     setRefreshing(true);
     const minSpin = new Promise(resolve => setTimeout(resolve, 700));
     try {
-      await Promise.all([loadData(false), minSpin]);
+      await Promise.all([loadData(false), loadDeviceGroups(), minSpin]);
     } finally {
       setRefreshing(false);
     }
@@ -1591,7 +1597,7 @@ export default function ForwardPage() {
                               <span className="font-medium">{inGroup ? inGroup.name : (forward.tunnelName || '—')}</span>
                               {inGroup && (
                                 <>
-                                  <Chip size="sm" variant="light" color={inGroup.nodeName ? 'success' : 'danger'}>{inGroup.nodeName ? '有设备' : '无设备'}</Chip>
+                                  <Chip size="sm" variant="light" color={deviceStatusTag(inGroup).color}>{deviceStatusTag(inGroup).text}</Chip>
                                   <Chip size="sm" variant="light" color="success">倍率 {inGroup.ratio ?? 0}</Chip>
                                 </>
                               )}
@@ -1608,7 +1614,7 @@ export default function ForwardPage() {
                               <span className="font-medium">{outGroup ? outGroup.name : (forward.remoteAddr ? '直连' : '—')}</span>
                               {outGroup && (
                                 <>
-                                  <Chip size="sm" variant="light" color={outGroup.nodeName ? 'success' : 'danger'}>{outGroup.nodeName ? '有设备' : '无设备'}</Chip>
+                                  <Chip size="sm" variant="light" color={deviceStatusTag(outGroup).color}>{deviceStatusTag(outGroup).text}</Chip>
                                   <Chip size="sm" variant="light" color="success">倍率 {outGroup.ratio ?? 0}</Chip>
                                 </>
                               )}

@@ -1,9 +1,12 @@
 import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Button } from "@heroui/button";
+import { Input } from "@heroui/input";
+import { Popover, PopoverTrigger, PopoverContent } from "@heroui/popover";
 import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from "@heroui/table";
+import type { SortDescriptor } from "@heroui/table";
 import { useNavigate } from "react-router-dom";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, LabelList } from "recharts";
+import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LabelList } from "recharts";
 
 import { StatCell } from "@/components/stat-cell";
 import { getAllUsers, getNodeList, getAdminOrderList, getTaskQueueHealth, getDashboardFlowStats, getNodeOnlineTrend } from "@/api";
@@ -64,65 +67,120 @@ const RechargeTrend = ({ data }: { data: TrendPoint[] }) => (
   </div>
 );
 
-// 节点在线 / 离线数量曲线：最近 24 小时每 5 分钟一个采样点（后端定时记录，离线数 = 节点总数 - 在线数），
-// 两条线用状态色（在线绿、离线红），顶部图例可点击：点「在线」或「离线」只看那一条线，再点一次恢复两条都看；
-// 悬停显示时间与当时可见的数量；
-// 没有任何采样点时提示「数据采集中」，只有 1 个点时先画一个点，接口请求失败时提示「数据不可用」
-type OnlinePoint = { time: number; online: number; total: number };
-type OnlineChartPoint = OnlinePoint & { offline: number };
+// 节点在线统计曲线图：独立的一张图表卡片，横轴为时间、纵轴为节点数量（整数，从 0 起），带横向网格线与数据点。
+// 两条线用状态色（在线绿、离线红）：「近 24 小时」为每 5 分钟一个采样点，「近 30 天」按自然日取当日最多在线数与最多离线数；
+// 卡片标题栏的图例可点击，只看在线或只看离线，再点一次恢复；没有数据时提示「数据采集中」，接口失败提示「数据不可用」
+type OnlinePoint = { time: number; online: number; offline: number };
+type OnlineRange = 'day' | 'month';
 const ONLINE_COLOR = '#0ca30c';
 const OFFLINE_COLOR = '#d03b3b';
-const formatClock = (time: number) => { const d = new Date(time); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
-const NodeOnlineTrend = ({ data, failed }: { data: OnlinePoint[]; failed: boolean }) => {
-  const chartData = useMemo<OnlineChartPoint[]>(() => data.map(point => ({ ...point, offline: Math.max(0, point.total - point.online) })), [data]);
-  const maxTotal = Math.max(1, ...data.map(point => point.total));
+const pad2 = (n: number) => String(n).padStart(2, '0');
+const formatClock = (time: number) => { const d = new Date(time); return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`; };
+const formatMonthDay = (time: number) => { const d = new Date(time); return `${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; };
+const formatFullDate = (time: number) => { const d = new Date(time); return `${d.getFullYear()}-${formatMonthDay(time)}`; };
+
+const NodeOnlineChart = () => {
+  const [range, setRange] = useState<OnlineRange>('day');
+  const [data, setData] = useState<OnlinePoint[]>([]);
+  const [failed, setFailed] = useState(false);
+  const [loaded, setLoaded] = useState(false);
   // 当前只看哪一条线；null 表示两条都显示
   const [focus, setFocus] = useState<'online' | 'offline' | null>(null);
   const showOnline = focus !== 'offline';
   const showOffline = focus !== 'online';
   const toggleFocus = (key: 'online' | 'offline') => setFocus(current => current === key ? null : key);
-  // 只有 1 个采样点时折线画不出来，改为显示圆点
-  const singlePoint = chartData.length === 1;
+
+  useEffect(() => {
+    let active = true;
+    setLoaded(false);
+    (async () => {
+      try {
+        const response = await getNodeOnlineTrend(range);
+        if (!active) return;
+        if (response.code === 0) { setData(response.data || []); setFailed(false); } else { setFailed(true); }
+      } catch {
+        if (active) setFailed(true);
+      } finally {
+        if (active) setLoaded(true);
+      }
+    })();
+    return () => { active = false; };
+  }, [range]);
+
+  const formatTick = (time: number) => range === 'month' ? formatMonthDay(time) : formatClock(time);
+  // 点不多（近 30 天按天汇总，或刚开始采样）时画出数据点，5 分钟一个点的 24 小时视图不画点以免太密
+  const showDots = range === 'month' || data.length <= 3;
+
   return (
-    <div className="hidden sm:block flex-1 min-w-[96px] max-w-[200px]">
-      <div className="flex items-center justify-end gap-3 text-[11px] text-default-500">
-        <button type="button" aria-pressed={focus === 'online'} title={focus === 'online' ? '点击恢复显示全部' : '只看在线'} onClick={() => toggleFocus('online')} className={`inline-flex items-center gap-1 transition-opacity ${showOnline ? '' : 'opacity-40'} ${focus === 'online' ? 'text-foreground font-medium' : ''}`}><span className="inline-block w-2 h-0.5 rounded-full" style={{ background: ONLINE_COLOR }} />在线</button>
-        <button type="button" aria-pressed={focus === 'offline'} title={focus === 'offline' ? '点击恢复显示全部' : '只看离线'} onClick={() => toggleFocus('offline')} className={`inline-flex items-center gap-1 transition-opacity ${showOffline ? '' : 'opacity-40'} ${focus === 'offline' ? 'text-foreground font-medium' : ''}`}><span className="inline-block w-2 h-0.5 rounded-full" style={{ background: OFFLINE_COLOR }} />离线</button>
-      </div>
-      <div className="h-12 mt-1">
-        {failed ? (
-          <div className="h-full flex items-center justify-end text-xs text-default-400">数据不可用</div>
-        ) : chartData.length === 0 ? (
-          <div className="h-full flex items-center justify-end text-xs text-default-400">数据采集中</div>
-        ) : (
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={chartData} margin={{ top: 3, right: 4, bottom: 3, left: 4 }}>
-              <YAxis hide domain={[0, maxTotal]} />
-              <Tooltip
-                cursor={{ stroke: 'currentColor', strokeOpacity: 0.15 }}
-                content={({ active, payload }) => {
-                  if (!active || !payload || !payload.length) return null;
-                  const row = payload[0].payload as OnlineChartPoint;
-                  return (
-                    <div className="bg-white dark:bg-default-100 border border-default-200 rounded-lg px-2 py-1 text-[11px] shadow-lg">
-                      <p className="text-default-500">{formatClock(row.time)}（最近 24 小时）</p>
-                      <p className="font-medium text-foreground">{[showOnline && `在线 ${row.online}`, showOffline && `离线 ${row.offline}`].filter(Boolean).join('　')}</p>
-                    </div>
-                  );
-                }}
-              />
-              {showOnline && <Line type="monotone" dataKey="online" stroke={ONLINE_COLOR} strokeWidth={2} dot={singlePoint ? { r: 3, fill: ONLINE_COLOR, stroke: 'none' } : false} activeDot={false} isAnimationActive={false} />}
-              {showOffline && <Line type="monotone" dataKey="offline" stroke={OFFLINE_COLOR} strokeWidth={2} dot={singlePoint ? { r: 3, fill: OFFLINE_COLOR, stroke: 'none' } : false} activeDot={false} isAnimationActive={false} />}
-            </LineChart>
-          </ResponsiveContainer>
-        )}
-      </div>
-    </div>
+    <Card className="dashboard-panel mb-5 min-w-0" shadow="none">
+      <CardHeader className="px-6 py-4 border-b border-default-100 flex items-center justify-between gap-3 flex-wrap">
+        <h2 className="text-sm font-semibold">节点在线统计</h2>
+        <div className="flex items-center gap-4 flex-wrap">
+          <div className="flex items-center gap-3 text-xs text-default-500">
+            <button type="button" aria-pressed={focus === 'online'} title={focus === 'online' ? '点击恢复显示全部' : '只看在线'} onClick={() => toggleFocus('online')} className={`inline-flex items-center gap-1.5 transition-opacity ${showOnline ? '' : 'opacity-40'} ${focus === 'online' ? 'text-foreground font-medium' : ''}`}><span className="inline-block w-3 h-0.5 rounded-full" style={{ background: ONLINE_COLOR }} />在线</button>
+            <button type="button" aria-pressed={focus === 'offline'} title={focus === 'offline' ? '点击恢复显示全部' : '只看离线'} onClick={() => toggleFocus('offline')} className={`inline-flex items-center gap-1.5 transition-opacity ${showOffline ? '' : 'opacity-40'} ${focus === 'offline' ? 'text-foreground font-medium' : ''}`}><span className="inline-block w-3 h-0.5 rounded-full" style={{ background: OFFLINE_COLOR }} />离线</button>
+          </div>
+          <div className="flex items-center gap-1">
+            <Button size="sm" variant={range === 'day' ? 'flat' : 'light'} color="default" onPress={() => setRange('day')}>近 24 小时</Button>
+            <Button size="sm" variant={range === 'month' ? 'flat' : 'light'} color="default" onPress={() => setRange('month')}>近 30 天</Button>
+          </div>
+        </div>
+      </CardHeader>
+      <CardBody className="px-4 py-4">
+        <div className="h-60">
+          {failed ? (
+            <div className="h-full flex items-center justify-center text-sm text-default-400">数据不可用</div>
+          ) : loaded && data.length === 0 ? (
+            <div className="h-full flex items-center justify-center text-sm text-default-400">数据采集中</div>
+          ) : (
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={data} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
+                <CartesianGrid vertical={false} stroke="currentColor" strokeOpacity={0.12} />
+                <XAxis dataKey="time" tickFormatter={formatTick} tickLine={false} axisLine={false} minTickGap={28} tick={{ fontSize: 11, className: 'fill-default-500' }} />
+                <YAxis allowDecimals={false} domain={[0, (max: number) => Math.max(max, 1)]} width={32} tickLine={false} axisLine={false} tick={{ fontSize: 11, className: 'fill-default-500' }} />
+                <Tooltip
+                  cursor={{ stroke: 'currentColor', strokeOpacity: 0.15 }}
+                  content={({ active, payload }) => {
+                    if (!active || !payload || !payload.length) return null;
+                    const row = payload[0].payload as OnlinePoint;
+                    return (
+                      <div className="bg-white dark:bg-default-100 border border-default-200 rounded-lg px-3 py-2 text-xs shadow-lg">
+                        <p className="text-default-500">{range === 'month' ? `${formatFullDate(row.time)}（当日最多）` : `${formatMonthDay(row.time)} ${formatClock(row.time)}`}</p>
+                        {showOnline && <p className="mt-1 font-medium text-foreground"><span className="inline-block w-2 h-2 rounded-full mr-1.5" style={{ background: ONLINE_COLOR }} />在线 {row.online}</p>}
+                        {showOffline && <p className="mt-0.5 font-medium text-foreground"><span className="inline-block w-2 h-2 rounded-full mr-1.5" style={{ background: OFFLINE_COLOR }} />离线 {row.offline}</p>}
+                      </div>
+                    );
+                  }}
+                />
+                {showOffline && <Line type="monotone" dataKey="offline" stroke={OFFLINE_COLOR} strokeWidth={2} dot={showDots ? { r: 2.5, fill: OFFLINE_COLOR, stroke: 'none' } : false} activeDot={{ r: 4 }} isAnimationActive={false} />}
+                {showOnline && <Line type="monotone" dataKey="online" stroke={ONLINE_COLOR} strokeWidth={2} dot={showDots ? { r: 2.5, fill: ONLINE_COLOR, stroke: 'none' } : false} activeDot={{ r: 4 }} isAnimationActive={false} />}
+              </LineChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+      </CardBody>
+    </Card>
   );
 };
 
-function RankTable({ title, rows, kind }: { title: string; rows: { name: string; value: number }[]; kind: 'flow' | 'node' }) {
+// 排行卡片的表头筛选与排序（样式与转发规则表格一致）：「排名」「单向流量」列可点击排序，
+// 「用户 / 节点」列表头有漏斗图标，点开按名称关键字筛选；筛选和排序后保留原始名次，表格与图表视图共用同一份结果
+const IconFilter = () => <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M3 4h18l-7 8.5V19l-4 2v-8.5L3 4z" /></svg>;
+function RankTable({ title, rows: allRows, kind }: { title: string; rows: { name: string; value: number }[]; kind: 'flow' | 'node' }) {
   const [view, setView] = useState<'table' | 'chart'>('table');
+  const [keyword, setKeyword] = useState('');
+  const [sortDescriptor, setSortDescriptor] = useState<SortDescriptor | undefined>(undefined);
+  const noun = kind === 'node' ? '节点' : '用户';
+  const trimmed = keyword.trim().toLowerCase();
+  const ranked = useMemo(() => allRows.map((row, index) => ({ ...row, rank: index + 1 })), [allRows]);
+  const rows = useMemo(() => {
+    const filtered = ranked.filter(row => !trimmed || row.name.toLowerCase().includes(trimmed));
+    if (!sortDescriptor?.column) return filtered;
+    const dir = sortDescriptor.direction === 'descending' ? -1 : 1;
+    const key = sortDescriptor.column === 'value' ? 'value' : 'rank';
+    return [...filtered].sort((a, b) => (a[key] - b[key]) * dir);
+  }, [ranked, trimmed, sortDescriptor]);
+  const filtering = trimmed !== '';
   return (
     <Card className="dashboard-panel min-w-0" shadow="none">
       <CardHeader className="px-6 py-4 border-b border-default-100 flex items-center justify-between">
@@ -134,14 +192,43 @@ function RankTable({ title, rows, kind }: { title: string; rows: { name: string;
       </CardHeader>
       <CardBody className="p-0">
         {view === 'table' ? (
-          <Table removeWrapper aria-label={title} classNames={{ th: "management-table-heading", td: "management-table-cell" }}>
-            <TableHeader><TableColumn>排名</TableColumn><TableColumn>{kind === 'node' ? '节点' : '用户'}</TableColumn><TableColumn>单向流量</TableColumn></TableHeader>
-            <TableBody emptyContent="暂无统计数据">
-              {rows.map((row, index) => <TableRow key={`${row.name}-${index}`}><TableCell>{index + 1}</TableCell><TableCell>{row.name}</TableCell><TableCell>{formatFlow(row.value)}</TableCell></TableRow>)}
+          <Table removeWrapper aria-label={title} sortDescriptor={sortDescriptor} onSortChange={setSortDescriptor} classNames={{ th: "management-table-heading", td: "management-table-cell" }}>
+            <TableHeader>
+              <TableColumn key="rank" allowsSorting>排名</TableColumn>
+              <TableColumn key="name">
+                <div className="flex items-center gap-1.5">
+                  {noun}
+                  <Popover placement="bottom-start">
+                    <PopoverTrigger>
+                      <button
+                        type="button"
+                        aria-label={`筛选${noun}`}
+                        title={`筛选${noun}`}
+                        className={`inline-flex items-center justify-center rounded p-0.5 transition-colors ${filtering ? 'text-primary' : 'text-default-400 hover:text-default-600'}`}
+                      >
+                        <IconFilter />
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent>
+                      <div className="p-2 w-48">
+                        <Input
+                          aria-label={`筛选${noun}`} size="sm" variant="bordered" autoComplete="off" isClearable autoFocus
+                          placeholder={`输入${noun}名称`}
+                          value={keyword} onValueChange={setKeyword}
+                        />
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+              </TableColumn>
+              <TableColumn key="value" allowsSorting>单向流量</TableColumn>
+            </TableHeader>
+            <TableBody emptyContent={filtering && allRows.length > 0 ? "没有符合条件的数据" : "暂无统计数据"}>
+              {rows.map((row) => <TableRow key={`${row.name}-${row.rank}`}><TableCell>{row.rank}</TableCell><TableCell>{row.name}</TableCell><TableCell>{formatFlow(row.value)}</TableCell></TableRow>)}
             </TableBody>
           </Table>
         ) : rows.length === 0 ? (
-          <div className="py-12 text-center text-sm text-default-500">暂无统计数据</div>
+          <div className="py-12 text-center text-sm text-default-500">{filtering && allRows.length > 0 ? '没有符合条件的数据' : '暂无统计数据'}</div>
         ) : (
           <div className="p-4" style={{ height: Math.max(160, rows.length * 36) }}>
             <ResponsiveContainer width="100%" height="100%">
@@ -180,8 +267,6 @@ export default function AdminDashboardPage() {
   const navigate = useNavigate();
   const [queueHealth, setQueueHealth] = useState<TaskQueueHealth | null>(null);
   const [flowStats, setFlowStats] = useState<FlowStats>(EMPTY_FLOW_STATS);
-  const [onlineTrend, setOnlineTrend] = useState<OnlinePoint[]>([]);
-  const [onlineTrendFailed, setOnlineTrendFailed] = useState(false);
   const loadData = useCallback(async () => {
     const [userResponse, nodeResponse, orderResponse, taskQueueResponse, flowStatsResponse] = await Promise.all([
       getAllUsers({ current: 1, size: 1000 }), getNodeList(), getAdminOrderList(), getTaskQueueHealth(), getDashboardFlowStats(),
@@ -191,18 +276,6 @@ export default function AdminDashboardPage() {
     if (orderResponse.code === 0) setOrders(orderResponse.data || []);
     if (taskQueueResponse.code === 0) setQueueHealth(taskQueueResponse.data || null);
     if (flowStatsResponse.code === 0) setFlowStats({ ...EMPTY_FLOW_STATS, ...flowStatsResponse.data });
-    // 在线曲线单独请求：失败（如后端尚未升级）只影响这张小图，不拖累整个仪表盘
-    try {
-      const trendResponse = await getNodeOnlineTrend();
-      if (trendResponse.code === 0) {
-        setOnlineTrend(trendResponse.data || []);
-        setOnlineTrendFailed(false);
-      } else {
-        setOnlineTrendFailed(true);
-      }
-    } catch {
-      setOnlineTrendFailed(true);
-    }
   }, []);
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -263,10 +336,10 @@ export default function AdminDashboardPage() {
           value={`在线 ${onlineNodeCount}`}
           hint={`离线 ${offlineNodeCount}`}
           hintTone={offlineNodeCount > 0 ? 'danger' : undefined}
-          chart={<NodeOnlineTrend data={onlineTrend} failed={onlineTrendFailed} />}
         />
       </div>
     </section>
+    <NodeOnlineChart />
     <section className="grid grid-cols-1 xl:grid-cols-2 gap-5"><RankTable title="今日用户流量排行" rows={flowStats.todayUserRanking} kind="flow" /><RankTable title="昨日用户流量排行" rows={flowStats.yesterdayUserRanking} kind="flow" /><RankTable title="今日节点流量排行" rows={flowStats.todayNodeRanking} kind="node" /><RankTable title="昨日节点流量排行" rows={flowStats.yesterdayNodeRanking} kind="node" /></section>
   </div>;
 }

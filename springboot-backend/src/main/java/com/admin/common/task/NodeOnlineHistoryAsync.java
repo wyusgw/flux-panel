@@ -13,8 +13,8 @@ import org.springframework.scheduling.annotation.Scheduled;
 import javax.annotation.Resource;
 
 /**
- * 节点在线数量采样：启动后 10 秒记一次，之后每 5 分钟记一次，并顺带清理超过 7 天的旧记录，
- * 供管理员仪表盘「节点在线」曲线图展示最近 24 小时的在线数量变化
+ * 节点在线数量采样：启动后 10 秒记一次，之后每 5 分钟记一次，并顺带清理超过 31 天的旧记录，
+ * 供管理员仪表盘「节点在线统计」曲线图展示最近 24 小时或最近 30 天的在线、离线数量变化
  */
 @Slf4j
 @Configuration
@@ -22,7 +22,7 @@ import javax.annotation.Resource;
 public class NodeOnlineHistoryAsync {
 
     private static final long SAMPLE_INTERVAL_MILLIS = 5 * 60 * 1000L;
-    private static final long RETENTION_MILLIS = 7 * 24 * 60 * 60 * 1000L;
+    private static final long RETENTION_MILLIS = 31 * 24 * 60 * 60 * 1000L;
 
     @Resource
     private NodeService nodeService;

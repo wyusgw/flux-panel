@@ -14,7 +14,9 @@ public interface DashboardService {
     R getFlowStats();
 
     /**
-     * 最近 24 小时的节点在线数量趋势（每 5 分钟一个采样点：时间、在线数、节点总数）
+     * 节点在线 / 离线数量趋势。range 为 "day"（默认）时返回最近 24 小时每 5 分钟一个采样点，
+     * 为 "month" 时返回最近 30 天按自然日汇总的点（当日最多在线数、当日最多离线数）。
+     * 每个点为：time（毫秒时间戳）、online、offline
      */
-    R getNodeOnlineTrend();
+    R getNodeOnlineTrend(String range);
 }

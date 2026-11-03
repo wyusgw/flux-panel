@@ -33,7 +33,8 @@ public class DashboardController {
     @LogAnnotation
     @RequireRole
     @PostMapping("/nodeOnlineTrend")
-    public R getNodeOnlineTrend() {
-        return dashboardService.getNodeOnlineTrend();
+    public R getNodeOnlineTrend(@RequestBody(required = false) java.util.Map<String, Object> params) {
+        Object range = params != null ? params.get("range") : null;
+        return dashboardService.getNodeOnlineTrend(range != null ? range.toString() : "day");
     }
 }

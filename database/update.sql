@@ -1381,7 +1381,7 @@ PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
 
--- 创建 node_online_history 表（如果不存在）：节点在线数量的定时采样记录（每 5 分钟一条，默认保留 7 天），
+-- 创建 node_online_history 表（如果不存在）：节点在线数量的定时采样记录（每 5 分钟一条，默认保留 31 天），
 -- 供管理员仪表盘「节点在线」曲线图使用
 CREATE TABLE IF NOT EXISTS `node_online_history` (
   `id` int(10) NOT NULL AUTO_INCREMENT,

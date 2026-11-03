@@ -99,7 +99,7 @@ export const getTaskQueueList = () => Network.post("/taskQueue/list");
 
 // 管理员仪表盘聚合统计
 export const getDashboardFlowStats = () => Network.post("/dashboard/flowStats");
-export const getNodeOnlineTrend = () => Network.post("/dashboard/nodeOnlineTrend");
+export const getNodeOnlineTrend = (range: 'day' | 'month' = 'day') => Network.post("/dashboard/nodeOnlineTrend", { range });
 export const getTaskQueueHealth = () => Network.post("/taskQueue/health");
 export const getTaskQueueOverview = () => Network.post("/taskQueue/overview");
 export const getTaskQueueErrorLogs = () => Network.post("/taskQueue/errorLogs");

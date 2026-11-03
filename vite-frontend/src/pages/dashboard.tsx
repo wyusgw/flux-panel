@@ -975,7 +975,7 @@ export default function DashboardPage() {
         backdrop="blur"
         placement="center">
           <ModalContent>
-            <ModalHeader className="text-base">{addressModalTitle}</ModalHeader>
+            <ModalHeader>{addressModalTitle}</ModalHeader>
             <ModalBody className="pb-6">
               <div className="mb-4 text-right">
                 <Button size="sm" onClick={copyAllAddresses}>

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { Card, CardBody } from "@heroui/card";
+import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Button } from "@heroui/button";
 import { Input } from "@heroui/input";
 import { Textarea } from "@heroui/input";
@@ -23,6 +23,7 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { TablePagination } from "@/components/table-pagination";
 import { HelpTooltip } from "@/components/help-tooltip";
 import { getAdminOrderList, createManualOrder, batchDeleteOrders, updateOrderStatus, getAllUsers } from "@/api";
+import RefreshButton from "@/components/refresh-button";
 
 interface OrderItem {
   id: number;
@@ -84,12 +85,6 @@ const IconDelete = () => (
   </svg>
 );
 
-const IconAdd = () => (
-  <svg className="w-4 h-4" fill="none" viewBox="0 0 20 20" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M10 4v12M4 10h12" />
-  </svg>
-);
-
 export default function OrderManagementPage() {
   const [loading, setLoading] = useState(true);
   const [orders, setOrders] = useState<OrderItem[]>([]);
@@ -110,8 +105,8 @@ export default function OrderManagementPage() {
   const [statusChangeTarget, setStatusChangeTarget] = useState<{ order: OrderItem; status: number } | null>(null);
   const [statusChangeLoading, setStatusChangeLoading] = useState(false);
 
-  const loadOrders = useCallback(async () => {
-    setLoading(true);
+  const loadOrders = useCallback(async (showLoading = true) => {
+    setLoading(showLoading);
     try {
       const res = await getAdminOrderList();
       if (res.code === 0) {
@@ -245,28 +240,21 @@ export default function OrderManagementPage() {
   }
 
   return (
-    <div className="px-3 lg:px-6 py-8">
-      <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
-        <h1 className="text-xl font-semibold">订单管理</h1>
-        <div className="flex items-center gap-2">
-          <Button size="sm" variant="flat" color="default" startContent={<IconAdd />} onPress={openManualModal}>
-            手动记账
-          </Button>
-          <Button
-            size="sm"
-            variant="flat"
-            color="danger"
-            startContent={<IconDelete />}
-            isDisabled={selectedIds.length === 0}
-            onPress={() => openDeleteModal(selectedIds)}
-          >
-            删除选中
-          </Button>
-        </div>
-      </div>
-
-      <Card className="shadow-sm border border-default-200">
-        <CardBody className="p-0">
+    <div className="management-page px-4 lg:px-6 py-5 lg:py-6">
+      <Card className="management-table-card max-w-[1600px] mx-auto">
+        <CardHeader className="flex-row items-center justify-between gap-4 p-4 border-b border-default-100">
+          <div className="flex items-center gap-3 flex-wrap">
+            <h1 className="text-base font-semibold text-foreground">订单管理</h1>
+            <RefreshButton onRefresh={() => loadOrders(false)} />
+          </div>
+        </CardHeader>
+        <CardBody className="p-4 space-y-3">
+          <p className="text-xs text-default-500">查看全部订单，支持手动记账与批量删除</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" variant="bordered" color="danger" isDisabled={selectedIds.length === 0} onPress={() => openDeleteModal(selectedIds)}>删除选中{selectedIds.length > 0 ? `（${selectedIds.length}）` : ''}</Button>
+            <Button size="sm" variant="bordered" onPress={openManualModal}>手动记账</Button>
+          </div>
+          <div className="-mx-4 -mb-4">
           <div className="settings-table-scroll">
             <Table
               removeWrapper
@@ -307,7 +295,7 @@ export default function OrderManagementPage() {
                             <Chip
                               color={status.color}
                               size="sm"
-                              variant="flat"
+                              variant="light"
                               className="cursor-pointer"
                             >
                               {status.text}
@@ -344,7 +332,8 @@ export default function OrderManagementPage() {
             onPageChange={setPage}
             onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}
           />
-        </CardBody>
+        </div>
+          </CardBody>
       </Card>
 
       <Modal isOpen={manualModalOpen} onOpenChange={setManualModalOpen} size="lg" scrollBehavior="outside" backdrop="blur" placement="center">
@@ -352,11 +341,11 @@ export default function OrderManagementPage() {
           {(onClose) => (
             <>
               <ModalHeader className="flex flex-col gap-1">
-                <h2 className="text-xl font-bold">手动记账</h2>
+                <h2 className="text-base font-semibold">手动记账</h2>
               </ModalHeader>
               <ModalBody>
                 <div className="space-y-4">
-                  <Select
+                  <Select labelPlacement="outside-top" listboxProps={{ emptyContent: <EmptyState compact /> }}
                     size="sm"
                     label="用户"
                     placeholder="请选择要记账的用户"
@@ -374,7 +363,7 @@ export default function OrderManagementPage() {
                     ))}
                   </Select>
 
-                  <Textarea
+                  <Textarea labelPlacement="outside-top"
                     size="sm"
                     autoComplete="off"
                     label="订单信息"
@@ -388,7 +377,7 @@ export default function OrderManagementPage() {
                     maxRows={5}
                   />
 
-                  <Input
+                  <Input labelPlacement="outside-top"
                     size="sm"
                     autoComplete="off"
                     label={<HelpTooltip content="仅作记录用途，不会真实扣减或增加用户余额">金额</HelpTooltip>}
@@ -403,8 +392,8 @@ export default function OrderManagementPage() {
                 </div>
               </ModalBody>
               <ModalFooter>
-                <Button variant="light" onPress={onClose}>取消</Button>
-                <Button color="default" onPress={submitManualOrder} isLoading={manualLoading}>
+                <Button size="sm" variant="bordered" onPress={onClose}>取消</Button>
+                <Button size="sm" color="primary" onPress={submitManualOrder} isLoading={manualLoading}>
                   创建
                 </Button>
               </ModalFooter>

@@ -27,6 +27,7 @@ import {
   deleteRedeemCode,
   getPackagePlanList
 } from "@/api";
+import RefreshButton from "@/components/refresh-button";
 
 type RedeemType = 'discount' | 'package' | 'balance';
 
@@ -104,8 +105,8 @@ export default function RedeemCodePage() {
     loadData();
   }, []);
 
-  const loadData = async () => {
-    setLoading(true);
+  const loadData = async (showLoading = true) => {
+    setLoading(showLoading);
     try {
       const [codesRes, plansRes] = await Promise.all([
         getRedeemCodeList(),
@@ -244,13 +245,17 @@ export default function RedeemCodePage() {
     <div className="management-page px-4 lg:px-6 py-5 lg:py-6">
       <Card className="management-table-card max-w-[1600px] mx-auto">
         <CardHeader className="flex-row items-center justify-between gap-4 p-4 border-b border-default-100">
-          <div><h1 className="text-base font-semibold text-foreground">兑换码管理</h1><p className="mt-1 text-xs text-default-500">批量生成折扣、套餐或余额兑换码，供用户在购买套餐时使用</p></div>
-          <div className="flex gap-2">
-            <Button size="sm" variant="bordered" onPress={loadData} isDisabled={loading}>刷新</Button>
-            <Button size="sm" color="primary" onPress={handleAdd}>批量添加兑换码</Button>
+          <div className="flex items-center gap-3 flex-wrap">
+            <h1 className="text-base font-semibold text-foreground">兑换码管理</h1>
+            <RefreshButton onRefresh={() => loadData(false)} />
           </div>
         </CardHeader>
-        <CardBody className="p-0">
+        <CardBody className="p-4 space-y-3">
+          <p className="text-xs text-default-500">批量生成折扣、套餐或余额兑换码，供用户在购买套餐时使用</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" variant="bordered" onPress={handleAdd}>批量添加兑换码</Button>
+          </div>
+          <div className="-mx-4 -mb-4">
           <div className="settings-table-scroll">
             <Table removeWrapper aria-label="兑换码列表" classNames={{ base: "w-full", table: "w-full min-w-[700px] table-fixed", th: "management-table-heading", td: "management-table-cell" }}>
               <TableHeader>
@@ -273,11 +278,11 @@ export default function RedeemCodePage() {
                       </span>
                     </TableCell>
                     <TableCell>
-                      <Chip color={getTypeColor(code.type)} size="sm" variant="flat">{getTypeLabel(code.type)}</Chip>
+                      <Chip color={getTypeColor(code.type)} size="sm" variant="light">{getTypeLabel(code.type)}</Chip>
                     </TableCell>
                     <TableCell>{renderContent(code)}</TableCell>
                     <TableCell>
-                      <Chip color={code.usesRemaining > 0 ? 'success' : 'default'} size="sm" variant="flat">
+                      <Chip color={code.usesRemaining > 0 ? 'success' : 'default'} size="sm" variant="light">
                         {code.usesRemaining}
                       </Chip>
                     </TableCell>
@@ -291,7 +296,8 @@ export default function RedeemCodePage() {
               </TableBody>
             </Table>
           </div>
-        </CardBody>
+        </div>
+          </CardBody>
       </Card>
 
       <Modal isOpen={modalOpen} onOpenChange={setModalOpen} size="md" scrollBehavior="outside" backdrop="blur" placement="center">
@@ -299,11 +305,11 @@ export default function RedeemCodePage() {
           {(onClose) => (
             <>
               <ModalHeader>
-                <h2 className="text-lg font-bold">批量添加兑换码</h2>
+                <h2 className="text-base font-semibold">批量添加兑换码</h2>
               </ModalHeader>
               <ModalBody>
                 <div className="space-y-3 pb-4">
-                  <Select
+                  <Select labelPlacement="outside-top" listboxProps={{ emptyContent: <EmptyState compact /> }}
                     size="sm"
                     label="兑换类型"
                     selectedKeys={[form.type]}
@@ -320,7 +326,7 @@ export default function RedeemCodePage() {
                   </Select>
 
                   {form.type !== 'balance' && (
-                    <Select
+                    <Select labelPlacement="outside-top" listboxProps={{ emptyContent: <EmptyState compact /> }}
                       size="sm"
                       label="套餐"
                       placeholder="请选择兑换码对应的套餐"
@@ -340,7 +346,7 @@ export default function RedeemCodePage() {
                   )}
 
                   {form.type === 'discount' && (
-                    <Input autoComplete="off"
+                    <Input labelPlacement="outside-top" autoComplete="off"
                       size="sm"
                       label={<HelpTooltip content="兑换后按该比例支付套餐原价，如 80 表示支付原价的 80%（8折）">折扣比例</HelpTooltip>}
                       type="number"
@@ -358,7 +364,7 @@ export default function RedeemCodePage() {
                   )}
 
                   {form.type === 'balance' && (
-                    <Input autoComplete="off"
+                    <Input labelPlacement="outside-top" autoComplete="off"
                       size="sm"
                       label={<HelpTooltip content="兑换后直接为用户钱包余额加值该金额">到账金额</HelpTooltip>}
                       type="number"
@@ -371,7 +377,7 @@ export default function RedeemCodePage() {
                     />
                   )}
 
-                  <Input autoComplete="off"
+                  <Input labelPlacement="outside-top" autoComplete="off"
                     size="sm"
                     label={<HelpTooltip content="每个兑换代码可被使用的次数">可用次数</HelpTooltip>}
                     type="number"
@@ -382,7 +388,7 @@ export default function RedeemCodePage() {
                     variant="bordered"
                   />
 
-                  <Textarea autoComplete="off"
+                  <Textarea labelPlacement="outside-top" autoComplete="off"
                     size="sm"
                     label="兑换代码"
                     placeholder="一行一个，空行会被忽略"
@@ -397,8 +403,8 @@ export default function RedeemCodePage() {
                 </div>
               </ModalBody>
               <ModalFooter>
-                <Button variant="light" onPress={onClose}>取消</Button>
-                <Button color="default" onPress={handleSubmit} isLoading={submitLoading}>
+                <Button size="sm" variant="bordered" onPress={onClose}>取消</Button>
+                <Button size="sm" color="primary" onPress={handleSubmit} isLoading={submitLoading}>
                   创建
                 </Button>
               </ModalFooter>

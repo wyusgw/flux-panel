@@ -42,6 +42,27 @@ public class SystemInfoDto {
 
     @JsonProperty("cpu_model")
     private String cpuModel;
+
+    /**
+     * 系统标识（发行版/平台，如 ubuntu、debian、windows）
+     */
+    @JsonProperty("os_name")
+    private String osName;
+
+    @JsonProperty("os_version")
+    private String osVersion;
+
+    @JsonProperty("kernel_version")
+    private String kernelVersion;
+
+    @JsonProperty("arch")
+    private String arch;
+
+    /**
+     * 虚拟化类型（如 kvm、docker），物理机为空
+     */
+    @JsonProperty("virtualization")
+    private String virtualization;
     
     /**
      * 内存使用率（百分比）

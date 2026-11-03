@@ -17,6 +17,7 @@ import {
   batchDeleteUserGroups,
   reorderUserGroups
 } from "@/api";
+import RefreshButton from "@/components/refresh-button";
 
 const DragHandleIcon = () => (
   <svg className="w-4 h-4 text-default-400" viewBox="0 0 24 24" fill="currentColor">
@@ -61,8 +62,8 @@ export default function UserGroupPage() {
     loadData();
   }, []);
 
-  const loadData = async () => {
-    setLoading(true);
+  const loadData = async (showLoading = true) => {
+    setLoading(showLoading);
     try {
       const res = await getUserGroupList();
       if (res.code === 0) {
@@ -212,14 +213,18 @@ export default function UserGroupPage() {
     <div className="management-page px-4 lg:px-6 py-5 lg:py-6">
       <Card className="management-table-card max-w-[1600px] mx-auto">
         <CardHeader className="flex-row items-center justify-between gap-4 p-4 border-b border-default-100">
-          <div><h1 className="text-base font-semibold text-foreground">用户组管理</h1><p className="mt-1 text-xs text-default-500">管理用户分组与分组内用户数量</p></div>
-          <div className="flex gap-2">
-            {selectedIds.length > 0 && <Button size="sm" color="danger" variant="flat" onPress={() => setBatchDeleteModalOpen(true)}>批量删除（{selectedIds.length}）</Button>}
-            <Button size="sm" variant="bordered" onPress={loadData} isDisabled={loading}>刷新</Button>
-            <Button size="sm" color="primary" onPress={handleAdd}>添加用户组</Button>
+          <div className="flex items-center gap-3 flex-wrap">
+            <h1 className="text-base font-semibold text-foreground">用户组管理</h1>
+            <RefreshButton onRefresh={() => loadData(false)} />
           </div>
         </CardHeader>
-        <CardBody className="p-0">
+        <CardBody className="p-4 space-y-3">
+          <p className="text-xs text-default-500">管理用户分组与分组内用户数量</p>
+          <div className="flex flex-wrap items-center gap-2">
+            {selectedIds.length > 0 && <Button size="sm" color="danger" variant="bordered" onPress={() => setBatchDeleteModalOpen(true)}>批量删除（{selectedIds.length}）</Button>}
+            <Button size="sm" variant="bordered" onPress={handleAdd}>添加用户组</Button>
+          </div>
+          <div className="-mx-4 -mb-4">
           <div className="settings-table-scroll">
             <Table removeWrapper aria-label="用户组列表" selectionMode="multiple" selectedKeys={selectedKeys} onSelectionChange={setSelectedKeys} classNames={{ base: "w-full", table: "w-full min-w-[600px] table-fixed management-table-selectable", th: "management-table-heading", td: "management-table-cell" }}>
               <TableHeader><TableColumn className="w-16">排序</TableColumn><TableColumn className="w-28">UID</TableColumn><TableColumn>名称</TableColumn><TableColumn className="w-40">用户数量</TableColumn><TableColumn align="end" className="w-44 text-right">操作</TableColumn></TableHeader>
@@ -228,7 +233,8 @@ export default function UserGroupPage() {
               </TableBody>
             </Table>
           </div>
-        </CardBody>
+        </div>
+          </CardBody>
       </Card>
 
       <Modal isOpen={modalOpen} onOpenChange={setModalOpen} size="lg" scrollBehavior="outside" backdrop="blur" placement="center">
@@ -236,10 +242,10 @@ export default function UserGroupPage() {
           {(onClose) => (
             <>
               <ModalHeader className="flex flex-col gap-1">
-                <h2 className="text-xl font-bold">{isEdit ? '编辑用户组' : '添加用户组'}</h2>
+                <h2 className="text-base font-semibold">{isEdit ? '编辑用户组' : '添加用户组'}</h2>
               </ModalHeader>
               <ModalBody>
-                <Input
+                <Input labelPlacement="outside-top"
                   size="sm" autoComplete="off"
                   label="名称"
                   placeholder="请输入用户组名称"
@@ -251,8 +257,8 @@ export default function UserGroupPage() {
                 />
               </ModalBody>
               <ModalFooter>
-                <Button variant="light" onPress={onClose}>取消</Button>
-                <Button color="default" onPress={handleSubmit} isLoading={submitLoading}>
+                <Button size="sm" variant="bordered" onPress={onClose}>取消</Button>
+                <Button size="sm" color="primary" onPress={handleSubmit} isLoading={submitLoading}>
                   {isEdit ? '保存修改' : '创建'}
                 </Button>
               </ModalFooter>

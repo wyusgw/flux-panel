@@ -154,16 +154,16 @@ export default function LookingGlassPage() {
   }
 
   return (
-    <div className="px-3 lg:px-6 py-8">
+    <div className="management-page px-4 lg:px-6 py-5 lg:py-6">
       <div className="mb-4">
-        <h1 className="text-xl font-semibold">网络诊断</h1>
-        <p className="text-sm text-default-500 mt-1">
+        <h1 className="text-base font-semibold text-foreground">网络诊断</h1>
+        <p className="mt-1 text-xs text-default-500">
           从指定节点对目标地址发起 Ping、Traceroute、MTR 或 DNS 查询等诊断，用于排查线路故障。
         </p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-[380px_minmax(0,1fr)] gap-4 items-start">
-        <Card className="shadow-sm border border-default-200">
+        <Card className="management-table-card">
           <CardBody className="p-4 space-y-4">
             {nodes.length === 0 ? (
               <EmptyState text="暂无可用节点" />
@@ -190,7 +190,7 @@ export default function LookingGlassPage() {
                     >
                       <div className="flex items-center justify-between">
                         <span>{node.name}</span>
-                        <Chip color={node.status === 1 ? 'success' : 'danger'} variant="flat" size="sm">
+                        <Chip color={node.status === 1 ? 'success' : 'danger'} variant="light" size="sm">
                           {node.status === 1 ? '在线' : '离线'}
                         </Chip>
                       </div>
@@ -238,7 +238,7 @@ export default function LookingGlassPage() {
           </CardBody>
         </Card>
 
-        <Card className="shadow-sm border border-default-200 lg:min-h-[420px]">
+        <Card className="management-table-card lg:min-h-[420px]">
           <CardBody className="p-4">
             {result ? (
               <div>
@@ -246,7 +246,7 @@ export default function LookingGlassPage() {
                   <span className="text-sm font-semibold text-foreground">
                     {result.nodeName} → {result.target}
                   </span>
-                  <Chip size="sm" variant="flat" color={result.data.success ? 'success' : 'danger'}>
+                  <Chip size="sm" variant="light" color={result.data.success ? 'success' : 'danger'}>
                     {result.data.success ? '成功' : '失败'}
                   </Chip>
                 </div>

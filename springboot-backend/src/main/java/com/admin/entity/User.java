@@ -62,6 +62,11 @@ public class User extends BaseEntity {
     private Long flowResetTime;
 
     /**
+     * 流量重置时刻（HH:mm，默认 00:00），与 flowResetTime（每月第几日）配合使用
+     */
+    private String flowResetClock;
+
+    /**
      * 用户组ID（#0 为默认未分组）
      */
     private Long groupId;

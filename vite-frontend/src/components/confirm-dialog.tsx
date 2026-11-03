@@ -27,7 +27,7 @@ export const ConfirmDialog = ({
     <ModalContent>
       {(onClose) => (
         <>
-          <ModalHeader className="text-base font-semibold">{title}</ModalHeader>
+          <ModalHeader>{title}</ModalHeader>
           <ModalBody className="py-0">
             <div className="text-sm text-default-600 space-y-1">{message}</div>
           </ModalBody>

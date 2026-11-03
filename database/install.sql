@@ -321,7 +321,8 @@ CREATE TABLE `user` (
   `notify_expiry_mode` tinyint(4) NOT NULL DEFAULT '1',
   `notify_flow_mode` tinyint(4) NOT NULL DEFAULT '1',
   `telegram_last_expiry_reminder_date` varchar(10) DEFAULT NULL,
-  `telegram_last_flow_reminder_date` varchar(10) DEFAULT NULL
+  `telegram_last_flow_reminder_date` varchar(10) DEFAULT NULL,
+  `flow_reset_clock` varchar(5) NOT NULL DEFAULT '00:00'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 --

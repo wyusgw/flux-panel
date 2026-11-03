@@ -34,6 +34,11 @@ type SystemInfo struct {
 	BytesTransmitted       uint64  `json:"bytes_transmitted"`        // 发送字节数
 	CPUUsage               float64 `json:"cpu_usage"`                // CPU使用率（百分比）
 	CPUModel               string  `json:"cpu_model"`                // CPU型号
+	OSName                 string  `json:"os_name"`                  // 系统标识（发行版/平台，如 ubuntu、debian、windows、darwin）
+	OSVersion              string  `json:"os_version"`               // 系统版本（如 22.04）
+	KernelVersion          string  `json:"kernel_version"`           // 内核版本
+	Arch                   string  `json:"arch"`                     // 系统架构（如 x86_64、aarch64）
+	Virtualization         string  `json:"virtualization"`           // 虚拟化类型（如 kvm、docker，物理机为空）
 	MemoryUsage            float64 `json:"memory_usage"`             // 内存使用率（百分比）
 	MemoryTotal            uint64  `json:"memory_total"`             // 内存总量（字节）
 	MemoryUsed             uint64  `json:"memory_used"`              // 内存已用（字节）
@@ -362,6 +367,7 @@ func (w *WebSocketReporter) collectSystemInfo() SystemInfo {
 	cpuInfo := getCPUInfo()
 	memoryInfo := getMemoryInfo()
 	storageInfo := getStorageInfo()
+	osInfo := getOSInfo()
 	inboundTCP, outboundTCP, inboundUDP, outboundUDP := getConnectionDirectionStats()
 
 	return SystemInfo{
@@ -370,6 +376,11 @@ func (w *WebSocketReporter) collectSystemInfo() SystemInfo {
 		BytesTransmitted:       networkStats.BytesTransmitted,
 		CPUUsage:               cpuInfo.Usage,
 		CPUModel:               cpuInfo.Model,
+		OSName:                 osInfo.Name,
+		OSVersion:              osInfo.Version,
+		KernelVersion:          osInfo.Kernel,
+		Arch:                   osInfo.Arch,
+		Virtualization:         osInfo.Virtualization,
 		MemoryUsage:            memoryInfo.Usage,
 		MemoryTotal:            memoryInfo.Total,
 		MemoryUsed:             memoryInfo.Used,
@@ -1181,6 +1192,45 @@ func (w *WebSocketReporter) sendErrorResponse(responseType, message string) {
 		Message: message,
 	}
 	w.sendResponse(response)
+}
+
+// OSInfo 操作系统信息（发行版、版本、内核、架构、虚拟化）
+type OSInfo struct {
+	Name           string
+	Version        string
+	Kernel         string
+	Arch           string
+	Virtualization string
+}
+
+var (
+	osInfoOnce  sync.Once
+	osInfoCache OSInfo
+)
+
+// getOSInfo 获取操作系统信息。这些信息运行期间不会变化，而系统信息每 2 秒上报一次，
+// 所以只在第一次调用时读取并缓存，避免每次上报都去读 /etc/os-release、执行系统调用
+func getOSInfo() OSInfo {
+	osInfoOnce.Do(func() {
+		osInfoCache = OSInfo{Name: runtime.GOOS, Arch: runtime.GOARCH}
+		info, err := host.Info()
+		if err != nil || info == nil {
+			return
+		}
+		if info.Platform != "" {
+			osInfoCache.Name = info.Platform
+		}
+		osInfoCache.Version = info.PlatformVersion
+		osInfoCache.Kernel = info.KernelVersion
+		if info.KernelArch != "" {
+			osInfoCache.Arch = info.KernelArch
+		}
+		// 虚拟化角色为 guest 时才有意义（host 表示本机是宿主机）
+		if info.VirtualizationSystem != "" && info.VirtualizationRole == "guest" {
+			osInfoCache.Virtualization = info.VirtualizationSystem
+		}
+	})
+	return osInfoCache
 }
 
 // getUptime 获取系统开机时间（秒）

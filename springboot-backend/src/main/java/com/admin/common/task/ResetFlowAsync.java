@@ -18,6 +18,8 @@ import org.springframework.scheduling.annotation.Scheduled;
 
 import javax.annotation.Resource;
 import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
 import java.util.Date;
 import java.util.List;
 
@@ -61,7 +63,7 @@ public class ResetFlowAsync {
             log.info("当前日期: {}, 当月第{}天, 当月最后一天: {}", today, currentDay, lastDayOfMonth);
             
             // 重置用户流量
-            resetUserFlow(currentDay, lastDayOfMonth);
+            resetUserFlow(currentDay, lastDayOfMonth, DEFAULT_RESET_CLOCK);
             
             // 重置用户隧道流量
             resetUserTunnelFlow(currentDay, lastDayOfMonth);
@@ -82,18 +84,42 @@ public class ResetFlowAsync {
         }
     }
     
+    private static final String DEFAULT_RESET_CLOCK = "00:00";
+    private static final DateTimeFormatter CLOCK_FORMAT = DateTimeFormatter.ofPattern("HH:mm");
+
+    /**
+     * 每分钟检查一次「自定义重置时刻」的用户：当前时间的 HH:mm 与用户设置的流量重置时刻一致、且日期命中
+     * 每月重置日（含月末兜底）时重置流量。默认 00:00 的用户仍由每天 0 点的 reset_flow 任务处理，
+     * 这里跳过 00:00，避免与它重复重置。
+     */
+    @Scheduled(cron = "10 * * * * ?")
+    public void resetUserFlowAtCustomClock() {
+        try {
+            String clock = LocalTime.now().format(CLOCK_FORMAT);
+            if (DEFAULT_RESET_CLOCK.equals(clock)) {
+                return;
+            }
+            LocalDate today = LocalDate.now();
+            resetUserFlow(today.getDayOfMonth(), today.lengthOfMonth(), clock);
+        } catch (Exception e) {
+            log.info("自定义时刻流量重置任务执行失败", e);
+        }
+    }
+
     /**
      * 重置用户流量
      * @param currentDay 当前日期（几号）
      * @param lastDayOfMonth 当月最后一天
      */
-    private void resetUserFlow(int currentDay, int lastDayOfMonth) {
+    private void resetUserFlow(int currentDay, int lastDayOfMonth, String clock) {
         try {
             // flowResetTime字段存储的是0-31的数字，0表示不重置，1-31表示每月第几号重置
             // 构建查询条件：重置日期等于今天，或者重置日期大于当月最大天数且今天是月末
             // 排除flowResetTime为0的记录（不重置）
             QueryWrapper<User> queryWrapper = new QueryWrapper<>();
             queryWrapper.ne("flow_reset_time", 0); // 排除不重置的用户
+            // 只处理重置时刻等于 clock 的用户：每天 0 点的任务处理默认 00:00，每分钟的任务处理其余自定义时刻
+            queryWrapper.eq("flow_reset_clock", clock);
             
             if (currentDay == lastDayOfMonth) {
                 // 如果今天是月末，查询重置日期等于今天或者大于当月最大天数的记录

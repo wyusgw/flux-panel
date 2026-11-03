@@ -15,6 +15,7 @@ export interface User {
   num: number; // 转发数量
   expTime?: number; // 过期时间戳
   flowResetTime?: number; // 流量重置日期(1-31号)
+  flowResetClock?: string; // 流量重置时刻(HH:mm，默认 00:00)
   createdTime?: number; // 创建时间戳
   inFlow?: number; // 下载流量(字节)
   outFlow?: number; // 上传流量(字节)
@@ -35,6 +36,7 @@ export interface UserForm {
   num: number;
   expTime: Date | null;
   flowResetTime: number;
+  flowResetClock: string;
   groupId?: number | null;
   packageId?: number | null;
   walletBalance?: number;

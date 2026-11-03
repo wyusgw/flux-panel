@@ -92,7 +92,7 @@ function DiagnosisDetailModal({
             <ModalBody>
               <div className="space-y-1 text-sm mb-3">
                 <div className="flex justify-between gap-4"><span className="text-default-500">状态</span>
-                  <Chip size="sm" variant="flat" color={result.success ? 'success' : 'danger'}>{result.success ? '成功' : '失败'}</Chip>
+                  <Chip size="sm" variant="light" color={result.success ? 'success' : 'danger'}>{result.success ? '成功' : '失败'}</Chip>
                 </div>
                 {result.description && (
                   <div className="flex justify-between gap-4"><span className="text-default-500">描述</span><span className="text-foreground text-right">{result.description}</span></div>
@@ -111,7 +111,7 @@ function DiagnosisDetailModal({
                   <div className="flex justify-between gap-4"><span className="text-default-500">时间</span><span className="font-mono text-foreground">{new Date(result.timestamp).toLocaleString()}</span></div>
                 )}
                 {result.dispatchFailed && (
-                  <div className="flex justify-between gap-4"><span className="text-default-500">下发状态</span><Chip size="sm" variant="flat" color="danger">下发失败</Chip></div>
+                  <div className="flex justify-between gap-4"><span className="text-default-500">下发状态</span><Chip size="sm" variant="light" color="danger">下发失败</Chip></div>
                 )}
               </div>
               <div>
@@ -170,8 +170,8 @@ export function DiagnosisLeg({
                 <div className="flex items-center justify-between px-4 py-2.5 border-b border-default-100 w-full">
                   <span className="font-semibold text-foreground truncate">{groupName || result.nodeName}</span>
                   <div className="flex items-center gap-2 flex-shrink-0">
-                    {result.groupId != null && <Chip size="sm" variant="flat" color="primary">GID: {result.groupId}</Chip>}
-                    {!result.success && <Chip size="sm" variant="flat" color="danger">失败</Chip>}
+                    {result.groupId != null && <Chip size="sm" variant="light" color="primary">GID: {result.groupId}</Chip>}
+                    {!result.success && <Chip size="sm" variant="light" color="danger">失败</Chip>}
                   </div>
                 </div>
                 <div className="px-4 py-3 space-y-1 text-left w-full">

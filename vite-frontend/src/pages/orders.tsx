@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { Card, CardBody } from "@heroui/card";
+import { Card, CardBody, CardHeader } from "@heroui/card";
 import {
   Table,
   TableHeader,
@@ -15,6 +15,7 @@ import toast from 'react-hot-toast';
 import { EmptyState } from "@/components/empty-state";
 import { TablePagination } from "@/components/table-pagination";
 import { getOrderList } from "@/api";
+import RefreshButton from "@/components/refresh-button";
 
 interface OrderItem {
   id: number;
@@ -68,8 +69,8 @@ export default function OrdersPage() {
     loadData();
   }, []);
 
-  const loadData = async () => {
-    setLoading(true);
+  const loadData = async (showLoading = true) => {
+    setLoading(showLoading);
     try {
       const res = await getOrderList();
       if (res.code === 0) {
@@ -102,10 +103,12 @@ export default function OrdersPage() {
   }
 
   return (
-    <div className="px-3 lg:px-6 py-8">
-      <h1 className="text-xl font-semibold mb-4">我的订单</h1>
-
-      <Card className="shadow-sm border border-default-200">
+    <div className="management-page px-4 lg:px-6 py-5 lg:py-6">
+      <Card className="management-table-card max-w-[1600px] mx-auto">
+        <CardHeader className="flex-row items-center justify-between gap-4 p-4 border-b border-default-100">
+          <div><h1 className="text-base font-semibold text-foreground">我的订单</h1><p className="mt-1 text-xs text-default-500">查看您的订单记录</p></div>
+          <RefreshButton onRefresh={() => loadData(false)} />
+        </CardHeader>
         <CardBody className="p-0">
           <div className="settings-table-scroll">
             <Table
@@ -136,7 +139,7 @@ export default function OrdersPage() {
                       <TableCell>{order.amount} 元</TableCell>
                       <TableCell>{getTypeText(order.type)}</TableCell>
                       <TableCell>
-                        <Chip color={status.color} size="sm" variant="flat">{status.text}</Chip>
+                        <Chip color={status.color} size="sm" variant="light">{status.text}</Chip>
                       </TableCell>
                     </TableRow>
                   );

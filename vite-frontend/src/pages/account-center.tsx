@@ -1,6 +1,6 @@
 import { useState, useEffect, ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, CardBody } from "@heroui/card";
+import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Button } from "@heroui/button";
 import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure } from "@heroui/modal";
 import { Input } from "@heroui/input";
@@ -369,11 +369,12 @@ export default function AccountCenterPage() {
   const usedFlowGiB = (userInfo.inFlow + userInfo.outFlow) / GB;
 
   return (
-    <div className="px-3 lg:px-6 py-6 max-w-[1600px] mx-auto space-y-4">
-      <Card className="border border-default-200 shadow-sm">
-        <CardBody className="p-5 space-y-4">
+    <div className="management-page px-4 lg:px-6 py-5 lg:py-6 max-w-[1600px] mx-auto space-y-4">
+      <Card className="management-table-card">
+        <CardHeader className="p-4 border-b border-default-100">
           <h2 className="text-base font-semibold text-foreground">用户信息</h2>
-
+        </CardHeader>
+        <CardBody className="p-4 lg:p-5 space-y-4">
           <Row label="用户名" value={userInfo.user} />
           <Row label="用户类型" value={isAdminUser ? '管理员' : '普通用户'} />
           <Row label="用户组" value={userInfo.groupName || '未分组'} />
@@ -430,10 +431,11 @@ export default function AccountCenterPage() {
         </CardBody>
       </Card>
 
-      <Card className="border border-default-200 shadow-sm">
-        <CardBody className="p-5 space-y-5">
+      <Card className="management-table-card">
+        <CardHeader className="p-4 border-b border-default-100">
           <h2 className="text-base font-semibold text-foreground">账户设置</h2>
-
+        </CardHeader>
+        <CardBody className="p-4 lg:p-5 space-y-5">
           <div>
             <div className="flex items-center justify-between gap-3">
               <p className="text-sm font-medium text-foreground">自动续费</p>
@@ -482,8 +484,8 @@ export default function AccountCenterPage() {
             )}
           </ModalBody>
           <ModalFooter>
-            <Button variant="light" onPress={() => onBindOpenChange()}>关闭</Button>
-            <Button color="default" isDisabled={bindChecking} onPress={handleRefreshBindStatus}>刷新状态</Button>
+            <Button size="sm" variant="bordered" onPress={() => onBindOpenChange()}>关闭</Button>
+            <Button size="sm" color="primary" isDisabled={bindChecking} onPress={handleRefreshBindStatus}>刷新状态</Button>
           </ModalFooter>
         </ModalContent>
       </Modal>
@@ -563,8 +565,8 @@ export default function AccountCenterPage() {
             )}
           </ModalBody>
           <ModalFooter>
-            <Button variant="light" onPress={() => onPushOpenChange()}>取消</Button>
-            <Button color="default" isLoading={pushSaving} onPress={handleSavePushSettings}>确定</Button>
+            <Button size="sm" variant="bordered" onPress={() => onPushOpenChange()}>取消</Button>
+            <Button size="sm" color="primary" isLoading={pushSaving} onPress={handleSavePushSettings}>确定</Button>
           </ModalFooter>
         </ModalContent>
       </Modal>
@@ -579,7 +581,7 @@ export default function AccountCenterPage() {
             <p className="text-xs text-default-500">请使用新密码重新登录。</p>
           </ModalBody>
           <ModalFooter>
-            <Button color="default" className="w-full" onPress={handleGeneratedConfirm}>我已保存，重新登录</Button>
+            <Button size="sm" color="primary" className="w-full" onPress={handleGeneratedConfirm}>我已保存，重新登录</Button>
           </ModalFooter>
         </ModalContent>
       </Modal>

@@ -226,15 +226,15 @@ export default function ShopPage() {
   }
 
   return (
-    <div className="px-3 lg:px-6 py-8">
+    <div className="management-page px-4 lg:px-6 py-5 lg:py-6">
       <div className="mb-6">
-        <h1 className="text-lg font-semibold text-foreground">我的钱包</h1>
-        <p className="mt-2 text-base font-semibold text-foreground">钱包余额: {walletBalance.toFixed(0)} 元</p>
+        <h1 className="text-base font-semibold text-foreground">我的钱包</h1>
+        <p className="mt-1 text-sm text-default-600">钱包余额：<span className="font-semibold text-foreground">{walletBalance.toFixed(0)} 元</span></p>
       </div>
 
-      <Card className="border border-gray-200 dark:border-default-200 shadow-md mb-6">
-        <CardHeader className="pb-0"><h3 className="text-base font-semibold text-foreground">钱包充值</h3></CardHeader>
-        <CardBody>
+      <Card className="management-table-card mb-6">
+        <CardHeader className="p-4 border-b border-default-100"><h2 className="text-base font-semibold text-foreground">钱包充值</h2></CardHeader>
+        <CardBody className="p-4 lg:p-5">
           <div className="flex items-end gap-2 max-w-sm">
             <Input
               size="sm"
@@ -266,13 +266,13 @@ export default function ShopPage() {
         </CardBody>
       </Card>
 
-      <Card className="border border-gray-200 dark:border-default-200 shadow-md mb-6">
-        <CardHeader className="pb-0"><h3 className="text-base font-semibold text-foreground">购买套餐</h3></CardHeader>
-        <CardBody>
+      <Card className="management-table-card mb-6">
+        <CardHeader className="p-4 border-b border-default-100"><h2 className="text-base font-semibold text-foreground">购买套餐</h2></CardHeader>
+        <CardBody className="p-4 lg:p-5">
           {plans.length > 0 ? (
             <div className="flex flex-wrap gap-4">
               {plans.map((plan) => (
-                <Card key={plan.id} className="w-full sm:w-[190px] shrink-0 shadow-sm border border-gray-200 dark:border-gray-700">
+                <Card key={plan.id} className="w-full sm:w-[190px] shrink-0 shadow-none border border-default-200">
                   <CardHeader className="pb-1.5">
                     <h3 className="text-small font-semibold text-foreground">{plan.name}</h3>
                   </CardHeader>
@@ -322,9 +322,9 @@ export default function ShopPage() {
         </CardBody>
       </Card>
 
-      <Card className="border border-gray-200 dark:border-default-200 shadow-md">
-        <CardHeader className="pb-0"><h3 className="text-base font-semibold text-foreground">兑换套餐</h3></CardHeader>
-        <CardBody>
+      <Card className="management-table-card">
+        <CardHeader className="p-4 border-b border-default-100"><h2 className="text-base font-semibold text-foreground">兑换套餐</h2></CardHeader>
+        <CardBody className="p-4 lg:p-5">
           <p className="text-sm text-default-500 mb-3">如果您有兑换码，则可以免费或低价购买对应的套餐。</p>
           <div className="flex gap-2 max-w-lg">
             <Input
@@ -354,7 +354,7 @@ export default function ShopPage() {
                 <p className="text-small text-default-600">购买成功</p>
               </ModalBody>
               <ModalFooter>
-                <Button color="primary" onPress={onClose}>知道了</Button>
+                <Button size="sm" color="primary" onPress={onClose}>知道了</Button>
               </ModalFooter>
             </>
           )}

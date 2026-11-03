@@ -4,6 +4,7 @@ import lombok.Data;
 
 import javax.validation.constraints.NotBlank;
 import javax.validation.constraints.NotNull;
+import javax.validation.constraints.Pattern;
 import javax.validation.constraints.Min;
 import java.math.BigDecimal;
 
@@ -31,6 +32,12 @@ public class UserDto {
 
     @NotNull(message = "流量重置时间不能为空")
     private Long flowResetTime;
+
+    /**
+     * 流量重置时刻（HH:mm），留空按 00:00 处理
+     */
+    @Pattern(regexp = "^$|^([01]\\d|2[0-3]):[0-5]\\d$", message = "流量重置时刻格式应为 HH:mm")
+    private String flowResetClock;
 
     private Integer status;
 

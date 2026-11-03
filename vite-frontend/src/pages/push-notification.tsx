@@ -12,6 +12,7 @@ import toast from 'react-hot-toast';
 import { getConfigs, updateConfigs, testTelegramNotify, getDeviceGroupList, updateDeviceGroupOfflineConfig, getTelegramSendLogs } from '@/api';
 import { isAdmin } from '@/utils/auth';
 import { HelpTooltip } from '@/components/help-tooltip';
+import RefreshButton from "@/components/refresh-button";
 
 interface TemplateMeta {
   key: string;
@@ -449,7 +450,7 @@ export default function PushNotificationPage() {
           <Button size="sm" color="default" onPress={saveTemplates} isLoading={templatesSaving}>保存模板与设置</Button>
         </CardHeader>
         <CardBody className="p-4 lg:p-5 space-y-5">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="text-xs font-medium text-foreground mb-1 block">到期提醒阈值（天）</label>
               <Input autoComplete="off" type="number" size="sm" variant="bordered" value={expiryReminderDays} onChange={(e) => setExpiryReminderDays(e.target.value)} />
@@ -534,7 +535,7 @@ export default function PushNotificationPage() {
               <SelectItem key="SUCCESS">成功</SelectItem>
               <SelectItem key="FAILED">失败</SelectItem>
             </Select>
-            <Button size="sm" variant="flat" isDisabled={logsLoading} onPress={() => loadLogs()}>刷新</Button>
+            <RefreshButton isDisabled={logsLoading} onRefresh={() => loadLogs()} />
           </div>
         </CardHeader>
         <CardBody className="p-4 lg:p-5">
@@ -552,11 +553,11 @@ export default function PushNotificationPage() {
                   <TableRow key={item.id}>
                     <TableCell className="whitespace-nowrap text-xs text-default-500">{new Date(item.createdTime).toLocaleString()}</TableCell>
                     <TableCell>{item.userName || (item.userId != null ? `用户#${item.userId}` : '-')}</TableCell>
-                    <TableCell><Chip size="sm" variant="flat">{LOG_TYPE_LABELS[item.type] || item.type}</Chip></TableCell>
+                    <TableCell><Chip size="sm" variant="light">{LOG_TYPE_LABELS[item.type] || item.type}</Chip></TableCell>
                     <TableCell>
                       {item.status === 'SUCCESS'
-                        ? <Chip size="sm" variant="flat" color="success">成功</Chip>
-                        : <Chip size="sm" variant="flat" color="danger">失败</Chip>}
+                        ? <Chip size="sm" variant="light" color="success">成功</Chip>
+                        : <Chip size="sm" variant="light" color="danger">失败</Chip>}
                     </TableCell>
                     <TableCell className="max-w-[360px]">
                       <p className="text-xs text-default-500 whitespace-pre-line line-clamp-2">

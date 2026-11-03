@@ -726,6 +726,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     private User buildNewUserEntity(UserDto userDto) {
         User user = new User();
         BeanUtils.copyProperties(userDto, user);
+        user.setFlowResetClock(normalizeResetClock(userDto.getFlowResetClock()));
         
         // 设置加密密码
         user.setPwd(Md5Util.md5(userDto.getPwd()));
@@ -754,6 +755,11 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         return this.getById(userId) != null;
     }
 
+    /** 流量重置时刻留空时按 00:00（每月重置日 0 点整）处理 */
+    private String normalizeResetClock(String clock) {
+        return StrUtil.isBlank(clock) ? "00:00" : clock.trim();
+    }
+
     /**
      * 构建用户更新实体对象
      * 
@@ -763,6 +769,8 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     private User buildUpdateUserEntity(UserUpdateDto userUpdateDto) {
         User user = new User();
         BeanUtils.copyProperties(userUpdateDto, user);
+        // 列是 NOT NULL DEFAULT '00:00'，且 updateById 会跳过 null，所以留空时显式写成 00:00，保证能把自定义时刻改回默认
+        user.setFlowResetClock(normalizeResetClock(userUpdateDto.getFlowResetClock()));
         
         // 处理密码更新
         if (StrUtil.isNotBlank(userUpdateDto.getPwd())) {
@@ -995,6 +1003,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         userInfo.setNum(user.getNum());
         userInfo.setExpTime(user.getExpTime());
         userInfo.setFlowResetTime(user.getFlowResetTime());
+        userInfo.setFlowResetClock(user.getFlowResetClock());
         userInfo.setCreatedTime(user.getCreatedTime());
         userInfo.setUpdatedTime(user.getUpdatedTime());
         userInfo.setGroupId(user.getGroupId());

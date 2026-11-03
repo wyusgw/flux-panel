@@ -22,6 +22,7 @@ import {
   reorderPackagePlans,
   getUserGroupList
 } from "@/api";
+import RefreshButton from "@/components/refresh-button";
 
 const DragHandleIcon = () => (
   <svg className="w-4 h-4 text-default-400" viewBox="0 0 24 24" fill="currentColor">
@@ -99,8 +100,8 @@ export default function PackagePlanPage() {
     loadData();
   }, []);
 
-  const loadData = async () => {
-    setLoading(true);
+  const loadData = async (showLoading = true) => {
+    setLoading(showLoading);
     try {
       const [plansRes, groupsRes] = await Promise.all([
         getPackagePlanList(),
@@ -270,14 +271,18 @@ export default function PackagePlanPage() {
     <div className="management-page px-4 lg:px-6 py-5 lg:py-6">
       <Card className="management-table-card max-w-[1600px] mx-auto">
         <CardHeader className="flex-row items-center justify-between gap-4 p-4 border-b border-default-100">
-          <div><h1 className="text-base font-semibold text-foreground">套餐管理</h1><p className="mt-1 text-xs text-default-500">管理可供购买的流量套餐</p></div>
-          <div className="flex gap-2">
-            {selectedIds.length > 0 && <Button size="sm" color="danger" variant="flat" onPress={() => setBatchDeleteModalOpen(true)}>批量删除（{selectedIds.length}）</Button>}
-            <Button size="sm" variant="bordered" onPress={loadData} isDisabled={loading}>刷新</Button>
-            <Button size="sm" color="primary" onPress={handleAdd}>添加套餐</Button>
+          <div className="flex items-center gap-3 flex-wrap">
+            <h1 className="text-base font-semibold text-foreground">套餐管理</h1>
+            <RefreshButton onRefresh={() => loadData(false)} />
           </div>
         </CardHeader>
-        <CardBody className="p-0">
+        <CardBody className="p-4 space-y-3">
+          <p className="text-xs text-default-500">管理可供购买的流量套餐</p>
+          <div className="flex flex-wrap items-center gap-2">
+            {selectedIds.length > 0 && <Button size="sm" color="danger" variant="bordered" onPress={() => setBatchDeleteModalOpen(true)}>批量删除（{selectedIds.length}）</Button>}
+            <Button size="sm" variant="bordered" onPress={handleAdd}>添加套餐</Button>
+          </div>
+          <div className="-mx-4 -mb-4">
           <Table removeWrapper aria-label="套餐列表" selectionMode="multiple" selectedKeys={selectedKeys} onSelectionChange={setSelectedKeys} classNames={{ base: "w-full", table: "w-full management-table-selectable", th: "management-table-heading", td: "management-table-cell" }}>
             <TableHeader>
               <TableColumn className="w-16">排序</TableColumn>
@@ -315,7 +320,8 @@ export default function PackagePlanPage() {
               ))}
             </TableBody>
           </Table>
-        </CardBody>
+        </div>
+          </CardBody>
       </Card>
 
       <Modal isOpen={modalOpen} onOpenChange={setModalOpen} size="2xl" scrollBehavior="outside" backdrop="blur" placement="center">
@@ -323,11 +329,11 @@ export default function PackagePlanPage() {
           {(onClose) => (
             <>
               <ModalHeader className="flex flex-col gap-1">
-                <h2 className="text-xl font-bold">{isEdit ? '编辑套餐' : '添加套餐'}</h2>
+                <h2 className="text-base font-semibold">{isEdit ? '编辑套餐' : '添加套餐'}</h2>
               </ModalHeader>
               <ModalBody>
                 <div className="space-y-4">
-                  <Input
+                  <Input labelPlacement="outside-top"
                     size="sm" autoComplete="off"
                     label="名称"
                     placeholder="请输入套餐名称"
@@ -338,7 +344,7 @@ export default function PackagePlanPage() {
                     variant="bordered"
                   />
 
-                  <Select
+                  <Select labelPlacement="outside-top" listboxProps={{ emptyContent: <EmptyState compact /> }}
                     size="sm"
                     label="分配用户组"
                     placeholder="购买后自动加入的用户组"
@@ -356,7 +362,7 @@ export default function PackagePlanPage() {
                     ))}
                   </Select>
 
-                  <Input
+                  <Input labelPlacement="outside-top"
                     size="sm" autoComplete="off"
                     label={<HelpTooltip content="购买后套餐的可用流量，0 为不限流量">可用流量</HelpTooltip>}
                     type="number"
@@ -368,7 +374,7 @@ export default function PackagePlanPage() {
                     endContent={<span className="px-2 py-0.5 -mr-1 rounded-md bg-default-100 dark:bg-default-50/10 text-default-500 text-xs font-medium">GiB</span>}
                   />
 
-                  <Input
+                  <Input labelPlacement="outside-top"
                     size="sm" autoComplete="off"
                     label={<HelpTooltip content="购买后套餐的有效天数，0 为永久有效">有效天数</HelpTooltip>}
                     type="number"
@@ -380,7 +386,7 @@ export default function PackagePlanPage() {
                     endContent={<span className="px-2 py-0.5 -mr-1 rounded-md bg-default-100 dark:bg-default-50/10 text-default-500 text-xs font-medium">天</span>}
                   />
 
-                  <Input
+                  <Input labelPlacement="outside-top"
                     size="sm" autoComplete="off"
                     label={<HelpTooltip content="购买后可创建的最大转发规则数，0 为不限规则数">规则数</HelpTooltip>}
                     type="number"
@@ -391,7 +397,7 @@ export default function PackagePlanPage() {
                     variant="bordered"
                   />
 
-                  <Input
+                  <Input labelPlacement="outside-top"
                     size="sm" autoComplete="off"
                     label={<HelpTooltip content="套餐价格，0 为免费">价格</HelpTooltip>}
                     type="number"
@@ -403,7 +409,7 @@ export default function PackagePlanPage() {
                     endContent={<span className="px-2 py-0.5 -mr-1 rounded-md bg-default-100 dark:bg-default-50/10 text-default-500 text-xs font-medium">元</span>}
                   />
 
-                  <Input
+                  <Input labelPlacement="outside-top"
                     size="sm" autoComplete="off"
                     label={<HelpTooltip content="该套餐用户的限速，0 为不限速，不同转发规则的限速可叠加">用户限速</HelpTooltip>}
                     type="number"
@@ -425,8 +431,8 @@ export default function PackagePlanPage() {
                 </div>
               </ModalBody>
               <ModalFooter>
-                <Button variant="light" onPress={onClose}>取消</Button>
-                <Button color="default" onPress={handleSubmit} isLoading={submitLoading}>
+                <Button size="sm" variant="bordered" onPress={onClose}>取消</Button>
+                <Button size="sm" color="primary" onPress={handleSubmit} isLoading={submitLoading}>
                   {isEdit ? '保存修改' : '创建'}
                 </Button>
               </ModalFooter>

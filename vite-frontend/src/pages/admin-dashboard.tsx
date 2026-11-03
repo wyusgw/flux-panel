@@ -37,94 +37,6 @@ const formatFlow = (value: number) => value < 1024 ** 2 ? `${(value / 1024).toFi
 const TableIcon = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 20 20"><rect x="3" y="4" width="14" height="12" rx="1.5" /><path d="M3 8h14M8 8v8" /></svg>;
 const ChartIcon = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 20 20"><path strokeLinecap="round" d="M4 16V9M9 16V4M14 16v-5" /><path strokeLinecap="round" strokeLinejoin="round" d="M3 16h14" /></svg>;
 
-// 赛车仪表盘风格的拱状仪表：用于展示"在线节点占比"这类比例数据。
-// 手绘 SVG（不依赖图表库）：240° 宽扫角弧线 + 红/黄/绿三段色带 + 刻度线 + 指针，
-// 跟普通的半圆进度弧比起来更像真正的仪表盘（车速表/转速表那种），而不是一条简单的进度条
-const polarPoint = (cx: number, cy: number, r: number, angleDeg: number) => {
-  const rad = (angleDeg * Math.PI) / 180;
-  return { x: cx + r * Math.cos(rad), y: cy - r * Math.sin(rad) };
-};
-const describeArc = (cx: number, cy: number, r: number, startAngle: number, endAngle: number) => {
-  const start = polarPoint(cx, cy, r, startAngle);
-  const end = polarPoint(cx, cy, r, endAngle);
-  const largeArcFlag = startAngle - endAngle <= 180 ? 0 : 1;
-  return `M ${start.x} ${start.y} A ${r} ${r} 0 ${largeArcFlag} 1 ${end.x} ${end.y}`;
-};
-
-const GAUGE_START = 210; // 起始角（左下方），标准数学角度制，逆时针为正
-const GAUGE_END = -30;   // 结束角（右下方），总扫角 240°
-const angleForPercent = (p: number) => GAUGE_START - (GAUGE_START - GAUGE_END) * (Math.min(100, Math.max(0, p)) / 100);
-
-const SpeedometerGauge = ({ percent, value, sublabel }: { percent: number; value: string; sublabel: string }) => {
-  // 指针半径明显短于刻度环，且数值文字放在刻度环最低点（角度 210°/-30° 时）以下留足间距，
-  // 两者才不会在指针指向 0% 或 100%（也就是最贴近底部文字的角度）时撞在一起
-  const width = 190, cx = 95, cy = 92, r = 50, trackWidth = 10;
-  const clamped = Math.min(100, Math.max(0, percent));
-  const zones: [number, number, string][] = [[0, 30, '#e5484d'], [30, 70, '#f5a524'], [70, 100, '#17c964']];
-  const majorTicks = [0, 50, 100];
-  const minorTicks = [10, 20, 30, 40, 60, 70, 80, 90];
-  const trackOuter = r + trackWidth / 2;
-  // 指针始终按 0° 方向（水平朝右）画好，再整体用 CSS transform 旋转到目标角度：
-  // SVG 的 x1/y1/x2/y2 这类几何属性没法被 CSS transition 插值，直接改端点坐标指针会瞬间跳过去；
-  // 用 transform 旋转才能真正做出过渡动画。首次渲染先停在 0%，挂载后再转到实际值，就有一次"扫过去"的效果
-  const [shownPercent, setShownPercent] = useState(0);
-  useEffect(() => {
-    const id = requestAnimationFrame(() => setShownPercent(clamped));
-    return () => cancelAnimationFrame(id);
-  }, [clamped]);
-  const needleAngle = angleForPercent(shownPercent);
-  const needleLength = r - trackWidth - 12;
-  // 数字刻度标签靠水平位置决定对齐方式，避免贴着刻度线边缘显得挤
-  const labelAnchor = (t: number) => t === 0 ? 'start' : t === 100 ? 'end' : 'middle';
-
-  return (
-    <svg viewBox={`0 0 ${width} 182`} className="w-full max-w-[190px] mx-auto block">
-      {zones.map(([from, to, color]) => (
-        <path
-          key={color}
-          d={describeArc(cx, cy, r, angleForPercent(from), angleForPercent(to))}
-          fill="none"
-          stroke={color}
-          strokeWidth={trackWidth}
-          strokeLinecap="butt"
-        />
-      ))}
-      {/* 刻度线画在色带外圈，而不是叠在色带上面——叠在鲜艳的色带上灰色细线基本看不出来 */}
-      {minorTicks.map(t => {
-        const outer = polarPoint(cx, cy, trackOuter + 6, angleForPercent(t));
-        const inner = polarPoint(cx, cy, trackOuter + 2, angleForPercent(t));
-        return <line key={t} x1={inner.x} y1={inner.y} x2={outer.x} y2={outer.y} strokeWidth={1.5} className="stroke-default-400 dark:stroke-default-300" />;
-      })}
-      {majorTicks.map(t => {
-        const outer = polarPoint(cx, cy, trackOuter + 9, angleForPercent(t));
-        const inner = polarPoint(cx, cy, trackOuter + 2, angleForPercent(t));
-        const labelPos = polarPoint(cx, cy, trackOuter + 20, angleForPercent(t));
-        return (
-          <g key={t}>
-            <line x1={inner.x} y1={inner.y} x2={outer.x} y2={outer.y} strokeWidth={2} className="stroke-default-600 dark:stroke-default-200" />
-            <text x={labelPos.x} y={labelPos.y + 4} textAnchor={labelAnchor(t)} className="fill-default-500" style={{ fontSize: 10 }}>{t}</text>
-          </g>
-        );
-      })}
-      {/* 指针根部做成很窄的三角形（而不是单纯一条线），更接近真实指针的锥形 */}
-      <polygon
-        points={`${cx},${cy - 5} ${cx + needleLength},${cy} ${cx},${cy + 5}`}
-        strokeWidth={2} strokeLinejoin="round"
-        className="fill-foreground stroke-foreground"
-        style={{
-          transformOrigin: `${cx}px ${cy}px`,
-          transformBox: 'view-box',
-          transform: `rotate(${-needleAngle}deg)`,
-          transition: 'transform .9s cubic-bezier(.22, 1.2, .36, 1)',
-        }}
-      />
-      <circle cx={cx} cy={cy} r={5} className="fill-foreground" />
-      <text x={cx} y={157} textAnchor="middle" className="fill-foreground" style={{ fontSize: 18, fontWeight: 700 }}>{value}</text>
-      <text x={cx} y={172} textAnchor="middle" className="fill-default-500" style={{ fontSize: 10.5 }}>{sublabel}</text>
-    </svg>
-  );
-};
-
 // 充值趋势迷你折线图：数据一览里"今/昨日充值"与"本/上月充值"两格用的都是同一个组件，
 // 只是喂进去的趋势数据范围不同（按天 14 天 / 按月 6 个月）
 type TrendPoint = { label: string; amount: number };
@@ -229,14 +141,14 @@ export default function AdminDashboardPage() {
   }, []);
   useEffect(() => { loadData(); }, [loadData]);
 
+  const onlineNodeCount = nodes.filter(node => node.status === 1).length;
+  const offlineNodeCount = nodes.length - onlineNodeCount;
   const queuePending = queueHealth ? queueHealth.queuedCount + queueHealth.retryingCount + queueHealth.exhaustedCount : 0;
 
   const now = new Date();
   const yesterday = new Date(now); yesterday.setDate(now.getDate() - 1);
   const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const paidAmount = (predicate: (time: number | undefined) => boolean) => orders.filter(order => order.orderStatus === 1 && predicate(order.paidTime || order.createdTime)).reduce((sum, order) => sum + Number(order.amount || 0), 0);
-  const onlineNodeCount = nodes.filter(node => node.status === 1).length;
-  const onlineNodePercent = nodes.length > 0 ? (onlineNodeCount / nodes.length) * 100 : 0;
 
   // 充值趋势：最近 14 天/最近 6 个月，直接从已经整批拉回来的 orders 里按天/按月汇总，
   // 不需要额外的后端接口
@@ -265,14 +177,16 @@ export default function AdminDashboardPage() {
     <div className="flex items-center justify-between mb-5"><div><p className="text-xs font-medium tracking-[0.16em] text-blue-400 uppercase">Console</p><h1 className="mt-1 text-xl font-semibold">仪表盘</h1></div></div>
     <section className="dashboard-panel mb-5 overflow-hidden">
       <div className="px-4 py-3 border-b border-default-100"><h2 className="text-sm font-semibold">数据一览</h2></div>
-      <div className="grid grid-cols-2 md:grid-cols-4 border-b border-default-100">
-        <div className="md:border-r border-b md:border-b-0 border-default-100">
+      {/* 移动端保持与桌面一致的横向多栏布局，宽度不够时整块左右滑动，而不是把格子竖着堆叠 */}
+      <div className="overflow-x-auto"><div className="min-w-[720px]">
+      <div className="grid grid-cols-4 border-b border-default-100">
+        <div className="border-r border-default-100">
           <TrendSparkline title="今日充值" current={currency(paidAmount(time => isSameDay(time, now)))} compareLabel="昨日" compareValue={currency(paidAmount(time => isSameDay(time, yesterday)))} data={dailyRechargeTrend} />
         </div>
-        <div className="md:border-r border-b md:border-b-0 border-default-100">
+        <div className="border-r border-default-100">
           <TrendSparkline title="本月充值" current={currency(paidAmount(time => isSameMonth(time, now)))} compareLabel="上月" compareValue={currency(paidAmount(time => isSameMonth(time, lastMonth)))} data={monthlyRechargeTrend} />
         </div>
-        <div className="p-4 min-h-24 md:border-r border-default-100">
+        <div className="p-4 min-h-24 border-r border-default-100">
           <p className="text-xs text-default-500">单向流量</p>
           <p className="mt-2 text-sm text-foreground">今日 <span className="font-semibold">{formatFlow(flowStats.todayTotal)}</span></p>
           <p className="mt-1 text-sm text-default-500">昨日 {formatFlow(flowStats.yesterdayTotal)}</p>
@@ -282,7 +196,7 @@ export default function AdminDashboardPage() {
       {/* 单独一个 3 栏网格，而不是延续上面的 4 栏：这一排只有 3 个格子，沿用 4 栏会在最右边空出一格 */}
       <div className="grid grid-cols-3">
         <div className="p-4 min-h-24 border-r border-default-100 flex flex-col justify-center"><p className="text-xs text-default-500">节点总数</p><p className="mt-2 text-lg font-semibold text-foreground">{nodes.length}</p></div>
-        <div className="p-3 min-h-24 border-r border-default-100 flex flex-col items-center justify-center"><div className="w-full max-w-[200px]"><SpeedometerGauge percent={onlineNodePercent} value={`${onlineNodeCount} / ${nodes.length}`} sublabel="在线节点" /></div></div>
+        <div className="p-4 min-h-24 border-r border-default-100 flex flex-col justify-center"><p className="text-xs text-default-500">节点在线情况</p><p className="mt-2 text-lg font-semibold text-foreground">在线 <span className="text-success-600">{onlineNodeCount}</span></p><p className={`mt-1 text-sm ${offlineNodeCount > 0 ? 'text-danger-600' : 'text-default-500'}`}>离线 {offlineNodeCount}</p></div>
         <button type="button" onClick={() => navigate('/task-queue')} className="p-4 min-h-24 flex flex-col justify-center text-left hover:bg-default-50 transition-colors">
           <p className="text-xs text-default-500">队列情况</p>
           {queueHealth ? (
@@ -297,6 +211,7 @@ export default function AdminDashboardPage() {
           )}
         </button>
       </div>
+      </div></div>
     </section>
     <section className="grid grid-cols-1 xl:grid-cols-2 gap-5"><RankTable title="今日用户流量排行" rows={flowStats.todayUserRanking} kind="flow" /><RankTable title="昨日用户流量排行" rows={flowStats.yesterdayUserRanking} kind="flow" /><RankTable title="今日节点流量排行" rows={flowStats.todayNodeRanking} kind="node" /><RankTable title="昨日节点流量排行" rows={flowStats.yesterdayNodeRanking} kind="node" /></section>
   </div>;

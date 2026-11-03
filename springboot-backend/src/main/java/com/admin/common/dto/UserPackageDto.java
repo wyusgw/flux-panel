@@ -47,6 +47,7 @@ public class UserPackageDto {
         private Integer num;         // 转发数量配额
         private Long expTime;        // 过期时间
         private Long flowResetTime;  // 流量重置时间
+        private String flowResetClock; // 流量重置时刻（HH:mm）
         private Long createdTime;
         private Long updatedTime;
         private Long groupId;        // 用户组ID

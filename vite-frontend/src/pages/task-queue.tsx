@@ -107,7 +107,7 @@ const StatCard = ({ label, value, tone = 'default', onPress }: { label: string; 
   <Card
     isPressable={!!onPress}
     onPress={onPress}
-    className={`shadow-sm border border-default-200 ${onPress ? 'hover:border-primary-300 transition-colors' : ''}`}
+    className={`management-table-card ${onPress ? 'hover:border-primary-300 transition-colors' : ''}`}
   >
     <CardBody className="py-3 px-4">
       <p className="text-xs text-default-500">{label}</p>
@@ -117,7 +117,7 @@ const StatCard = ({ label, value, tone = 'default', onPress }: { label: string; 
 );
 
 const HealthCard = ({ health }: { health: TaskQueueHealth | null }) => (
-  <Card className="shadow-sm border border-default-200">
+  <Card className="management-table-card">
     <CardBody className="py-3 px-4">
       <p className="text-xs text-default-500">队列总状态</p>
       {health ? (
@@ -276,9 +276,10 @@ export default function TaskQueuePage() {
   }
 
   return (
-    <div className="px-3 lg:px-6 py-8">
+    <div className="management-page px-4 lg:px-6 py-5 lg:py-6">
       <div className="mb-4">
-        <h1 className="text-xl font-semibold">队列监控</h1>
+        <h1 className="text-base font-semibold text-foreground">队列监控</h1>
+        <p className="mt-1 text-xs text-default-500">查看任务队列的运行状态、待处理作业与报错记录</p>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
@@ -288,7 +289,7 @@ export default function TaskQueuePage() {
         <StatCard label={`${health?.errorLogRetentionDays ?? 7}日内报错数量`} value={health?.errorLogCount ?? 0} tone="warning" onPress={openErrorLogs} />
       </div>
 
-      <Card className="shadow-sm border border-default-200 mb-4">
+      <Card className="management-table-card mb-4">
         <CardBody className="p-0">
           <div className="px-4 pt-4 pb-1">
             <h2 className="text-base font-semibold">当前作业详情</h2>
@@ -335,7 +336,7 @@ export default function TaskQueuePage() {
         )}
       </div>
 
-      <Card className="shadow-sm border border-default-200">
+      <Card className="management-table-card">
         <CardBody className="p-0">
           <div className="settings-table-scroll">
             <Table
@@ -406,7 +407,7 @@ export default function TaskQueuePage() {
           {(onClose) => (
             <>
               <ModalHeader className="flex flex-col gap-1">
-                <h2 className="text-lg font-bold">作业详情</h2>
+                <h2 className="text-base font-semibold">作业详情</h2>
                 {detailItem && <span className="text-small text-default-500">#{detailItem.id}</span>}
               </ModalHeader>
               <ModalBody className="pb-6">
@@ -457,7 +458,7 @@ export default function TaskQueuePage() {
                 )}
               </ModalBody>
               <ModalFooter>
-                <Button variant="light" onPress={onClose}>关闭</Button>
+                <Button size="sm" variant="bordered" onPress={onClose}>关闭</Button>
               </ModalFooter>
             </>
           )}
@@ -469,7 +470,7 @@ export default function TaskQueuePage() {
           {() => (
             <>
               <ModalHeader className="flex flex-col gap-1">
-                <h2 className="text-lg font-bold">{health?.errorLogRetentionDays ?? 7}日内报错详情</h2>
+                <h2 className="text-base font-semibold">{health?.errorLogRetentionDays ?? 7}日内报错详情</h2>
                 <span className="text-small text-default-500 font-normal">
                   共 {health?.errorLogCount ?? errorLogs.length} 条{errorLogs.length >= 200 ? '，仅显示最近 200 条' : ''}
                 </span>

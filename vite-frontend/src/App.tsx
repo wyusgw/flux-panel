@@ -27,6 +27,7 @@ import PushNotificationPage from "@/pages/push-notification";
 import { SettingsPage } from "@/pages/settings";
 
 import AdminLayout from "@/layouts/admin";
+import StandaloneLayout from "@/layouts/standalone";
 import H5Layout from "@/layouts/h5";
 
 import { isLoggedIn } from "@/utils/auth";
@@ -187,8 +188,11 @@ function App() {
       <Route
         path="/user-forward"
         element={
-          <ProtectedRoute>
-            <ForwardPage />
+          // 管理员在新窗口打开的「用户转发规则」：不带左侧导航，整个窗口只显示这一个页面
+          <ProtectedRoute skipLayout>
+            <StandaloneLayout>
+              <ForwardPage />
+            </StandaloneLayout>
           </ProtectedRoute>
         }
       />

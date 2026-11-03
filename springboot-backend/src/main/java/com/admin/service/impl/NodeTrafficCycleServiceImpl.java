@@ -16,6 +16,7 @@ import javax.annotation.PreDestroy;
 import javax.annotation.Resource;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.Map;
 import java.util.Set;
@@ -31,6 +32,8 @@ public class NodeTrafficCycleServiceImpl extends ServiceImpl<NodeTrafficCycleMap
 
     private static final String CONFIG_RESET_DAY = "node_traffic_reset_day";
     private static final int DEFAULT_RESET_DAY = 1;
+    private static final String CONFIG_RESET_TIME = "node_traffic_reset_time";
+    private static final LocalTime DEFAULT_RESET_TIME = LocalTime.MIDNIGHT;
 
     @Resource
     @Lazy
@@ -42,7 +45,7 @@ public class NodeTrafficCycleServiceImpl extends ServiceImpl<NodeTrafficCycleMap
     @Override
     public NodeTrafficCycle record(Long nodeId, long rawUp, long rawDown) {
         long now = System.currentTimeMillis();
-        long cycleStart = currentCycleStart(now, getResetDay());
+        long cycleStart = currentCycleStart(now, getResetDay(), getResetTime());
 
         NodeTrafficCycle state = states.computeIfAbsent(nodeId, this::loadOrCreate);
         synchronized (state) {
@@ -88,16 +91,20 @@ public class NodeTrafficCycleServiceImpl extends ServiceImpl<NodeTrafficCycleMap
         return created;
     }
 
-    /** 当前周期的起点：不晚于 now 的最近一个「重置日 0 点」；当月没有该日期（如 31 日遇到 30 天的月份）按月末算 */
-    static long currentCycleStart(long now, int resetDay) {
+    /**
+     * 当前周期的起点：不晚于 now 的最近一个「重置日 + 重置时刻」；
+     * 当月没有该日期（如 31 日遇到 30 天的月份）按月末算
+     */
+    static long currentCycleStart(long now, int resetDay, LocalTime resetTime) {
         ZoneId zone = ZoneId.systemDefault();
-        LocalDate today = LocalDate.ofInstant(java.time.Instant.ofEpochMilli(now), zone);
-        LocalDate start = resetDate(today.getYear(), today.getMonthValue(), resetDay);
-        if (start.isAfter(today)) {
+        LocalDateTime current = LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(now), zone);
+        LocalDate today = current.toLocalDate();
+        LocalDateTime start = LocalDateTime.of(resetDate(today.getYear(), today.getMonthValue(), resetDay), resetTime);
+        if (start.isAfter(current)) {
             LocalDate previous = today.withDayOfMonth(1).minusMonths(1);
-            start = resetDate(previous.getYear(), previous.getMonthValue(), resetDay);
+            start = LocalDateTime.of(resetDate(previous.getYear(), previous.getMonthValue(), resetDay), resetTime);
         }
-        return LocalDateTime.of(start, java.time.LocalTime.MIDNIGHT).atZone(zone).toInstant().toEpochMilli();
+        return start.atZone(zone).toInstant().toEpochMilli();
     }
 
     private static LocalDate resetDate(int year, int month, int resetDay) {
@@ -116,6 +123,21 @@ public class NodeTrafficCycleServiceImpl extends ServiceImpl<NodeTrafficCycleMap
             return Math.max(1, Math.min(31, Integer.parseInt(value.trim())));
         } catch (Exception e) {
             return DEFAULT_RESET_DAY;
+        }
+    }
+
+    @Override
+    public LocalTime getResetTime() {
+        try {
+            ViteConfig config = viteConfigService.getOne(new QueryWrapper<ViteConfig>().eq("name", CONFIG_RESET_TIME));
+            String value = config != null ? config.getValue() : null;
+            if (value == null || value.trim().isEmpty()) {
+                return DEFAULT_RESET_TIME;
+            }
+            // 前端时间输入框的格式为 HH:mm（部分浏览器会带秒），统一截到分钟
+            return LocalTime.parse(value.trim()).withSecond(0).withNano(0);
+        } catch (Exception e) {
+            return DEFAULT_RESET_TIME;
         }
     }
 

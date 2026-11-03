@@ -1334,3 +1334,19 @@ CREATE TABLE IF NOT EXISTS `node_traffic_cycle` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uniq_node` (`node_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- user 表新增 flow_reset_clock：用户流量重置时刻（HH:mm，默认 00:00），与 flow_reset_time（每月第几日）配合，
+-- 用户管理里可自定义每月重置日的几点几分重置
+SET @sql = (
+  SELECT IF(
+    NOT EXISTS (
+      SELECT 1 FROM information_schema.COLUMNS
+      WHERE table_schema = DATABASE() AND table_name = 'user' AND column_name = 'flow_reset_clock'
+    ),
+    'ALTER TABLE `user` ADD COLUMN `flow_reset_clock` varchar(5) NOT NULL DEFAULT "00:00" COMMENT "流量重置时刻（HH:mm）";',
+    'SELECT "Column `flow_reset_clock` already exists in `user`";'
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;

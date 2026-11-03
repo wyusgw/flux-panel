@@ -25,6 +25,7 @@ import {
   getInviteCodeList,
   deleteInviteCode
 } from "@/api";
+import RefreshButton from "@/components/refresh-button";
 
 interface InviteCodeItem {
   id: number;
@@ -59,8 +60,8 @@ export default function InviteCodePage() {
     loadData();
   }, []);
 
-  const loadData = async () => {
-    setLoading(true);
+  const loadData = async (showLoading = true) => {
+    setLoading(showLoading);
     try {
       const res = await getInviteCodeList();
       if (res.code === 0) {
@@ -166,13 +167,17 @@ export default function InviteCodePage() {
     <div className="management-page px-4 lg:px-6 py-5 lg:py-6">
       <Card className="management-table-card max-w-[1600px] mx-auto">
         <CardHeader className="flex-row items-center justify-between gap-4 p-4 border-b border-default-100">
-          <div><h1 className="text-base font-semibold text-foreground">邀请码管理</h1><p className="mt-1 text-xs text-default-500">配合「站点设置 → 邀请码注册策略」使用：设为「可选填写」或「仅邀请码注册」后，这里生成的代码才会在注册页生效</p></div>
-          <div className="flex gap-2">
-            <Button size="sm" variant="bordered" onPress={loadData} isDisabled={loading}>刷新</Button>
-            <Button size="sm" color="primary" onPress={handleAdd}>批量添加邀请码</Button>
+          <div className="flex items-center gap-3 flex-wrap">
+            <h1 className="text-base font-semibold text-foreground">邀请码管理</h1>
+            <RefreshButton onRefresh={() => loadData(false)} />
           </div>
         </CardHeader>
-        <CardBody className="p-0">
+        <CardBody className="p-4 space-y-3">
+          <p className="text-xs text-default-500">配合「站点设置 → 邀请码注册策略」使用：设为「可选填写」或「仅邀请码注册」后，这里生成的代码才会在注册页生效</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" variant="bordered" onPress={handleAdd}>批量添加邀请码</Button>
+          </div>
+          <div className="-mx-4 -mb-4">
           <div className="settings-table-scroll">
             <Table removeWrapper aria-label="邀请码列表" classNames={{ base: "w-full", table: "w-full min-w-[500px] table-fixed", th: "management-table-heading", td: "management-table-cell" }}>
               <TableHeader>
@@ -193,7 +198,7 @@ export default function InviteCodePage() {
                       </span>
                     </TableCell>
                     <TableCell>
-                      <Chip color={code.usesRemaining > 0 ? 'success' : 'default'} size="sm" variant="flat">
+                      <Chip color={code.usesRemaining > 0 ? 'success' : 'default'} size="sm" variant="light">
                         {code.usesRemaining}
                       </Chip>
                     </TableCell>
@@ -207,7 +212,8 @@ export default function InviteCodePage() {
               </TableBody>
             </Table>
           </div>
-        </CardBody>
+        </div>
+          </CardBody>
       </Card>
 
       <Modal isOpen={modalOpen} onOpenChange={setModalOpen} size="md" scrollBehavior="outside" backdrop="blur" placement="center">
@@ -215,11 +221,11 @@ export default function InviteCodePage() {
           {(onClose) => (
             <>
               <ModalHeader>
-                <h2 className="text-lg font-bold">批量添加邀请码</h2>
+                <h2 className="text-base font-semibold">批量添加邀请码</h2>
               </ModalHeader>
               <ModalBody>
                 <div className="space-y-3 pb-4">
-                  <Input autoComplete="off"
+                  <Input labelPlacement="outside-top" autoComplete="off"
                     size="sm"
                     label={<HelpTooltip content="每个邀请代码可被使用的次数">可用次数</HelpTooltip>}
                     type="number"
@@ -230,7 +236,7 @@ export default function InviteCodePage() {
                     variant="bordered"
                   />
 
-                  <Textarea autoComplete="off"
+                  <Textarea labelPlacement="outside-top" autoComplete="off"
                     size="sm"
                     label="邀请代码"
                     placeholder="一行一个，空行会被忽略"
@@ -245,8 +251,8 @@ export default function InviteCodePage() {
                 </div>
               </ModalBody>
               <ModalFooter>
-                <Button variant="light" onPress={onClose}>取消</Button>
-                <Button color="default" onPress={handleSubmit} isLoading={submitLoading}>
+                <Button size="sm" variant="bordered" onPress={onClose}>取消</Button>
+                <Button size="sm" color="primary" onPress={handleSubmit} isLoading={submitLoading}>
                   创建
                 </Button>
               </ModalFooter>

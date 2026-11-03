@@ -59,9 +59,10 @@ const osDisplayName = (name?: string) => name ? (OS_DISPLAY_NAMES[name.toLowerCa
 const VIRT_DISPLAY_NAMES: Record<string, string> = {
   kvm: 'KVM', qemu: 'QEMU', vmware: 'VMware', microsoft: 'Hyper-V', oracle: 'VirtualBox', xen: 'Xen', bochs: 'Bochs',
   parallels: 'Parallels', bhyve: 'bhyve', apple: 'Apple Virtualization', amazon: 'AWS', google: 'Google Cloud', zvm: 'z/VM',
-  acrn: 'ACRN', powervm: 'PowerVM', qnx: 'QNX', sre: 'SRE', uml: 'UML', vm: '虚拟机（未知平台）',
+  acrn: 'ACRN', powervm: 'PowerVM', qnx: 'QNX', sre: 'SRE', uml: 'UML', vm: '虚拟机（未知平台）', 'vm-other': '虚拟机（未知平台）',
   docker: 'Docker', podman: 'Podman', lxc: 'LXC', 'lxc-libvirt': 'LXC', openvz: 'OpenVZ', 'systemd-nspawn': 'systemd-nspawn',
-  rkt: 'rkt', wsl: 'WSL', proot: 'proot', pouch: 'Pouch', kubernetes: 'Kubernetes', containerd: 'containerd',
+  rkt: 'rkt', wsl: 'WSL', proot: 'proot', pouch: 'Pouch', kubernetes: 'Kubernetes', containerd: 'containerd', oci: 'OCI 容器',
+  'container-other': '容器（未知类型）',
 };
 const virtDisplayName = (name?: string) => name ? (VIRT_DISPLAY_NAMES[name.toLowerCase()] || name) : '无';
 const RegionCell = ({ code }: { code?: string }) => code ? <span className={`fi fi-${code} fis probe-flag`} /> : null;

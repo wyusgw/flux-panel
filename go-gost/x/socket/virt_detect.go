@@ -78,7 +78,17 @@ func detectVirtualization(gopsutilSystem, gopsutilRole string) string {
 func detectBySystemd() (string, bool) {
 	path, err := exec.LookPath("systemd-detect-virt")
 	if err != nil {
-		return "", false
+		// 节点程序可能由环境变量很少的方式启动（PATH 为空或不完整），再按常见安装位置找一次
+		path = ""
+		for _, p := range []string{"/usr/bin/systemd-detect-virt", "/bin/systemd-detect-virt", "/usr/local/bin/systemd-detect-virt", "/usr/lib/systemd/systemd-detect-virt"} {
+			if fileExists(p) {
+				path = p
+				break
+			}
+		}
+		if path == "" {
+			return "", false
+		}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()

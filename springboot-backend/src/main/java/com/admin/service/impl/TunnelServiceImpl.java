@@ -654,51 +654,21 @@ public class TunnelServiceImpl extends ServiceImpl<TunnelMapper, Tunnel> impleme
      */
     @Override
     public R diagnoseTunnel(Long tunnelId) {
-        // 1. 验证隧道是否存在
-        Tunnel tunnel = this.getById(tunnelId);
-        if (tunnel == null) {
-            return R.err(ERROR_TUNNEL_NOT_FOUND);
+        // 1. 验证隧道、入口出口节点；任一不满足直接返回原因
+        DiagnosisContext context = loadDiagnosisContext(tunnelId);
+        if (context.error != null) {
+            return context.error;
         }
+        Tunnel tunnel = context.tunnel;
 
-        // 1.1 隧道被禁用时没有在跑，诊断没有意义，拒绝执行
-        // （前端按钮已经据此禁用，这里是防止绕过前端直接调接口）
-        if (tunnel.getStatus() == null || tunnel.getStatus() != TUNNEL_STATUS_ACTIVE) {
-            return R.err("隧道未处于启用状态，暂不能诊断");
-        }
-
-        // 2. 获取入口和出口节点信息
-        Node inNode = nodeService.getById(tunnel.getInNodeId());
-        if (inNode == null) {
-            return R.err(ERROR_IN_NODE_NOT_FOUND);
-        }
-
-        Node outNode = null;
-        if (tunnel.getType() == TUNNEL_TYPE_TUNNEL_FORWARD) {
-            outNode = nodeService.getById(tunnel.getOutNodeId());
-            if (outNode == null) {
-                return R.err(ERROR_OUT_NODE_NOT_FOUND);
-            }
-        }
-
-        List<TcpPingDiagnosisResult> results = new ArrayList<>();
-
-        // 3. 根据隧道类型执行不同的诊断策略（与转发规则诊断共用同一套 TCP ping 实现，
+        // 2. 按隧道类型生成要诊断的目标，按「站点设置·诊断连接次数」逐个执行（与转发规则诊断共用同一套 TCP ping 实现，
         // 见 TcpPingDiagnosisUtil：次数、超时、逐次连接尝试明细的展示方式保持一致）
-        if (tunnel.getType() == TUNNEL_TYPE_PORT_FORWARD) {
-            // 端口转发：只给入口节点发送诊断指令，TCP ping谷歌443端口
-            TcpPingDiagnosisResult inResult = TcpPingDiagnosisUtil.performTcpPingDiagnosis(inNode, "www.google.com", 443, "入口->外网", "inbound", null);
-            results.add(inResult);
-        } else {
-            // 隧道转发：入口TCP ping出口，出口TCP ping谷歌443端口
-            int outNodePort = getOutNodeTcpPort(tunnel.getId());
-            TcpPingDiagnosisResult inToOutResult = TcpPingDiagnosisUtil.performTcpPingDiagnosis(inNode, outNode.getServerIp(), outNodePort, "入口->出口", "inbound", null);
-            results.add(inToOutResult);
-
-            TcpPingDiagnosisResult outToExternalResult = TcpPingDiagnosisUtil.performTcpPingDiagnosis(outNode, "www.google.com", 443, "出口->外网", "outbound", null);
-            results.add(outToExternalResult);
+        List<TcpPingDiagnosisResult> results = new ArrayList<>();
+        for (TcpPingDiagnosisUtil.Probe probe : context.probes) {
+            results.add(TcpPingDiagnosisUtil.run(probe));
         }
 
-        // 4. 构建诊断报告
+        // 3. 构建诊断报告
         // 面板反馈按连接尝试统计：入口端反馈与出口端反馈的连接明细合计
         Map<String, Object> dispatchStats = TcpPingDiagnosisUtil.buildDispatchStats(results);
 
@@ -711,6 +681,72 @@ public class TunnelServiceImpl extends ServiceImpl<TunnelMapper, Tunnel> impleme
         diagnosisReport.put("timestamp", System.currentTimeMillis());
 
         return R.ok(diagnosisReport);
+    }
+
+    /**
+     * 诊断详情：点开某一段的详细结果时，只对这一段重新测试，连接次数使用「站点设置·诊断详情连接次数」，
+     * 与首次诊断的次数分开；目标必须是该隧道本来要诊断的那几个，防止借此让节点测任意地址
+     */
+    @Override
+    public R diagnoseTunnelDetail(Long tunnelId, String leg, String targetIp, Integer targetPort) {
+        DiagnosisContext context = loadDiagnosisContext(tunnelId);
+        if (context.error != null) {
+            return context.error;
+        }
+        TcpPingDiagnosisUtil.Probe probe = TcpPingDiagnosisUtil.findProbe(context.probes, leg, targetIp, targetPort);
+        if (probe == null) {
+            return R.err("诊断目标不属于该隧道");
+        }
+        return R.ok(TcpPingDiagnosisUtil.run(probe, TcpPingDiagnosisUtil.getDetailPingCount()));
+    }
+
+    /** 隧道诊断的前置校验结果：失败时 error 有值，成功时带上隧道与要诊断的目标 */
+    private static class DiagnosisContext {
+        R error;
+        Tunnel tunnel;
+        List<TcpPingDiagnosisUtil.Probe> probes = new ArrayList<>();
+    }
+
+    private DiagnosisContext loadDiagnosisContext(Long tunnelId) {
+        DiagnosisContext context = new DiagnosisContext();
+
+        // 1. 验证隧道是否存在
+        Tunnel tunnel = this.getById(tunnelId);
+        if (tunnel == null) {
+            context.error = R.err(ERROR_TUNNEL_NOT_FOUND);
+            return context;
+        }
+
+        // 1.1 隧道被禁用时没有在跑，诊断没有意义，拒绝执行
+        // （前端按钮已经据此禁用，这里是防止绕过前端直接调接口）
+        if (tunnel.getStatus() == null || tunnel.getStatus() != TUNNEL_STATUS_ACTIVE) {
+            context.error = R.err("隧道未处于启用状态，暂不能诊断");
+            return context;
+        }
+
+        // 2. 获取入口和出口节点信息
+        Node inNode = nodeService.getById(tunnel.getInNodeId());
+        if (inNode == null) {
+            context.error = R.err(ERROR_IN_NODE_NOT_FOUND);
+            return context;
+        }
+
+        context.tunnel = tunnel;
+        if (tunnel.getType() == TUNNEL_TYPE_PORT_FORWARD) {
+            // 端口转发：只给入口节点发送诊断指令，TCP ping谷歌443端口
+            context.probes.add(new TcpPingDiagnosisUtil.Probe(inNode, "www.google.com", 443, "入口->外网", "inbound", null));
+        } else {
+            Node outNode = nodeService.getById(tunnel.getOutNodeId());
+            if (outNode == null) {
+                context.error = R.err(ERROR_OUT_NODE_NOT_FOUND);
+                return context;
+            }
+            // 隧道转发：入口TCP ping出口，出口TCP ping谷歌443端口
+            int outNodePort = getOutNodeTcpPort(tunnel.getId());
+            context.probes.add(new TcpPingDiagnosisUtil.Probe(inNode, outNode.getServerIp(), outNodePort, "入口->出口", "inbound", null));
+            context.probes.add(new TcpPingDiagnosisUtil.Probe(outNode, "www.google.com", 443, "出口->外网", "outbound", null));
+        }
+        return context;
     }
 
     /**

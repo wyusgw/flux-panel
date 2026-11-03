@@ -215,7 +215,15 @@ const CONFIG_ITEMS: ConfigItem[] = [
     section: 'basic',
     label: '诊断连接次数',
     placeholder: '4',
-    description: '转发、隧道诊断时每段做几次 TCP 连接，范围 1-30，次数越多结果越详细、耗时也越长，留空则按 4 次处理',
+    description: '转发、隧道诊断时每段做几次 TCP 连接（结果卡片里显示的就是这一次的结果），范围 1-30，次数越多耗时越长，留空则按 4 次处理',
+    type: 'input'
+  },
+  {
+    key: 'diagnosis_detail_ping_count',
+    section: 'basic',
+    label: '诊断详情连接次数',
+    placeholder: '8',
+    description: '在诊断结果里点开某一段的详细结果时，会对这一段重新测试，这里设置重新测试的连接次数，范围 1-30，与上面的「诊断连接次数」分开配置，留空则按 8 次处理',
     type: 'input'
   },
   {

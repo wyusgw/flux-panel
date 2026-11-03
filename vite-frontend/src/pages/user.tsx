@@ -140,6 +140,20 @@ const calculateTunnelUsedFlow = (tunnel: UserTunnel): number => {
 // 流量重置日期下拉里直接提供的固定「每月几号」只到这一天，其余日期通过「自定义」选择
 const PRESET_RESET_DAYS = 8;
 
+// 套餐里编辑用户套餐时要用到的字段（接口返回的完整套餐里的一部分）
+interface PackagePlanInfo {
+  id: number;
+  name: string;
+  groupId?: number | null;
+  traffic?: number;
+  durationDays?: number;
+  maxRules?: number;
+}
+
+// 与用户购买套餐（后端 OrderServiceImpl）一致：流量或规则数为 0 表示不限，写成 99999；永久套餐的到期时间为 2099-12-31
+const UNLIMITED_QUOTA = 99999;
+const PERMANENT_EXP_TIME = 4102415999000;
+
 export default function UserPage() {
   // 状态管理
   const [users, setUsers] = useState<User[]>([]);
@@ -180,7 +194,18 @@ export default function UserPage() {
 
   // 用户组 / 套餐
   const [userGroups, setUserGroups] = useState<{ id: number; name: string }[]>([]);
-  const [packagePlans, setPackagePlans] = useState<{ id: number; name: string }[]>([]);
+  const [packagePlans, setPackagePlans] = useState<PackagePlanInfo[]>([]);
+
+  // 编辑用户套餐（操作列的购物袋图标）：只更换用户绑定的套餐，不改动流量、规则数、到期时间等额度
+  const { isOpen: isPackageModalOpen, onOpen: onPackageModalOpen, onClose: onPackageModalClose } = useDisclosure();
+  const [packageTarget, setPackageTarget] = useState<User | null>(null);
+  const [packageSelection, setPackageSelection] = useState<string>('');
+  // 选中套餐后要把套餐里的哪些内容更新到用户身上（默认都不勾选，只更换绑定的套餐）
+  const [applyFlow, setApplyFlow] = useState(false);
+  const [applyGroup, setApplyGroup] = useState(false);
+  const [applyRules, setApplyRules] = useState(false);
+  const [applyExpire, setApplyExpire] = useState(false);
+  const [packageSaving, setPackageSaving] = useState(false);
 
   // 隧道权限管理相关状态
   const { isOpen: isTunnelModalOpen, onOpen: onTunnelModalOpen, onClose: onTunnelModalClose } = useDisclosure();
@@ -307,6 +332,58 @@ export default function UserPage() {
     });
     setCustomReset(false);
     onUserModalOpen();
+  };
+
+  const handleEditPackage = (user: User) => {
+    setPackageTarget(user);
+    setPackageSelection(user.packageId ? String(user.packageId) : '');
+    setApplyFlow(false); setApplyGroup(false); setApplyRules(false); setApplyExpire(false);
+    onPackageModalOpen();
+  };
+
+  const handleSavePackage = async () => {
+    if (!packageTarget) return;
+    const plan = packagePlans.find(p => String(p.id) === packageSelection);
+    if (!plan) {
+      toast.error('请选择套餐');
+      return;
+    }
+    setPackageSaving(true);
+    try {
+      // 更新接口需要完整的用户字段，这里沿用用户现有的值，再按勾选项用套餐里的内容覆盖；不带 pwd 表示不修改密码
+      let expTime = packageTarget.expTime ?? null;
+      if (applyExpire) {
+        // 与购买套餐一致：有效天数从「当前到期时间与现在中较晚的一个」顺延，永久套餐设为 2099-12-31
+        expTime = plan.durationDays && plan.durationDays > 0
+          ? Math.max(Date.now(), expTime ?? 0) + plan.durationDays * 24 * 60 * 60 * 1000
+          : PERMANENT_EXP_TIME;
+      }
+      const response = await updateUser({
+        id: packageTarget.id,
+        name: packageTarget.name,
+        user: packageTarget.user,
+        status: packageTarget.status,
+        flow: applyFlow ? (plan.traffic && plan.traffic > 0 ? plan.traffic : UNLIMITED_QUOTA) : packageTarget.flow,
+        num: applyRules ? (plan.maxRules && plan.maxRules > 0 ? plan.maxRules : UNLIMITED_QUOTA) : packageTarget.num,
+        expTime,
+        flowResetTime: packageTarget.flowResetTime ?? 0,
+        flowResetClock: packageTarget.flowResetClock || '00:00',
+        groupId: applyGroup ? (plan.groupId ?? null) : (packageTarget.groupId ?? null),
+        packageId: plan.id,
+        walletBalance: packageTarget.walletBalance ?? 0
+      } as any);
+      if (response.code === 0) {
+        toast.success('套餐已更新');
+        onPackageModalClose();
+        loadUsers(false);
+      } else {
+        toast.error(response.msg || '更新套餐失败');
+      }
+    } catch (error) {
+      toast.error('更新套餐失败');
+    } finally {
+      setPackageSaving(false);
+    }
   };
 
   const handleEdit = (user: User) => {
@@ -648,6 +725,9 @@ export default function UserPage() {
             </Button>
             <Button isIconOnly size="sm" variant="bordered" onPress={() => handleEdit(user)} isDisabled={user.roleId === 0} title="编辑">
               <EditIcon className="w-4 h-4" />
+            </Button>
+            <Button isIconOnly size="sm" variant="bordered" onPress={() => handleEditPackage(user)} isDisabled={user.roleId === 0} title="编辑用户套餐">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M6 8h12l1 12H5L6 8zM9 8V7a3 3 0 016 0v1" /></svg>
             </Button>
             <Button isIconOnly size="sm" variant="bordered" onPress={() => handleResetFlow(user)} title="重置流量">
               <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1z" clipRule="evenodd" /></svg>
@@ -1104,6 +1184,43 @@ export default function UserPage() {
       </Modal>
 
       {/* 删除确认对话框 */}
+      {/* 编辑用户套餐：选择套餐，并勾选要把套餐里的哪些内容更新到该用户 */}
+      <Modal isOpen={isPackageModalOpen} onClose={onPackageModalClose} size="sm" backdrop="blur" placement="center">
+        <ModalContent>
+          <ModalHeader>
+            <h2 className="text-base font-semibold">编辑用户套餐{packageTarget ? ` ${packageTarget.name || packageTarget.user} (UID=${packageTarget.id})` : ''}</h2>
+          </ModalHeader>
+          <ModalBody className="gap-3">
+            <div>
+              <FieldLabel>套餐</FieldLabel>
+              <Select
+                listboxProps={{ emptyContent: <EmptyState compact /> }}
+                aria-label="套餐" variant="bordered" placeholder="请选择套餐"
+                selectedKeys={packageSelection ? [packageSelection] : []}
+                onSelectionChange={(keys) => {
+                  const value = Array.from(keys)[0] as string;
+                  if (value) setPackageSelection(value);
+                }}
+              >
+                {packagePlans.map(plan => (
+                  <SelectItem key={plan.id.toString()} textValue={plan.name}>{plan.name}</SelectItem>
+                ))}
+              </Select>
+            </div>
+            <div className="flex flex-col gap-3 pt-1">
+              <Checkbox size="sm" isSelected={applyFlow} onValueChange={setApplyFlow}>更新流量</Checkbox>
+              <Checkbox size="sm" isSelected={applyGroup} onValueChange={setApplyGroup}>更新用户组</Checkbox>
+              <Checkbox size="sm" isSelected={applyRules} onValueChange={setApplyRules}>更新最大规则数</Checkbox>
+              <Checkbox size="sm" isSelected={applyExpire} onValueChange={setApplyExpire}>更新到期时间</Checkbox>
+            </div>
+          </ModalBody>
+          <ModalFooter>
+            <Button size="sm" variant="bordered" onPress={onPackageModalClose}>取 消</Button>
+            <Button size="sm" color="primary" onPress={handleSavePackage} isLoading={packageSaving} isDisabled={!packageSelection}>确 定</Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+
       <ConfirmDialog
         isOpen={isDeleteModalOpen}
         onOpenChange={(open) => !open && onDeleteModalClose()}

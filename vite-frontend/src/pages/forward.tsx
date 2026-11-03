@@ -34,6 +34,7 @@ import {
   pauseForwardService,
   resumeForwardService,
   diagnoseForward,
+  diagnoseForwardDetail,
   getForwardGroupList,
   createForwardGroup,
   updateForwardGroup,
@@ -820,6 +821,24 @@ export default function ForwardPage() {
   };
 
   // 诊断转发：规则被暂停/异常时，转发本身没在运行，诊断没有意义，不允许发起
+  // 点开某一段的诊断详情时，只对这一段按「诊断详情连接次数」重新测试
+  const loadForwardDiagnosisDetail = async (result: DiagnosisResultItem): Promise<DiagnosisResultItem | null> => {
+    if (!currentDiagnosisForward || !result.targetPort) return null;
+    try {
+      const response = await diagnoseForwardDetail({
+        forwardId: currentDiagnosisForward.id,
+        leg: result.leg,
+        targetIp: result.targetIp,
+        targetPort: result.targetPort
+      });
+      if (response.code === 0) return response.data as DiagnosisResultItem;
+      toast.error(response.msg || '重新测试失败，显示首次诊断结果');
+    } catch (error) {
+      toast.error('重新测试失败，显示首次诊断结果');
+    }
+    return null;
+  };
+
   const handleDiagnose = async (forward: Forward) => {
     if (forward.status !== 1) {
       toast.error('转发规则未处于正常状态，暂不能诊断');
@@ -1819,6 +1838,7 @@ export default function ForwardPage() {
                       labelPlacement="outside-top"
                       label="所属分组"
                       placeholder="未分组"
+                      listboxProps={{ emptyContent: <EmptyState compact text="暂无所属分组" /> }}
                       selectedKeys={form.groupId ? [form.groupId.toString()] : []}
                       onSelectionChange={(keys) => {
                         const selectedKey = Array.from(keys)[0] as string;
@@ -2302,8 +2322,10 @@ export default function ForwardPage() {
                     </div>
                   ) : diagnosisResult ? (
                     <div className="space-y-5">
-                      <DiagnosisLeg title="入口诊断" subtitle="Inbound" results={diagnosisResult.results.filter(r => r.leg !== 'outbound')} emptyText="无数据" resolveGroupName={(id) => findDeviceGroup(id)?.name} />
-                      <DiagnosisLeg title="出口诊断" subtitle="Outbounds" results={diagnosisResult.results.filter(r => r.leg === 'outbound')} emptyText="此转发为直接端口转发，无独立出口节点" resolveGroupName={(id) => findDeviceGroup(id)?.name} />
+                      <DiagnosisLeg title="入口诊断" subtitle="Inbound" results={diagnosisResult.results.filter(r => r.leg !== 'outbound')} emptyText="无数据" resolveGroupName={(id) => findDeviceGroup(id)?.name} loadDetail={loadForwardDiagnosisDetail} />
+                      {diagnosisResult.results.filter(r => r.leg === 'outbound').length > 0 && (
+                        <DiagnosisLeg title="出口诊断" subtitle="Outbounds" results={diagnosisResult.results.filter(r => r.leg === 'outbound')} resolveGroupName={(id) => findDeviceGroup(id)?.name} loadDetail={loadForwardDiagnosisDetail} />
+                      )}
                       <DiagnosisPanelFeedback stats={diagnosisResult.dispatchStats} />
                     </div>
                   ) : (

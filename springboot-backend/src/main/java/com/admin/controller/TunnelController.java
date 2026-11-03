@@ -137,4 +137,19 @@ public class TunnelController extends BaseController {
         return tunnelService.diagnoseTunnel(tunnelId);
     }
 
+    /**
+     * 诊断详情：点开某一段的详细结果时，只对这一段重新测试（次数取站点设置里的「诊断详情连接次数」）
+     * @param params 包含 tunnelId、leg（inbound/outbound）、targetIp、targetPort
+     */
+    @LogAnnotation
+    @RequireRole
+    @PostMapping("/diagnoseDetail")
+    public R diagnoseTunnelDetail(@RequestBody Map<String, Object> params) {
+        Long tunnelId = Long.valueOf(params.get("tunnelId").toString());
+        String leg = params.get("leg") != null ? params.get("leg").toString() : null;
+        String targetIp = params.get("targetIp") != null ? params.get("targetIp").toString() : null;
+        Integer targetPort = params.get("targetPort") != null ? Integer.valueOf(params.get("targetPort").toString()) : null;
+        return tunnelService.diagnoseTunnelDetail(tunnelId, leg, targetIp, targetPort);
+    }
+
 }

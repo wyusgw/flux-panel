@@ -144,6 +144,8 @@ export const deleteTunnel = (id: number) => Network.post("/tunnel/delete", { id 
 // 诊断要依次对多段做 TCP ping，次数可配置，耗时可能超过默认的 30 秒请求超时
 const DIAGNOSE_TIMEOUT_MS = 150000;
 export const diagnoseTunnel = (tunnelId: number) => Network.post("/tunnel/diagnose", { tunnelId }, DIAGNOSE_TIMEOUT_MS);
+// 诊断详情：只对点开的那一段按「诊断详情连接次数」重新测试
+export const diagnoseTunnelDetail = (data: { tunnelId: number; leg?: string; targetIp: string; targetPort: number }) => Network.post("/tunnel/diagnoseDetail", data, DIAGNOSE_TIMEOUT_MS);
 
 // 用户隧道权限管理操作 - 全部使用POST请求
 export const assignUserTunnel = (data: any) => Network.post("/tunnel/user/assign", data);
@@ -165,6 +167,7 @@ export const resumeForwardService = (forwardId: number) => Network.post("/forwar
 
 // 转发诊断操作
 export const diagnoseForward = (forwardId: number) => Network.post("/forward/diagnose", { forwardId }, DIAGNOSE_TIMEOUT_MS);
+export const diagnoseForwardDetail = (data: { forwardId: number; leg?: string; targetIp: string; targetPort: number }) => Network.post("/forward/diagnoseDetail", data, DIAGNOSE_TIMEOUT_MS);
 
 // 转发排序操作
 export const updateForwardOrder = (data: { forwards: Array<{ id: number; inx: number }> }) => Network.post("/forward/updateOrder", data);

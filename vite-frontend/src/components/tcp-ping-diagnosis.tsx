@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { Spinner } from "@heroui/spinner";
 import { Card } from "@heroui/card";
 import { Chip } from "@heroui/chip";
 import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter } from "@heroui/modal";
@@ -74,10 +75,13 @@ function DiagnosisDetailModal({
   result,
   displayName,
   onClose,
+  loading = false,
 }: {
   result: DiagnosisResultItem | null;
   displayName: string;
   onClose: () => void;
+  /** 正在按「诊断详情连接次数」重新测试：期间只显示加载提示，测完用新结果替换 */
+  loading?: boolean;
 }) {
   const addr = result ? `${result.targetIp}${result.targetPort ? ':' + result.targetPort : ''}` : '';
   return (
@@ -90,6 +94,13 @@ function DiagnosisDetailModal({
               <span className="text-small text-default-500">详细诊断结果</span>
             </ModalHeader>
             <ModalBody>
+              {loading ? (
+                <div className="flex items-center justify-center gap-3 py-16">
+                  <Spinner size="sm" />
+                  <span className="text-default-600">正在按详情次数重新测试...</span>
+                </div>
+              ) : (
+              <>
               <div className="space-y-1 text-sm mb-3">
                 <div className="flex justify-between gap-4"><span className="text-default-500">状态</span>
                   <Chip size="sm" variant="light" color={result.success ? 'success' : 'danger'}>{result.success ? '成功' : '失败'}</Chip>
@@ -120,6 +131,8 @@ function DiagnosisDetailModal({
                   {renderDiagnosisLines(result)}
                 </div>
               </div>
+              </>
+              )}
             </ModalBody>
             <ModalFooter>
               <Button variant="light" onPress={onClose}>关闭</Button>
@@ -138,16 +151,48 @@ export function DiagnosisLeg({
   title,
   subtitle,
   results,
-  emptyText,
+  emptyText = '无数据',
   resolveGroupName,
+  loadDetail,
 }: {
   title: string;
   subtitle: string;
   results: DiagnosisResultItem[];
-  emptyText: string;
+  emptyText?: string;
   resolveGroupName?: (groupId: number) => string | undefined;
+  /**
+   * 点开某一段的详细结果时，对这一段按「诊断详情连接次数」重新测试并返回新结果（失败返回 null，继续显示首次诊断的结果）。
+   * 不传则直接展示首次诊断的明细，不重新测试
+   */
+  loadDetail?: (result: DiagnosisResultItem) => Promise<DiagnosisResultItem | null>;
 }) {
   const [selected, setSelected] = useState<DiagnosisResultItem | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  // 连续点开不同卡片、或测试途中关闭时，丢弃过期的返回结果
+  const requestToken = useRef(0);
+
+  const openDetail = async (result: DiagnosisResultItem) => {
+    const token = ++requestToken.current;
+    setSelected(result);
+    // 没有目标端口的结果（例如整次诊断失败时前端自造的占位结果）没法单独重测
+    if (!loadDetail || !result.targetPort) {
+      setDetailLoading(false);
+      return;
+    }
+    setDetailLoading(true);
+    try {
+      const fresh = await loadDetail(result);
+      if (token === requestToken.current && fresh) setSelected(fresh);
+    } finally {
+      if (token === requestToken.current) setDetailLoading(false);
+    }
+  };
+
+  const closeDetail = () => {
+    requestToken.current++;
+    setSelected(null);
+    setDetailLoading(false);
+  };
 
   return (
     <div>
@@ -164,7 +209,7 @@ export function DiagnosisLeg({
               <Card
                 key={index}
                 isPressable
-                onPress={() => setSelected(result)}
+                onPress={() => openDetail(result)}
                 className="shadow-sm border border-default-200 overflow-hidden w-full cursor-pointer"
               >
                 <div className="flex items-center justify-between px-4 py-2.5 border-b border-default-100 w-full">
@@ -185,7 +230,8 @@ export function DiagnosisLeg({
       <DiagnosisDetailModal
         result={selected}
         displayName={selected ? ((selected.groupId != null && resolveGroupName?.(selected.groupId)) || selected.nodeName) : ''}
-        onClose={() => setSelected(null)}
+        onClose={closeDetail}
+        loading={detailLoading}
       />
     </div>
   );

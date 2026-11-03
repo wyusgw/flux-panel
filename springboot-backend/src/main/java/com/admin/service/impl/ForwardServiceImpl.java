@@ -24,10 +24,14 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import javax.annotation.Resource;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.*;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
 /**
@@ -582,46 +586,16 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             return R.err("入口节点不存在");
         }
 
-
+        // 5. 按隧道类型生成要诊断的目标，按「站点设置·诊断连接次数」逐个执行
+        List<TcpPingDiagnosisUtil.Probe> probes;
+        try {
+            probes = buildDiagnosisProbes(forward, tunnel, inNode);
+        } catch (IllegalArgumentException e) {
+            return R.err(e.getMessage());
+        }
         List<TcpPingDiagnosisResult> results = new ArrayList<>();
-        String[] remoteAddresses = forward.getRemoteAddr().split(",");
-        // 6. 根据隧道类型执行不同的诊断策略
-        if (tunnel.getType() == TUNNEL_TYPE_PORT_FORWARD) {
-            // 端口转发：入口节点直接TCP ping目标地址
-            for (String remoteAddress : remoteAddresses) {
-                // 提取IP和端口
-                String targetIp = extractIpFromAddress(remoteAddress);
-                int targetPort = extractPortFromAddress(remoteAddress);
-                if (targetIp == null || targetPort == -1) {
-                    return R.err("无法解析目标地址: " + remoteAddress);
-                }
-
-                TcpPingDiagnosisResult result = TcpPingDiagnosisUtil.performTcpPingDiagnosis(inNode, targetIp, targetPort, "转发->目标", "inbound", forward.getInDeviceGroupId());
-                results.add(result);
-            }
-        } else {
-            // 隧道转发：入口TCP ping出口，出口TCP ping目标
-            Node outNode = nodeService.getNodeById(tunnel.getOutNodeId());
-            if (outNode == null) {
-                return R.err("出口节点不存在");
-            }
-
-            // 入口TCP ping出口（使用转发的出口端口）
-            TcpPingDiagnosisResult inToOutResult = TcpPingDiagnosisUtil.performTcpPingDiagnosis(inNode, outNode.getServerIp(), forward.getOutPort(), "入口->出口", "inbound", forward.getInDeviceGroupId());
-            results.add(inToOutResult);
-
-            // 出口TCP ping目标
-            for (String remoteAddress : remoteAddresses) {
-                // 提取IP和端口
-                String targetIp = extractIpFromAddress(remoteAddress);
-                int targetPort = extractPortFromAddress(remoteAddress);
-                if (targetIp == null || targetPort == -1) {
-                    return R.err("无法解析目标地址: " + remoteAddress);
-                }
-                TcpPingDiagnosisResult outToTargetResult = TcpPingDiagnosisUtil.performTcpPingDiagnosis(outNode, targetIp, targetPort, "出口->目标", "outbound", forward.getOutDeviceGroupId());
-                results.add(outToTargetResult);
-            }
-
+        for (TcpPingDiagnosisUtil.Probe probe : probes) {
+            results.add(TcpPingDiagnosisUtil.run(probe));
         }
 
         // 7. 构建诊断报告
@@ -637,6 +611,78 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         diagnosisReport.put("timestamp", System.currentTimeMillis());
 
         return R.ok(diagnosisReport);
+    }
+
+    /**
+     * 诊断详情：用户点开某一段的详细结果时，只对这一段重新测试，连接次数使用「站点设置·诊断详情连接次数」，
+     * 与首次诊断的次数分开。目标必须是该转发规则本来要诊断的那几个（段类型 + 地址 + 端口），防止借此让节点测任意地址
+     */
+    @Override
+    public R diagnoseForwardDetail(Long id, String leg, String targetIp, Integer targetPort) {
+        UserInfo currentUser = getCurrentUserInfo();
+        Forward forward = validateForwardExists(id, currentUser);
+        if (forward == null) {
+            return R.err("转发不存在");
+        }
+        if (forward.getStatus() == null || forward.getStatus() != FORWARD_STATUS_ACTIVE) {
+            return R.err("转发规则未处于正常状态，暂不能诊断");
+        }
+        Tunnel tunnel = tunnelResolver.resolveTunnel(forward);
+        if (tunnel == null) {
+            return R.err("隧道不存在");
+        }
+        Node inNode = nodeService.getNodeById(tunnel.getInNodeId());
+        if (inNode == null) {
+            return R.err("入口节点不存在");
+        }
+        List<TcpPingDiagnosisUtil.Probe> probes;
+        try {
+            probes = buildDiagnosisProbes(forward, tunnel, inNode);
+        } catch (IllegalArgumentException e) {
+            return R.err(e.getMessage());
+        }
+        TcpPingDiagnosisUtil.Probe probe = TcpPingDiagnosisUtil.findProbe(probes, leg, targetIp, targetPort);
+        if (probe == null) {
+            return R.err("诊断目标不属于该转发规则");
+        }
+        return R.ok(TcpPingDiagnosisUtil.run(probe, TcpPingDiagnosisUtil.getDetailPingCount()));
+    }
+
+    /**
+     * 生成转发规则要诊断的目标：端口转发是入口节点直接测目标地址；隧道转发是入口测出口、出口测目标地址。
+     * 地址无法解析、出口节点不存在时抛 IllegalArgumentException，消息即返回给前端的原因
+     */
+    private List<TcpPingDiagnosisUtil.Probe> buildDiagnosisProbes(Forward forward, Tunnel tunnel, Node inNode) {
+        List<TcpPingDiagnosisUtil.Probe> probes = new ArrayList<>();
+        String[] remoteAddresses = forward.getRemoteAddr().split(",");
+        if (tunnel.getType() == TUNNEL_TYPE_PORT_FORWARD) {
+            // 端口转发：入口节点直接TCP ping目标地址
+            for (String remoteAddress : remoteAddresses) {
+                String targetIp = extractIpFromAddress(remoteAddress);
+                int targetPort = extractPortFromAddress(remoteAddress);
+                if (targetIp == null || targetPort == -1) {
+                    throw new IllegalArgumentException("无法解析目标地址: " + remoteAddress);
+                }
+                probes.add(new TcpPingDiagnosisUtil.Probe(inNode, targetIp, targetPort, "转发->目标", "inbound", forward.getInDeviceGroupId()));
+            }
+        } else {
+            // 隧道转发：入口TCP ping出口，出口TCP ping目标
+            Node outNode = nodeService.getNodeById(tunnel.getOutNodeId());
+            if (outNode == null) {
+                throw new IllegalArgumentException("出口节点不存在");
+            }
+            // 入口TCP ping出口（使用转发的出口端口）
+            probes.add(new TcpPingDiagnosisUtil.Probe(inNode, outNode.getServerIp(), forward.getOutPort(), "入口->出口", "inbound", forward.getInDeviceGroupId()));
+            for (String remoteAddress : remoteAddresses) {
+                String targetIp = extractIpFromAddress(remoteAddress);
+                int targetPort = extractPortFromAddress(remoteAddress);
+                if (targetIp == null || targetPort == -1) {
+                    throw new IllegalArgumentException("无法解析目标地址: " + remoteAddress);
+                }
+                probes.add(new TcpPingDiagnosisUtil.Probe(outNode, targetIp, targetPort, "出口->目标", "outbound", forward.getOutDeviceGroupId()));
+            }
+        }
+        return probes;
     }
 
     @Override
@@ -1598,6 +1644,71 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         }
         // 隧道级别的管理员指派限速已移除，限速统一由规则限速 + 套餐用户限速两者取更严格值决定
         updateGostServices(forward, tunnel, null, nodeInfo, userTunnel);
+    }
+
+    /** 限速刷新要逐条规则往节点发消息（节点离线时每条最多等 10 秒），放在单独的单线程里按顺序跑，不占公共线程池 */
+    private static final ExecutorService limitRefreshExecutor = Executors.newSingleThreadExecutor(runnable -> {
+        Thread thread = new Thread(runnable, "forward-limit-refresh");
+        thread.setDaemon(true);
+        return thread;
+    });
+
+    @Override
+    public void refreshLimitsAfterCommit(Collection<Integer> userIds) {
+        if (userIds == null || userIds.isEmpty()) {
+            return;
+        }
+        List<Integer> ids = new ArrayList<>(new LinkedHashSet<>(userIds));
+        Runnable task = () -> limitRefreshExecutor.execute(() -> refreshLimitsForUsers(ids));
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    task.run();
+                }
+            });
+        } else {
+            task.run();
+        }
+    }
+
+    /**
+     * 只处理正在运行（状态正常）的规则：已暂停或异常的规则服务不在运行，等它们恢复、保存时会按最新的套餐限速重新下发
+     */
+    private void refreshLimitsForUsers(List<Integer> userIds) {
+        List<Forward> forwards = this.list(new QueryWrapper<Forward>()
+                .in("user_id", userIds)
+                .eq("status", FORWARD_STATUS_ACTIVE));
+        log.info("套餐变化，刷新 {} 个用户名下 {} 条运行中规则的限速", userIds.size(), forwards.size());
+        for (Forward forward : forwards) {
+            try {
+                refreshForwardLimits(forward);
+            } catch (Exception e) {
+                log.warn("刷新转发 {} 的限速失败: {}", forward.getId(), e.getMessage());
+            }
+        }
+    }
+
+    /**
+     * 只更新入口节点上的主服务（限速器、连接限制器都挂在它上面），不动链和远程服务，
+     * 也不会因为节点离线等原因把规则状态改成异常——离线的节点上线后，规则本身的同步重试机制会按最新配置补推
+     */
+    private void refreshForwardLimits(Forward forward) {
+        Tunnel tunnel = tunnelResolver.resolveTunnel(forward);
+        if (tunnel == null || tunnel.getStatus() == null || tunnel.getStatus() != TUNNEL_STATUS_ACTIVE) {
+            return;
+        }
+        NodeInfo nodeInfo = getRequiredNodes(tunnel);
+        if (nodeInfo.isHasError()) {
+            return;
+        }
+        UserTunnel userTunnel = tunnelResolver.resolveUserTunnel(forward.getUserId(), forward);
+        String serviceName = buildServiceName(forward.getId(), forward.getUserId(), userTunnel);
+        String interfaceName = tunnel.getType() != TUNNEL_TYPE_TUNNEL_FORWARD ? forward.getInterfaceName() : null;
+        R result = updateMainService(nodeInfo.getInNode(), serviceName, forward, null, tunnel.getType(), tunnel, forward.getStrategy(), interfaceName);
+        if (result.getCode() != 0) {
+            log.warn("刷新转发 {} 的限速失败: {}", forward.getId(), result.getMsg());
+        }
     }
 
     @Override

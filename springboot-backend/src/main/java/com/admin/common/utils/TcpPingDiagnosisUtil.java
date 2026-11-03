@@ -31,6 +31,10 @@ public class TcpPingDiagnosisUtil {
     public static final int MAX_PING_COUNT = 30;
     private static final String CONFIG_PING_COUNT = "diagnosis_ping_count";
 
+    /** 点开诊断详情时对该段重新测试的连接次数（与上面首次诊断的次数分开配置），站点设置 diagnosis_detail_ping_count */
+    public static final int DEFAULT_DETAIL_PING_COUNT = 8;
+    private static final String CONFIG_DETAIL_PING_COUNT = "diagnosis_detail_ping_count";
+
     /** 每次连接尝试的超时时间（毫秒） */
     public static final int PING_TIMEOUT_MS = 1500;
 
@@ -78,20 +82,71 @@ public class TcpPingDiagnosisUtil {
         return stats;
     }
 
-    /** 当前生效的诊断次数：站点设置未配置或非法时用默认值，超出范围时收敛到 [MIN, MAX] */
+    /** 首次诊断的连接次数：站点设置未配置或非法时用默认值，超出范围时收敛到 [MIN, MAX] */
     public static int getPingCount() {
+        return readCount(CONFIG_PING_COUNT, DEFAULT_PING_COUNT);
+    }
+
+    /** 点开诊断详情重新测试时的连接次数，规则同 {@link #getPingCount()}，默认值不同 */
+    public static int getDetailPingCount() {
+        return readCount(CONFIG_DETAIL_PING_COUNT, DEFAULT_DETAIL_PING_COUNT);
+    }
+
+    private static int readCount(String configName, int defaultCount) {
         try {
             ViteConfigService service = viteConfigService;
-            ViteConfig config = service != null ? service.getOne(new QueryWrapper<ViteConfig>().eq("name", CONFIG_PING_COUNT)) : null;
+            ViteConfig config = service != null ? service.getOne(new QueryWrapper<ViteConfig>().eq("name", configName)) : null;
             String value = config != null ? config.getValue() : null;
             if (value == null || value.trim().isEmpty()) {
-                return DEFAULT_PING_COUNT;
+                return defaultCount;
             }
             int count = Integer.parseInt(value.trim());
             return Math.max(MIN_PING_COUNT, Math.min(MAX_PING_COUNT, count));
         } catch (Exception e) {
-            return DEFAULT_PING_COUNT;
+            return defaultCount;
         }
+    }
+
+    /** 一次要诊断的「某节点 → 某地址:端口」，首次诊断与点开详情重新测试共用，用来保证两边测的是同一批目标 */
+    public static final class Probe {
+        public final Node node;
+        public final String targetIp;
+        public final int targetPort;
+        public final String description;
+        public final String leg;
+        public final Long groupId;
+
+        public Probe(Node node, String targetIp, int targetPort, String description, String leg, Long groupId) {
+            this.node = node;
+            this.targetIp = targetIp;
+            this.targetPort = targetPort;
+            this.description = description;
+            this.leg = leg;
+            this.groupId = groupId;
+        }
+    }
+
+    /** 按首次诊断的次数执行一个探测 */
+    public static TcpPingDiagnosisResult run(Probe probe) {
+        return run(probe, getPingCount());
+    }
+
+    public static TcpPingDiagnosisResult run(Probe probe, int pingCount) {
+        return performTcpPingDiagnosis(probe.node, probe.targetIp, probe.targetPort, probe.description, probe.leg, probe.groupId, pingCount);
+    }
+
+    /** 在允许的探测里找与前端点开的那一段（段类型 + 目标地址 + 端口）一致的，找不到返回 null，避免借接口让节点去测任意地址 */
+    public static Probe findProbe(List<Probe> probes, String leg, String targetIp, Integer targetPort) {
+        if (targetIp == null || targetPort == null) {
+            return null;
+        }
+        for (Probe probe : probes) {
+            if (probe.targetIp.equals(targetIp) && probe.targetPort == targetPort
+                    && (leg == null ? probe.leg == null : leg.equals(probe.leg))) {
+                return probe;
+            }
+        }
+        return null;
     }
 
     /**
@@ -107,11 +162,14 @@ public class TcpPingDiagnosisUtil {
     }
 
     public static TcpPingDiagnosisResult performTcpPingDiagnosis(Node node, String targetIp, int port, String description, String leg, Long groupId) {
+        return performTcpPingDiagnosis(node, targetIp, port, description, leg, groupId, getPingCount());
+    }
+
+    public static TcpPingDiagnosisResult performTcpPingDiagnosis(Node node, String targetIp, int port, String description, String leg, Long groupId, int pingCount) {
         try {
             JSONObject tcpPingData = new JSONObject();
             tcpPingData.put("ip", targetIp);
             tcpPingData.put("port", port);
-            int pingCount = getPingCount();
             tcpPingData.put("count", pingCount);
             tcpPingData.put("timeout", PING_TIMEOUT_MS);
 

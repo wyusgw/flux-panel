@@ -93,6 +93,20 @@ public class ForwardController extends BaseController {
     }
 
     /**
+     * 诊断详情：点开某一段的详细结果时，只对这一段重新测试（次数取站点设置里的「诊断详情连接次数」）
+     * @param params 包含 forwardId、leg（inbound/outbound）、targetIp、targetPort
+     */
+    @LogAnnotation
+    @PostMapping("/diagnoseDetail")
+    public R diagnoseForwardDetail(@RequestBody Map<String, Object> params) {
+        Long forwardId = Long.valueOf(params.get("forwardId").toString());
+        String leg = params.get("leg") != null ? params.get("leg").toString() : null;
+        String targetIp = params.get("targetIp") != null ? params.get("targetIp").toString() : null;
+        Integer targetPort = params.get("targetPort") != null ? Integer.valueOf(params.get("targetPort").toString()) : null;
+        return forwardService.diagnoseForwardDetail(forwardId, leg, targetIp, targetPort);
+    }
+
+    /**
      * 更新转发排序
      * @param params 包含forwards数组的参数，每个元素包含id和inx
      * @return 更新结果

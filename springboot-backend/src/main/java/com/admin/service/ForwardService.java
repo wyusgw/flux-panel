@@ -73,6 +73,9 @@ public interface ForwardService extends IService<Forward> {
      */
     R diagnoseForward(Long id);
 
+    /** 诊断详情：只对某一段重新测试，按「诊断详情连接次数」执行 */
+    R diagnoseForwardDetail(Long id, String leg, String targetIp, Integer targetPort);
+
     /**
      * 更新转发排序
      * @param params 包含forwards数组的参数
@@ -82,6 +85,13 @@ public interface ForwardService extends IService<Forward> {
 
 
     void updateForwardA(Forward forward);
+
+    /**
+     * 用户的套餐变化（换套餐、套餐限速被修改）后，把这些用户名下正在运行的转发规则的限速重新下发到入口节点，
+     * 让新的套餐限速立刻生效，不必逐条规则手动保存。
+     * 在事务提交之后异步执行（调用方处于事务中时等提交完成再刷新，避免读到旧的套餐），不阻塞调用方，失败只记日志。
+     */
+    void refreshLimitsAfterCommit(java.util.Collection<Integer> userIds);
 
     /**
      * 重新推送一条转发规则的 gost 配置（用于节点离线补推队列的重试）。

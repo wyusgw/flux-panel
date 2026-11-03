@@ -112,6 +112,10 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
 
     @Resource
     @Lazy
+    private ForwardService forwardService;
+
+    @Resource
+    @Lazy
     private InviteCodeService inviteCodeService;
     
     @Resource
@@ -328,6 +332,8 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         }
 
         // 4. 构建更新实体并保存
+        User beforeUpdate = this.getById(userUpdateDto.getId());
+        Long oldPackageId = beforeUpdate != null ? beforeUpdate.getPackageId() : null;
         User updateUser = buildUpdateUserEntity(userUpdateDto);
         boolean result = this.updateById(updateUser);
 
@@ -338,6 +344,10 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         }
 
         if (result) {
+            // 套餐换了：套餐限速随之变化，把该用户名下运行中规则的限速刷新到节点
+            if (userUpdateDto.getPackageId() != null && !Objects.equals(oldPackageId, userUpdateDto.getPackageId())) {
+                forwardService.refreshLimitsAfterCommit(Collections.singletonList(userUpdateDto.getId().intValue()));
+            }
             // 5. 处理到期时间延时任务
             return R.ok(SUCCESS_UPDATE_MSG);
         } else {

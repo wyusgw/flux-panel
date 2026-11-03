@@ -21,7 +21,8 @@ import {
   updateTunnel, 
   deleteTunnel,
   getNodeList,
-  diagnoseTunnel
+  diagnoseTunnel,
+  diagnoseTunnelDetail
 } from "@/api";
 import RefreshButton from "@/components/refresh-button";
 
@@ -303,6 +304,24 @@ export default function TunnelPage() {
   };
 
   // 诊断隧道：隧道被禁用时没有在跑，诊断没有意义，不允许发起
+  // 点开某一段的诊断详情时，只对这一段按「诊断详情连接次数」重新测试
+  const loadTunnelDiagnosisDetail = async (result: DiagnosisResultItem): Promise<DiagnosisResultItem | null> => {
+    if (!currentDiagnosisTunnel || !result.targetPort) return null;
+    try {
+      const response = await diagnoseTunnelDetail({
+        tunnelId: currentDiagnosisTunnel.id,
+        leg: result.leg,
+        targetIp: result.targetIp,
+        targetPort: result.targetPort
+      });
+      if (response.code === 0) return response.data as DiagnosisResultItem;
+      toast.error(response.msg || '重新测试失败，显示首次诊断结果');
+    } catch (error) {
+      toast.error('重新测试失败，显示首次诊断结果');
+    }
+    return null;
+  };
+
   const handleDiagnose = async (tunnel: Tunnel) => {
     if (tunnel.status !== 1) {
       toast.error('隧道未处于启用状态，暂不能诊断');
@@ -850,8 +869,10 @@ export default function TunnelPage() {
                     </div>
                   ) : diagnosisResult ? (
                     <div className="space-y-5">
-                      <DiagnosisLeg title="入口诊断" subtitle="Inbound" results={diagnosisResult.results.filter(r => r.leg !== 'outbound')} emptyText="无数据" />
-                      <DiagnosisLeg title="出口诊断" subtitle="Outbounds" results={diagnosisResult.results.filter(r => r.leg === 'outbound')} emptyText="此隧道为端口转发，无独立出口节点" />
+                      <DiagnosisLeg title="入口诊断" subtitle="Inbound" results={diagnosisResult.results.filter(r => r.leg !== 'outbound')} emptyText="无数据" loadDetail={loadTunnelDiagnosisDetail} />
+                      {diagnosisResult.results.filter(r => r.leg === 'outbound').length > 0 && (
+                        <DiagnosisLeg title="出口诊断" subtitle="Outbounds" results={diagnosisResult.results.filter(r => r.leg === 'outbound')} loadDetail={loadTunnelDiagnosisDetail} />
+                      )}
                       <DiagnosisPanelFeedback stats={diagnosisResult.dispatchStats} />
                     </div>
                   ) : (

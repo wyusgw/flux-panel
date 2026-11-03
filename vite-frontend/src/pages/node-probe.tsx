@@ -91,7 +91,7 @@ const buildOsContent = (node: Node) => (
     <PopRow>系统：{[osDisplayName(node.systemInfo?.osName), node.systemInfo?.osVersion].filter(Boolean).join(' ') || '—'}</PopRow>
     <PopRow>内核：{node.systemInfo?.kernelVersion || '—'}</PopRow>
     <PopRow>架构：{node.systemInfo?.arch || '—'}</PopRow>
-    <PopRow>虚拟化：{node.systemInfo?.virtualization || '无（物理机或未识别）'}</PopRow>
+    <PopRow>虚拟化：{node.systemInfo?.virtualization || '无'}</PopRow>
   </>
 );
 const buildCpuContent = (node: Node) => (

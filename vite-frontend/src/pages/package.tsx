@@ -307,7 +307,7 @@ export default function PackagePlanPage() {
             {selectedIds.length > 0 && <Button size="sm" color="danger" variant="bordered" onPress={() => setBatchDeleteModalOpen(true)}>批量删除（{selectedIds.length}）</Button>}
             <Button size="sm" variant="bordered" onPress={handleAdd}>添加套餐</Button>
           </div>
-          <div className="-mx-4 -mb-4">
+          <div className="-mx-4 -mb-4 settings-table-scroll">
           <Table removeWrapper aria-label="套餐列表" selectionMode="multiple" selectedKeys={selectedKeys} onSelectionChange={setSelectedKeys} classNames={{ base: "w-full", table: "w-full management-table-selectable", th: "management-table-heading", td: "management-table-cell" }}>
             <TableHeader>
               <TableColumn className="w-16">排序</TableColumn>

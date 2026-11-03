@@ -10,6 +10,7 @@ import (
 	admission "github.com/go-gost/x/admission/wrapper"
 	xnet "github.com/go-gost/x/internal/net"
 	"github.com/go-gost/x/internal/net/udp"
+	climiter "github.com/go-gost/x/limiter/conn/wrapper"
 	traffic_limiter "github.com/go-gost/x/limiter/traffic"
 	limiter_wrapper "github.com/go-gost/x/limiter/traffic/wrapper"
 	metrics "github.com/go-gost/x/metrics/wrapper"
@@ -78,6 +79,10 @@ func (l *udpListener) Init(md md.Metadata) (err error) {
 		TTL:            l.md.ttl,
 		Logger:         l.logger,
 	})
+	// 连接数限制：UDP 没有真正的连接，这里把「同一个客户端地址:端口」在 TTL 内的数据包视为一个连接（会话），
+	// 与 TCP 监听一样按 climiter 的「$ N」限制总连接数、「$$ N」限制单个客户端 IP 的连接数；
+	// 超过限制的新会话会被直接关闭，其数据包被丢弃。会话空闲超过 TTL 关闭后，连接数随之释放
+	l.ln = climiter.WrapListener(l.options.ConnLimiter, l.ln)
 	return
 }
 

@@ -5,10 +5,13 @@ import com.admin.common.dto.PackagePlanUpdateDto;
 import com.admin.common.lang.R;
 import com.admin.common.utils.JwtUtil;
 import com.admin.entity.PackagePlan;
+import com.admin.entity.User;
 import com.admin.entity.UserGroup;
 import com.admin.mapper.PackagePlanMapper;
+import com.admin.service.ForwardService;
 import com.admin.service.PackagePlanService;
 import com.admin.service.UserGroupService;
+import com.admin.service.UserService;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import org.springframework.beans.BeanUtils;
@@ -17,7 +20,9 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * <p>
@@ -40,6 +45,14 @@ public class PackagePlanServiceImpl extends ServiceImpl<PackagePlanMapper, Packa
     @Autowired
     @Lazy
     private UserGroupService userGroupService;
+
+    @Autowired
+    @Lazy
+    private ForwardService forwardService;
+
+    @Autowired
+    @Lazy
+    private UserService userService;
 
     @Override
     public R createPackagePlan(PackagePlanDto packagePlanDto) {
@@ -93,10 +106,18 @@ public class PackagePlanServiceImpl extends ServiceImpl<PackagePlanMapper, Packa
             return R.err(ERROR_GROUP_NOT_FOUND);
         }
 
+        Integer oldSpeedLimit = packagePlan.getUserSpeedLimit();
         BeanUtils.copyProperties(packagePlanUpdateDto, packagePlan);
         packagePlan.setUpdatedTime(System.currentTimeMillis());
 
         boolean result = this.updateById(packagePlan);
+        if (result && !Objects.equals(oldSpeedLimit == null ? 0 : oldSpeedLimit,
+                packagePlan.getUserSpeedLimit() == null ? 0 : packagePlan.getUserSpeedLimit())) {
+            // 套餐限速改了：绑定该套餐的用户名下运行中规则的限速需要跟着刷新
+            List<Integer> userIds = userService.list(new QueryWrapper<User>().eq("package_id", packagePlan.getId()))
+                    .stream().map(u -> u.getId().intValue()).collect(Collectors.toList());
+            forwardService.refreshLimitsAfterCommit(userIds);
+        }
         return result ? R.ok(SUCCESS_UPDATE_MSG) : R.err(ERROR_UPDATE_FAILED);
     }
 

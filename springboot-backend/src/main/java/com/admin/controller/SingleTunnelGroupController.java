@@ -22,7 +22,7 @@ import java.util.Map;
  * @since 2026-09-24
  */
 @RestController
-@RequestMapping("/api/v1/single-tunnel-group")
+@RequestMapping("/api/v1/singleTunnelGroup")
 @CrossOrigin
 public class SingleTunnelGroupController extends BaseController {
 

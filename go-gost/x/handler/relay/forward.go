@@ -15,6 +15,7 @@ import (
 	xnet "github.com/go-gost/x/internal/net"
 	"github.com/go-gost/x/limiter/traffic/wrapper"
 	stats_wrapper "github.com/go-gost/x/observer/stats/wrapper"
+	xselector "github.com/go-gost/x/selector"
 )
 
 func (h *relayHandler) handleForward(ctx context.Context, conn net.Conn, network string, log logger.Logger) error {
@@ -22,6 +23,17 @@ func (h *relayHandler) handleForward(ctx context.Context, conn net.Conn, network
 		Version: relay.Version1,
 		Status:  relay.StatusOK,
 	}
+	// ip_hash 策略需要来源作为哈希依据：优先用上下文里记录的客户端地址（如 Proxy Protocol 携带的真实来源），
+	// 否则用直连方（隧道转发时就是入口节点）的 IP
+	hashSource := string(ctxvalue.ClientAddrFromContext(ctx))
+	if hashSource == "" {
+		hashSource = conn.RemoteAddr().String()
+	}
+	if host, _, err := net.SplitHostPort(hashSource); err == nil {
+		hashSource = host
+	}
+	ctx = ctxvalue.ContextWithHash(ctx, &ctxvalue.Hash{Source: hashSource})
+
 	target := h.hop.Select(ctx)
 	if target == nil {
 		resp.Status = relay.StatusServiceUnavailable
@@ -30,6 +42,9 @@ func (h *relayHandler) handleForward(ctx context.Context, conn net.Conn, network
 		log.Error(err)
 		return err
 	}
+
+	// 最小连接数策略按节点当前活跃连接数选择目标：选中后计数加 1，连接结束时释放
+	defer xselector.AcquireConn(target)()
 
 	log = log.WithFields(map[string]any{
 		"dst": fmt.Sprintf("%s/%s", target.Addr, network),

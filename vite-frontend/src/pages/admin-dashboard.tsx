@@ -1,11 +1,15 @@
 import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Button } from "@heroui/button";
+import { Input } from "@heroui/input";
+import { Popover, PopoverTrigger, PopoverContent } from "@heroui/popover";
 import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from "@heroui/table";
+import type { SortDescriptor } from "@heroui/table";
 import { useNavigate } from "react-router-dom";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, LabelList } from "recharts";
+import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LabelList } from "recharts";
 
-import { getAllUsers, getNodeList, getAdminOrderList, getTaskQueueHealth, getDashboardFlowStats } from "@/api";
+import { StatCell } from "@/components/stat-cell";
+import { getAllUsers, getNodeList, getAdminOrderList, getTaskQueueHealth, getDashboardFlowStats, getNodeOnlineTrend } from "@/api";
 
 type Order = { amount?: number; orderStatus?: number; createdTime?: number; paidTime?: number };
 type User = { id: number; user: string; name?: string; inFlow?: number; outFlow?: number };
@@ -32,137 +36,144 @@ const isSameMonth = (time: number | undefined, date: Date) => {
 };
 
 const currency = (amount: number) => `${amount.toFixed(2)} 元`;
-const formatFlow = (value: number) => value < 1024 ** 2 ? `${(value / 1024).toFixed(2)} KB` : value < 1024 ** 3 ? `${(value / 1024 ** 2).toFixed(2)} MB` : `${(value / 1024 ** 3).toFixed(2)} GB`;
+const formatFlow = (value: number) => value < 1024 ** 2 ? `${(value / 1024).toFixed(2)} KiB` : value < 1024 ** 3 ? `${(value / 1024 ** 2).toFixed(2)} MiB` : `${(value / 1024 ** 3).toFixed(2)} GiB`;
 
 const TableIcon = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 20 20"><rect x="3" y="4" width="14" height="12" rx="1.5" /><path d="M3 8h14M8 8v8" /></svg>;
 const ChartIcon = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 20 20"><path strokeLinecap="round" d="M4 16V9M9 16V4M14 16v-5" /><path strokeLinecap="round" strokeLinejoin="round" d="M3 16h14" /></svg>;
 
-// 赛车仪表盘风格的拱状仪表：用于展示"在线节点占比"这类比例数据。
-// 手绘 SVG（不依赖图表库）：240° 宽扫角弧线 + 红/黄/绿三段色带 + 刻度线 + 指针，
-// 跟普通的半圆进度弧比起来更像真正的仪表盘（车速表/转速表那种），而不是一条简单的进度条
-const polarPoint = (cx: number, cy: number, r: number, angleDeg: number) => {
-  const rad = (angleDeg * Math.PI) / 180;
-  return { x: cx + r * Math.cos(rad), y: cy - r * Math.sin(rad) };
-};
-const describeArc = (cx: number, cy: number, r: number, startAngle: number, endAngle: number) => {
-  const start = polarPoint(cx, cy, r, startAngle);
-  const end = polarPoint(cx, cy, r, endAngle);
-  const largeArcFlag = startAngle - endAngle <= 180 ? 0 : 1;
-  return `M ${start.x} ${start.y} A ${r} ${r} 0 ${largeArcFlag} 1 ${end.x} ${end.y}`;
-};
-
-const GAUGE_START = 210; // 起始角（左下方），标准数学角度制，逆时针为正
-const GAUGE_END = -30;   // 结束角（右下方），总扫角 240°
-const angleForPercent = (p: number) => GAUGE_START - (GAUGE_START - GAUGE_END) * (Math.min(100, Math.max(0, p)) / 100);
-
-const SpeedometerGauge = ({ percent, value, sublabel }: { percent: number; value: string; sublabel: string }) => {
-  // 指针半径明显短于刻度环，且数值文字放在刻度环最低点（角度 210°/-30° 时）以下留足间距，
-  // 两者才不会在指针指向 0% 或 100%（也就是最贴近底部文字的角度）时撞在一起
-  const width = 190, cx = 95, cy = 92, r = 50, trackWidth = 10;
-  const clamped = Math.min(100, Math.max(0, percent));
-  const zones: [number, number, string][] = [[0, 30, '#e5484d'], [30, 70, '#f5a524'], [70, 100, '#17c964']];
-  const majorTicks = [0, 50, 100];
-  const minorTicks = [10, 20, 30, 40, 60, 70, 80, 90];
-  const trackOuter = r + trackWidth / 2;
-  // 指针始终按 0° 方向（水平朝右）画好，再整体用 CSS transform 旋转到目标角度：
-  // SVG 的 x1/y1/x2/y2 这类几何属性没法被 CSS transition 插值，直接改端点坐标指针会瞬间跳过去；
-  // 用 transform 旋转才能真正做出过渡动画。首次渲染先停在 0%，挂载后再转到实际值，就有一次"扫过去"的效果
-  const [shownPercent, setShownPercent] = useState(0);
-  useEffect(() => {
-    const id = requestAnimationFrame(() => setShownPercent(clamped));
-    return () => cancelAnimationFrame(id);
-  }, [clamped]);
-  const needleAngle = angleForPercent(shownPercent);
-  const needleLength = r - trackWidth - 12;
-  // 数字刻度标签靠水平位置决定对齐方式，避免贴着刻度线边缘显得挤
-  const labelAnchor = (t: number) => t === 0 ? 'start' : t === 100 ? 'end' : 'middle';
-
-  return (
-    <svg viewBox={`0 0 ${width} 182`} className="w-full max-w-[190px] mx-auto block">
-      {zones.map(([from, to, color]) => (
-        <path
-          key={color}
-          d={describeArc(cx, cy, r, angleForPercent(from), angleForPercent(to))}
-          fill="none"
-          stroke={color}
-          strokeWidth={trackWidth}
-          strokeLinecap="butt"
-        />
-      ))}
-      {/* 刻度线画在色带外圈，而不是叠在色带上面——叠在鲜艳的色带上灰色细线基本看不出来 */}
-      {minorTicks.map(t => {
-        const outer = polarPoint(cx, cy, trackOuter + 6, angleForPercent(t));
-        const inner = polarPoint(cx, cy, trackOuter + 2, angleForPercent(t));
-        return <line key={t} x1={inner.x} y1={inner.y} x2={outer.x} y2={outer.y} strokeWidth={1.5} className="stroke-default-400 dark:stroke-default-300" />;
-      })}
-      {majorTicks.map(t => {
-        const outer = polarPoint(cx, cy, trackOuter + 9, angleForPercent(t));
-        const inner = polarPoint(cx, cy, trackOuter + 2, angleForPercent(t));
-        const labelPos = polarPoint(cx, cy, trackOuter + 20, angleForPercent(t));
-        return (
-          <g key={t}>
-            <line x1={inner.x} y1={inner.y} x2={outer.x} y2={outer.y} strokeWidth={2} className="stroke-default-600 dark:stroke-default-200" />
-            <text x={labelPos.x} y={labelPos.y + 4} textAnchor={labelAnchor(t)} className="fill-default-500" style={{ fontSize: 10 }}>{t}</text>
-          </g>
-        );
-      })}
-      {/* 指针根部做成很窄的三角形（而不是单纯一条线），更接近真实指针的锥形 */}
-      <polygon
-        points={`${cx},${cy - 5} ${cx + needleLength},${cy} ${cx},${cy + 5}`}
-        strokeWidth={2} strokeLinejoin="round"
-        className="fill-foreground stroke-foreground"
-        style={{
-          transformOrigin: `${cx}px ${cy}px`,
-          transformBox: 'view-box',
-          transform: `rotate(${-needleAngle}deg)`,
-          transition: 'transform .9s cubic-bezier(.22, 1.2, .36, 1)',
-        }}
-      />
-      <circle cx={cx} cy={cy} r={5} className="fill-foreground" />
-      <text x={cx} y={157} textAnchor="middle" className="fill-foreground" style={{ fontSize: 18, fontWeight: 700 }}>{value}</text>
-      <text x={cx} y={172} textAnchor="middle" className="fill-default-500" style={{ fontSize: 10.5 }}>{sublabel}</text>
-    </svg>
-  );
-};
-
-// 充值趋势迷你折线图：数据一览里"今/昨日充值"与"本/上月充值"两格用的都是同一个组件，
+// 充值趋势迷你折线图：「今日充值」「本月充值」两格右侧用的是同一个组件，
 // 只是喂进去的趋势数据范围不同（按天 14 天 / 按月 6 个月）
 type TrendPoint = { label: string; amount: number };
-const TrendSparkline = ({ title, current, compareLabel, compareValue, data }: { title: string; current: string; compareLabel: string; compareValue: string; data: TrendPoint[] }) => (
-  <div className="p-3 min-h-24">
-    <p className="text-xs text-default-500">{title}</p>
-    <div className="mt-1 flex items-baseline justify-between gap-2">
-      <p className="text-base font-semibold text-foreground whitespace-nowrap">{current}</p>
-      <p className="text-[11px] text-default-400 whitespace-nowrap">{compareLabel} {compareValue}</p>
-    </div>
-    <div className="h-11 mt-1 -mx-1">
-      <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={data} margin={{ top: 2, right: 4, bottom: 0, left: 4 }}>
-          <Tooltip
-            cursor={{ stroke: 'currentColor', strokeOpacity: 0.15 }}
-            content={({ active, payload }) => {
-              if (!active || !payload || !payload.length) return null;
-              const row = payload[0].payload as TrendPoint;
-              return (
-                <div className="bg-white dark:bg-default-100 border border-default-200 rounded-lg px-2 py-1 text-[11px] shadow-lg">
-                  <p className="text-default-500">{row.label}</p>
-                  <p className="font-medium text-foreground">{currency(row.amount)}</p>
-                </div>
-              );
-            }}
-          />
-          <Line type="monotone" dataKey="amount" strokeWidth={2} dot={false} activeDot={false} className="stroke-[#2a78d6] dark:stroke-[#3987e5]" />
-        </LineChart>
-      </ResponsiveContainer>
-    </div>
+const RechargeTrend = ({ data }: { data: TrendPoint[] }) => (
+  <div className="hidden sm:block h-12 w-32 flex-shrink-0">
+    <ResponsiveContainer width="100%" height="100%">
+      <LineChart data={data} margin={{ top: 3, right: 4, bottom: 3, left: 4 }}>
+        <Tooltip
+          cursor={{ stroke: 'currentColor', strokeOpacity: 0.15 }}
+          content={({ active, payload }) => {
+            if (!active || !payload || !payload.length) return null;
+            const row = payload[0].payload as TrendPoint;
+            return (
+              <div className="bg-white dark:bg-default-100 border border-default-200 rounded-lg px-2 py-1 text-[11px] shadow-lg">
+                <p className="text-default-500">{row.label}</p>
+                <p className="font-medium text-foreground">{currency(row.amount)}</p>
+              </div>
+            );
+          }}
+        />
+        <Line type="monotone" dataKey="amount" strokeWidth={2} dot={false} activeDot={false} className="stroke-[#2a78d6] dark:stroke-[#3987e5]" />
+      </LineChart>
+    </ResponsiveContainer>
   </div>
 );
 
-function RankTable({ title, rows, kind }: { title: string; rows: { name: string; value: number }[]; kind: 'flow' | 'node' }) {
+// 节点在线统计曲线图：独立的一张图表卡片，横轴为时间、纵轴为节点数量（整数，从 0 起），带横向网格线与数据点。
+// 只画一条线：在线节点数；离线数量不单独画线，悬停提示里同时显示在线与离线数。
+// 「近 24 小时」为每 5 分钟一个采样点，「近 30 天」按自然日取当日最多在线数与最多离线数；
+// 没有数据时提示「数据采集中」，接口失败提示「数据不可用」
+type OnlinePoint = { time: number; online: number; offline: number };
+type OnlineRange = 'day' | 'month';
+const LINE_COLOR = '#2a78d6';
+const pad2 = (n: number) => String(n).padStart(2, '0');
+const formatClock = (time: number) => { const d = new Date(time); return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`; };
+const formatMonthDay = (time: number) => { const d = new Date(time); return `${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; };
+const formatFullDate = (time: number) => { const d = new Date(time); return `${d.getFullYear()}-${formatMonthDay(time)}`; };
+
+const NodeOnlineChart = () => {
+  const [range, setRange] = useState<OnlineRange>('day');
+  const [data, setData] = useState<OnlinePoint[]>([]);
+  const [failed, setFailed] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    setLoaded(false);
+    (async () => {
+      try {
+        const response = await getNodeOnlineTrend(range);
+        if (!active) return;
+        if (response.code === 0) { setData(response.data || []); setFailed(false); } else { setFailed(true); }
+      } catch {
+        if (active) setFailed(true);
+      } finally {
+        if (active) setLoaded(true);
+      }
+    })();
+    return () => { active = false; };
+  }, [range]);
+
+  const formatTick = (time: number) => range === 'month' ? formatMonthDay(time) : formatClock(time);
+  // 点不多（近 30 天按天汇总，或刚开始采样）时画出数据点，5 分钟一个点的 24 小时视图不画点以免太密
+  const showDots = range === 'month' || data.length <= 3;
+
+  return (
+    <Card className="dashboard-panel mb-5 min-w-0" shadow="none">
+      <CardHeader className="px-6 py-4 border-b border-default-100 flex items-center justify-between gap-3 flex-wrap">
+        <h2 className="text-sm font-semibold">节点在线统计</h2>
+        <div className="flex items-center gap-4 flex-wrap">
+          <div className="flex items-center gap-1">
+            <Button size="sm" variant={range === 'day' ? 'flat' : 'light'} color="default" onPress={() => setRange('day')}>近 24 小时</Button>
+            <Button size="sm" variant={range === 'month' ? 'flat' : 'light'} color="default" onPress={() => setRange('month')}>近 30 天</Button>
+          </div>
+        </div>
+      </CardHeader>
+      <CardBody className="px-4 py-4">
+        <div className="h-60">
+          {failed ? (
+            <div className="h-full flex items-center justify-center text-sm text-default-400">数据不可用</div>
+          ) : loaded && data.length === 0 ? (
+            <div className="h-full flex items-center justify-center text-sm text-default-400">数据采集中</div>
+          ) : (
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={data} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
+                <CartesianGrid vertical={false} stroke="currentColor" strokeOpacity={0.12} />
+                <XAxis dataKey="time" tickFormatter={formatTick} tickLine={false} axisLine={false} minTickGap={28} tick={{ fontSize: 11, className: 'fill-default-500' }} />
+                <YAxis allowDecimals={false} domain={[0, (max: number) => Math.max(max, 1)]} width={32} tickLine={false} axisLine={false} tick={{ fontSize: 11, className: 'fill-default-500' }} />
+                <Tooltip
+                  cursor={{ stroke: 'currentColor', strokeOpacity: 0.15 }}
+                  content={({ active, payload }) => {
+                    if (!active || !payload || !payload.length) return null;
+                    const row = payload[0].payload as OnlinePoint;
+                    return (
+                      <div className="bg-white dark:bg-default-100 border border-default-200 rounded-lg px-3 py-2 text-xs shadow-lg">
+                        <p className="text-default-500">{range === 'month' ? `${formatFullDate(row.time)}（当日最多）` : `${formatMonthDay(row.time)} ${formatClock(row.time)}`}</p>
+                        <p className="mt-1 font-medium text-foreground">在线 {row.online}</p>
+                        <p className="mt-0.5 font-medium text-foreground">离线 {row.offline}</p>
+                      </div>
+                    );
+                  }}
+                />
+                <Line type="monotone" dataKey="online" stroke={LINE_COLOR} strokeWidth={2} dot={showDots ? { r: 2.5, fill: LINE_COLOR, stroke: 'none' } : false} activeDot={{ r: 4 }} isAnimationActive={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+      </CardBody>
+    </Card>
+  );
+};
+
+// 排行卡片的表头筛选与排序（样式与转发规则表格一致）：「排名」「单向流量」列可点击排序，
+// 「用户 / 节点」列表头有漏斗图标，点开按名称关键字筛选；筛选和排序后保留原始名次，表格与图表视图共用同一份结果
+const IconFilter = () => <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M3 4h18l-7 8.5V19l-4 2v-8.5L3 4z" /></svg>;
+function RankTable({ title, rows: allRows, kind }: { title: string; rows: { name: string; value: number }[]; kind: 'flow' | 'node' }) {
   const [view, setView] = useState<'table' | 'chart'>('table');
+  const [keyword, setKeyword] = useState('');
+  const [sortDescriptor, setSortDescriptor] = useState<SortDescriptor | undefined>(undefined);
+  const noun = kind === 'node' ? '节点' : '用户';
+  const trimmed = keyword.trim().toLowerCase();
+  const ranked = useMemo(() => allRows.map((row, index) => ({ ...row, rank: index + 1 })), [allRows]);
+  const rows = useMemo(() => {
+    const filtered = ranked.filter(row => !trimmed || row.name.toLowerCase().includes(trimmed));
+    if (!sortDescriptor?.column) return filtered;
+    const dir = sortDescriptor.direction === 'descending' ? -1 : 1;
+    const key = sortDescriptor.column === 'value' ? 'value' : 'rank';
+    return [...filtered].sort((a, b) => (a[key] - b[key]) * dir);
+  }, [ranked, trimmed, sortDescriptor]);
+  const filtering = trimmed !== '';
   return (
     <Card className="dashboard-panel min-w-0" shadow="none">
-      <CardHeader className="px-4 py-3 border-b border-default-100 flex items-center justify-between">
+      <CardHeader className="px-6 py-4 border-b border-default-100 flex items-center justify-between">
         <h2 className="text-sm font-semibold">{title}</h2>
         <div className="flex items-center gap-1">
           <Button isIconOnly size="sm" variant={view === 'table' ? 'flat' : 'light'} color="default" onPress={() => setView('table')} title="表格视图"><TableIcon /></Button>
@@ -171,14 +182,43 @@ function RankTable({ title, rows, kind }: { title: string; rows: { name: string;
       </CardHeader>
       <CardBody className="p-0">
         {view === 'table' ? (
-          <Table removeWrapper aria-label={title} classNames={{ th: "management-table-heading", td: "management-table-cell" }}>
-            <TableHeader><TableColumn>排名</TableColumn><TableColumn>{kind === 'node' ? '节点' : '用户'}</TableColumn><TableColumn>单向流量</TableColumn></TableHeader>
-            <TableBody emptyContent="暂无统计数据">
-              {rows.map((row, index) => <TableRow key={`${row.name}-${index}`}><TableCell>{index + 1}</TableCell><TableCell>{row.name}</TableCell><TableCell>{formatFlow(row.value)}</TableCell></TableRow>)}
+          <Table removeWrapper aria-label={title} sortDescriptor={sortDescriptor} onSortChange={setSortDescriptor} classNames={{ th: "management-table-heading", td: "management-table-cell" }}>
+            <TableHeader>
+              <TableColumn key="rank" allowsSorting>排名</TableColumn>
+              <TableColumn key="name">
+                <div className="flex items-center gap-1.5">
+                  {noun}
+                  <Popover placement="bottom-start">
+                    <PopoverTrigger>
+                      <button
+                        type="button"
+                        aria-label={`筛选${noun}`}
+                        title={`筛选${noun}`}
+                        className={`inline-flex items-center justify-center rounded p-0.5 transition-colors ${filtering ? 'text-primary' : 'text-default-400 hover:text-default-600'}`}
+                      >
+                        <IconFilter />
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent>
+                      <div className="p-2 w-48">
+                        <Input
+                          aria-label={`筛选${noun}`} size="sm" variant="bordered" autoComplete="off" isClearable autoFocus
+                          placeholder={`输入${noun}名称`}
+                          value={keyword} onValueChange={setKeyword}
+                        />
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+              </TableColumn>
+              <TableColumn key="value" allowsSorting>单向流量</TableColumn>
+            </TableHeader>
+            <TableBody emptyContent={filtering && allRows.length > 0 ? "没有符合条件的数据" : "暂无统计数据"}>
+              {rows.map((row) => <TableRow key={`${row.name}-${row.rank}`}><TableCell>{row.rank}</TableCell><TableCell>{row.name}</TableCell><TableCell>{formatFlow(row.value)}</TableCell></TableRow>)}
             </TableBody>
           </Table>
         ) : rows.length === 0 ? (
-          <div className="py-12 text-center text-sm text-default-500">暂无统计数据</div>
+          <div className="py-12 text-center text-sm text-default-500">{filtering && allRows.length > 0 ? '没有符合条件的数据' : '暂无统计数据'}</div>
         ) : (
           <div className="p-4" style={{ height: Math.max(160, rows.length * 36) }}>
             <ResponsiveContainer width="100%" height="100%">
@@ -229,14 +269,14 @@ export default function AdminDashboardPage() {
   }, []);
   useEffect(() => { loadData(); }, [loadData]);
 
+  const onlineNodeCount = nodes.filter(node => node.status === 1).length;
+  const offlineNodeCount = nodes.length - onlineNodeCount;
   const queuePending = queueHealth ? queueHealth.queuedCount + queueHealth.retryingCount + queueHealth.exhaustedCount : 0;
 
   const now = new Date();
   const yesterday = new Date(now); yesterday.setDate(now.getDate() - 1);
   const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const paidAmount = (predicate: (time: number | undefined) => boolean) => orders.filter(order => order.orderStatus === 1 && predicate(order.paidTime || order.createdTime)).reduce((sum, order) => sum + Number(order.amount || 0), 0);
-  const onlineNodeCount = nodes.filter(node => node.status === 1).length;
-  const onlineNodePercent = nodes.length > 0 ? (onlineNodeCount / nodes.length) * 100 : 0;
 
   // 充值趋势：最近 14 天/最近 6 个月，直接从已经整批拉回来的 orders 里按天/按月汇总，
   // 不需要额外的后端接口
@@ -262,42 +302,34 @@ export default function AdminDashboardPage() {
   }, [orders]);
 
   return <div className="dashboard-home px-4 lg:px-6 py-5 lg:py-6 max-w-[1600px] mx-auto">
-    <div className="flex items-center justify-between mb-5"><div><p className="text-xs font-medium tracking-[0.16em] text-blue-400 uppercase">Console</p><h1 className="mt-1 text-xl font-semibold">仪表盘</h1></div></div>
     <section className="dashboard-panel mb-5 overflow-hidden">
-      <div className="px-4 py-3 border-b border-default-100"><h2 className="text-sm font-semibold">数据一览</h2></div>
-      <div className="grid grid-cols-2 md:grid-cols-4 border-b border-default-100">
-        <div className="md:border-r border-b md:border-b-0 border-default-100">
-          <TrendSparkline title="今日充值" current={currency(paidAmount(time => isSameDay(time, now)))} compareLabel="昨日" compareValue={currency(paidAmount(time => isSameDay(time, yesterday)))} data={dailyRechargeTrend} />
-        </div>
-        <div className="md:border-r border-b md:border-b-0 border-default-100">
-          <TrendSparkline title="本月充值" current={currency(paidAmount(time => isSameMonth(time, now)))} compareLabel="上月" compareValue={currency(paidAmount(time => isSameMonth(time, lastMonth)))} data={monthlyRechargeTrend} />
-        </div>
-        <div className="p-4 min-h-24 md:border-r border-default-100">
-          <p className="text-xs text-default-500">单向流量</p>
-          <p className="mt-2 text-sm text-foreground">今日 <span className="font-semibold">{formatFlow(flowStats.todayTotal)}</span></p>
-          <p className="mt-1 text-sm text-default-500">昨日 {formatFlow(flowStats.yesterdayTotal)}</p>
-        </div>
-        <div className="p-4 min-h-24"><p className="text-xs text-default-500">总用户</p><p className="mt-2 text-lg font-semibold text-foreground">{users.length}</p></div>
-      </div>
-      {/* 单独一个 3 栏网格，而不是延续上面的 4 栏：这一排只有 3 个格子，沿用 4 栏会在最右边空出一格 */}
-      <div className="grid grid-cols-3">
-        <div className="p-4 min-h-24 border-r border-default-100 flex flex-col justify-center"><p className="text-xs text-default-500">节点总数</p><p className="mt-2 text-lg font-semibold text-foreground">{nodes.length}</p></div>
-        <div className="p-3 min-h-24 border-r border-default-100 flex flex-col items-center justify-center"><div className="w-full max-w-[200px]"><SpeedometerGauge percent={onlineNodePercent} value={`${onlineNodeCount} / ${nodes.length}`} sublabel="在线节点" /></div></div>
-        <button type="button" onClick={() => navigate('/task-queue')} className="p-4 min-h-24 flex flex-col justify-center text-left hover:bg-default-50 transition-colors">
-          <p className="text-xs text-default-500">队列情况</p>
-          {queueHealth ? (
-            <>
-              <p className="mt-2 text-lg font-semibold text-foreground">{queueHealth.running ? `待处理 ${queuePending}` : '队列异常'}</p>
-              <p className={`mt-1 text-sm ${queueHealth.exhaustedCount > 0 || !queueHealth.running ? 'text-danger-600' : 'text-default-500'}`}>
-                {queueHealth.exhaustedCount > 0 ? `${queueHealth.exhaustedCount} 个已达重试上限` : `近1小时成功 ${queueHealth.successLastHour}`}
-              </p>
-            </>
-          ) : (
-            <p className="mt-2 text-lg font-semibold text-foreground">—</p>
-          )}
-        </button>
+      <div className="px-6 py-4 border-b border-default-100"><h2 className="text-sm font-semibold">数据一览</h2></div>
+      {/* 两栏统计格，窄屏也保持两栏（迷你曲线在窄屏隐藏） */}
+      <div className="grid grid-cols-2">
+        <StatCell label="今日充值" value={currency(paidAmount(time => isSameDay(time, now)))} chart={<RechargeTrend data={dailyRechargeTrend} />} />
+        <StatCell label="昨日充值" value={currency(paidAmount(time => isSameDay(time, yesterday)))} />
+        <StatCell label="本月充值" value={currency(paidAmount(time => isSameMonth(time, now)))} chart={<RechargeTrend data={monthlyRechargeTrend} />} />
+        <StatCell label="上月充值" value={currency(paidAmount(time => isSameMonth(time, lastMonth)))} />
+        <StatCell label="今日单向流量" value={formatFlow(flowStats.todayTotal)} />
+        <StatCell label="昨日单向流量" value={formatFlow(flowStats.yesterdayTotal)} />
+        <StatCell label="总用户" value={String(users.length)} />
+        <StatCell
+          label="队列情况"
+          value={queueHealth ? (queueHealth.running ? `待处理 ${queuePending}` : '队列异常') : '—'}
+          hint={queueHealth ? (queueHealth.exhaustedCount > 0 ? `${queueHealth.exhaustedCount} 个已达重试上限` : `近1小时成功 ${queueHealth.successLastHour}`) : undefined}
+          hintTone={queueHealth && (queueHealth.exhaustedCount > 0 || !queueHealth.running) ? 'danger' : undefined}
+          onClick={() => navigate('/task-queue')}
+        />
+        <StatCell label="节点总数" value={String(nodes.length)} />
+        <StatCell
+          label="节点在线"
+          value={`在线 ${onlineNodeCount}`}
+          hint={`离线 ${offlineNodeCount}`}
+          hintTone={offlineNodeCount > 0 ? 'danger' : undefined}
+        />
       </div>
     </section>
+    <NodeOnlineChart />
     <section className="grid grid-cols-1 xl:grid-cols-2 gap-5"><RankTable title="今日用户流量排行" rows={flowStats.todayUserRanking} kind="flow" /><RankTable title="昨日用户流量排行" rows={flowStats.yesterdayUserRanking} kind="flow" /><RankTable title="今日节点流量排行" rows={flowStats.todayNodeRanking} kind="node" /><RankTable title="昨日节点流量排行" rows={flowStats.yesterdayNodeRanking} kind="node" /></section>
   </div>;
 }

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Card, CardBody } from "@heroui/card";
+import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Table, TableHeader, TableColumn, TableBody, TableRow, TableCell } from "@heroui/table";
 import { Button } from "@heroui/button";
 import { Input } from "@heroui/input";
@@ -21,8 +21,10 @@ import {
   updateTunnel, 
   deleteTunnel,
   getNodeList,
-  diagnoseTunnel
+  diagnoseTunnel,
+  diagnoseTunnelDetail
 } from "@/api";
+import RefreshButton from "@/components/refresh-button";
 
 interface Tunnel {
   id: number;
@@ -302,6 +304,24 @@ export default function TunnelPage() {
   };
 
   // 诊断隧道：隧道被禁用时没有在跑，诊断没有意义，不允许发起
+  // 点开某一段的诊断详情时，只对这一段按「诊断详情连接次数」重新测试
+  const loadTunnelDiagnosisDetail = async (result: DiagnosisResultItem): Promise<DiagnosisResultItem | null> => {
+    if (!currentDiagnosisTunnel || !result.targetPort) return null;
+    try {
+      const response = await diagnoseTunnelDetail({
+        tunnelId: currentDiagnosisTunnel.id,
+        leg: result.leg,
+        targetIp: result.targetIp,
+        targetPort: result.targetPort
+      });
+      if (response.code === 0) return response.data as DiagnosisResultItem;
+      toast.error(response.msg || '重新测试失败，显示首次诊断结果');
+    } catch (error) {
+      toast.error('重新测试失败，显示首次诊断结果');
+    }
+    return null;
+  };
+
   const handleDiagnose = async (tunnel: Tunnel) => {
     if (tunnel.status !== 1) {
       toast.error('隧道未处于启用状态，暂不能诊断');
@@ -435,42 +455,24 @@ export default function TunnelPage() {
 
   return (
     
-      <div className="px-3 lg:px-6 py-8">
-        {/* 页面头部 */}
-        <div className="flex items-center justify-between mb-6">
-        <div className="flex-1">
-        </div>
-
-        <div className="flex items-center gap-2">
-          <Button
-            size="sm"
-            variant="flat"
-            isDisabled={refreshing}
-            startContent={
-              <svg className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h5M20 20v-5h-5" />
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4.6 15a8 8 0 0014.4 2.6M19.4 9A8 8 0 005 6.4" />
-              </svg>
-            }
-            onPress={handleRefresh}
-          >
-            刷新
-          </Button>
-          <Button
-            size="sm"
-            color="primary"
-            onPress={handleAdd}
-          >
-            新增
-          </Button>
-        </div>
-     
+      <div className="management-page px-4 lg:px-6 py-5 lg:py-6">
+        <Card className="management-table-card max-w-[1600px] mx-auto">
+        {/* 页面头部：标题 + 刷新，操作按钮在下方工具列（与其他管理页一致） */}
+        <CardHeader className="flex-row items-center justify-between gap-4 p-4 border-b border-default-100">
+          <div className="flex items-center gap-3 flex-wrap">
+            <h1 className="text-base font-semibold text-foreground">隧道管理</h1>
+            <RefreshButton refreshing={refreshing} onRefresh={handleRefresh} />
+          </div>
+        </CardHeader>
+        <CardBody className="p-4 space-y-3">
+        <p className="text-xs text-default-500">创建并管理转发使用的入口、出口节点隧道</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button size="sm" variant="bordered" onPress={handleAdd}>新增隧道</Button>
         </div>
 
         {/* 隧道列表 */}
         {tunnels.length > 0 ? (
-          <Card className="shadow-sm border border-default-200">
-            <CardBody className="p-0">
+            <div className="-mx-4 -mb-4">
               <div className="settings-table-scroll">
                 <Table
                   removeWrapper
@@ -496,7 +498,7 @@ export default function TunnelPage() {
                             <div className="font-medium text-foreground">{tunnel.name}</div>
                             <div className="flex items-center gap-1.5 mt-1">
                               <span className="text-xs text-default-400">#{tunnel.id}</span>
-                              <Chip color={typeDisplay.color as any} variant="flat" size="sm" className="text-xs">{typeDisplay.text}</Chip>
+                              <Chip color={typeDisplay.color as any} variant="light" size="sm" className="text-xs">{typeDisplay.text}</Chip>
                             </div>
                           </TableCell>
                           <TableCell>
@@ -514,7 +516,7 @@ export default function TunnelPage() {
                           </TableCell>
                           <TableCell>{formatFlow(tunnel.usedFlow || 0)}</TableCell>
                           <TableCell>
-                            <Chip size="sm" variant="flat" color={statusDisplay.color as any}>{statusDisplay.text}</Chip>
+                            <Chip size="sm" variant="light" color={statusDisplay.color as any}>{statusDisplay.text}</Chip>
                           </TableCell>
                           <TableCell>
                             <div className="flex justify-end items-center gap-1">
@@ -541,16 +543,13 @@ export default function TunnelPage() {
                   </TableBody>
                 </Table>
               </div>
-            </CardBody>
-          </Card>
+            </div>
         ) : (
           /* 空状态 */
-          <Card className="shadow-sm border border-gray-200 dark:border-gray-700">
-            <CardBody>
-              <EmptyState />
-            </CardBody>
-          </Card>
+          <EmptyState />
         )}
+        </CardBody>
+        </Card>
 
         {/* 新增/编辑模态框 */}
         <Modal 
@@ -565,13 +564,13 @@ export default function TunnelPage() {
             {(onClose) => (
               <>
                 <ModalHeader>
-                  <h2 className="text-lg font-bold">
+                  <h2 className="text-base font-semibold">
                     {isEdit ? '编辑隧道' : '新增隧道'}
                   </h2>
                 </ModalHeader>
                 <ModalBody>
                   <div className="space-y-3 pb-4">
-                    <Input
+                    <Input labelPlacement="outside-top"
                       size="sm" autoComplete="off"
                       label="隧道名称"
                       placeholder="请输入隧道名称"
@@ -582,7 +581,7 @@ export default function TunnelPage() {
                       variant="bordered"
                     />
                     
-                    <Select
+                    <Select labelPlacement="outside-top" listboxProps={{ emptyContent: <EmptyState compact /> }}
                       size="sm"
                       label="隧道类型"
                       placeholder="请选择隧道类型"
@@ -602,8 +601,8 @@ export default function TunnelPage() {
                       <SelectItem key="2">隧道转发</SelectItem>
                     </Select>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      <Select
+                    <div className="grid grid-cols-2 gap-3">
+                      <Select labelPlacement="outside-top" listboxProps={{ emptyContent: <EmptyState compact /> }}
                         size="sm"
                         label="流量计算"
                         placeholder="请选择流量计算方式"
@@ -622,7 +621,7 @@ export default function TunnelPage() {
                         <SelectItem key="2">双向计算（上传+下载）</SelectItem>
                       </Select>
 
-                      <Input
+                      <Input labelPlacement="outside-top"
                         size="sm" autoComplete="off"
                         label="流量倍率"
                         placeholder="请输入流量倍率"
@@ -646,7 +645,7 @@ export default function TunnelPage() {
                     <Divider />
                     <h3 className="text-lg font-semibold">入口配置</h3>
 
-                    <Select
+                    <Select labelPlacement="outside-top" listboxProps={{ emptyContent: <EmptyState compact /> }}
                       size="sm"
                       label="入口节点"
                       placeholder="请选择入口节点"
@@ -671,7 +670,7 @@ export default function TunnelPage() {
                             <span>{node.name}</span>
                             <Chip 
                               color={node.status === 1 ? 'success' : 'danger'} 
-                              variant="flat" 
+                              variant="light" 
                               size="sm"
                             >
                               {node.status === 1 ? '在线' : '离线'}
@@ -681,8 +680,8 @@ export default function TunnelPage() {
                       ))}
                     </Select>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      <Input
+                    <div className="grid grid-cols-2 gap-3">
+                      <Input labelPlacement="outside-top"
                         size="sm" autoComplete="off"
                         label={<HelpTooltip content="V6或者双栈填写[::],V4填写0.0.0.0。不懂的就去看文档网站内的说明">TCP监听地址</HelpTooltip>}
                         placeholder="请输入TCP监听地址"
@@ -698,7 +697,7 @@ export default function TunnelPage() {
                         }
                       />
 
-                      <Input
+                      <Input labelPlacement="outside-top"
                         size="sm" autoComplete="off"
                         label={<HelpTooltip content="V6或者双栈填写[::],V4填写0.0.0.0。不懂的就去看文档网站内的说明">UDP监听地址</HelpTooltip>}
                         placeholder="请输入UDP监听地址"
@@ -717,7 +716,7 @@ export default function TunnelPage() {
 
                     {/* 隧道转发时显示出口网卡配置 */}
                     {form.type === 2 && (
-                      <Input
+                      <Input labelPlacement="outside-top"
                         size="sm" autoComplete="off"
                         label={<HelpTooltip content="用于多IP服务器指定使用那个IP和出口服务器通讯，不懂的默认为空就行">出口网卡名或IP</HelpTooltip>}
                         placeholder="请输入出口网卡名或IP"
@@ -735,7 +734,7 @@ export default function TunnelPage() {
                         <Divider />
                         <h3 className="text-lg font-semibold">出口配置</h3>
 
-                        <Select
+                        <Select labelPlacement="outside-top" listboxProps={{ emptyContent: <EmptyState compact /> }}
                           size="sm"
                           label="协议类型"
                           placeholder="请选择协议类型"
@@ -758,7 +757,7 @@ export default function TunnelPage() {
                           <SelectItem key="mtcp">MTCP</SelectItem>
                         </Select>
 
-                        <Select
+                        <Select labelPlacement="outside-top" listboxProps={{ emptyContent: <EmptyState compact /> }}
                           size="sm"
                           label="出口节点"
                           placeholder="请选择出口节点"
@@ -784,13 +783,13 @@ export default function TunnelPage() {
                                 <div className="flex items-center gap-2">
                                   <Chip 
                                     color={node.status === 1 ? 'success' : 'danger'} 
-                                    variant="flat" 
+                                    variant="light" 
                                     size="sm"
                                   >
                                     {node.status === 1 ? '在线' : '离线'}
                                   </Chip>
                                   {form.inNodeId === node.id && (
-                                    <Chip color="warning" variant="flat" size="sm">
+                                    <Chip color="warning" variant="light" size="sm">
                                       已选为入口
                                     </Chip>
                                   )}
@@ -805,11 +804,11 @@ export default function TunnelPage() {
                   </div>
                 </ModalBody>
                 <ModalFooter>
-                  <Button variant="light" onPress={onClose}>
+                  <Button size="sm" variant="bordered" onPress={onClose}>
                     取消
                   </Button>
-                  <Button
-                    color="default"
+                  <Button size="sm"
+                    color="primary"
                     onPress={handleSubmit}
                     isLoading={submitLoading}
                   >
@@ -846,13 +845,13 @@ export default function TunnelPage() {
             {(onClose) => (
               <>
                 <ModalHeader className="flex flex-col gap-1">
-                  <h2 className="text-xl font-bold">隧道诊断结果</h2>
+                  <h2 className="text-base font-semibold">隧道诊断结果</h2>
                   {currentDiagnosisTunnel && (
                     <div className="flex items-center gap-2">
                       <span className="text-small text-default-500">{currentDiagnosisTunnel.name}</span>
                       <Chip 
                         color={currentDiagnosisTunnel.type === 1 ? 'primary' : 'secondary'} 
-                        variant="flat" 
+                        variant="light" 
                         size="sm"
                       >
                         {currentDiagnosisTunnel.type === 1 ? '端口转发' : '隧道转发'}
@@ -870,8 +869,10 @@ export default function TunnelPage() {
                     </div>
                   ) : diagnosisResult ? (
                     <div className="space-y-5">
-                      <DiagnosisLeg title="入口诊断" subtitle="Inbound" results={diagnosisResult.results.filter(r => r.leg !== 'outbound')} emptyText="无数据" />
-                      <DiagnosisLeg title="出口诊断" subtitle="Outbounds" results={diagnosisResult.results.filter(r => r.leg === 'outbound')} emptyText="此隧道为端口转发，无独立出口节点" />
+                      <DiagnosisLeg title="入口诊断" subtitle="Inbound" results={diagnosisResult.results.filter(r => r.leg !== 'outbound')} emptyText="无数据" loadDetail={loadTunnelDiagnosisDetail} />
+                      {diagnosisResult.results.filter(r => r.leg === 'outbound').length > 0 && (
+                        <DiagnosisLeg title="出口诊断" subtitle="Outbounds" results={diagnosisResult.results.filter(r => r.leg === 'outbound')} loadDetail={loadTunnelDiagnosisDetail} />
+                      )}
                       <DiagnosisPanelFeedback stats={diagnosisResult.dispatchStats} />
                     </div>
                   ) : (
@@ -879,12 +880,12 @@ export default function TunnelPage() {
                   )}
                 </ModalBody>
                 <ModalFooter>
-                  <Button variant="light" onPress={onClose}>
+                  <Button size="sm" variant="bordered" onPress={onClose}>
                     关闭
                   </Button>
                   {currentDiagnosisTunnel && (
-                    <Button
-                      color="default"
+                    <Button size="sm"
+                      color="primary"
                       onPress={() => handleDiagnose(currentDiagnosisTunnel)}
                       isDisabled={diagnosisLoading}
                     >

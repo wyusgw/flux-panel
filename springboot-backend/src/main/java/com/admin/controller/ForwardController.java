@@ -60,7 +60,7 @@ public class ForwardController extends BaseController {
     }
 
     @LogAnnotation
-    @PostMapping("/force-delete")
+    @PostMapping("/forceDelete")
     public R forceDelete(@RequestBody Map<String, Object> params) {
         Long id = Long.valueOf(params.get("id").toString());
         return forwardService.forceDeleteForward(id);
@@ -93,12 +93,26 @@ public class ForwardController extends BaseController {
     }
 
     /**
+     * 诊断详情：点开某一段的详细结果时，只对这一段重新测试（次数取站点设置里的「诊断详情连接次数」）
+     * @param params 包含 forwardId、leg（inbound/outbound）、targetIp、targetPort
+     */
+    @LogAnnotation
+    @PostMapping("/diagnoseDetail")
+    public R diagnoseForwardDetail(@RequestBody Map<String, Object> params) {
+        Long forwardId = Long.valueOf(params.get("forwardId").toString());
+        String leg = params.get("leg") != null ? params.get("leg").toString() : null;
+        String targetIp = params.get("targetIp") != null ? params.get("targetIp").toString() : null;
+        Integer targetPort = params.get("targetPort") != null ? Integer.valueOf(params.get("targetPort").toString()) : null;
+        return forwardService.diagnoseForwardDetail(forwardId, leg, targetIp, targetPort);
+    }
+
+    /**
      * 更新转发排序
      * @param params 包含forwards数组的参数，每个元素包含id和inx
      * @return 更新结果
      */
     @LogAnnotation
-    @PostMapping("/update-order")
+    @PostMapping("/updateOrder")
     public R updateForwardOrder(@RequestBody Map<String, Object> params) {
         return forwardService.updateForwardOrder(params);
     }
@@ -107,7 +121,7 @@ public class ForwardController extends BaseController {
      * "我的转发规则"页「统计数据」弹窗：当前用户今日/昨日累计流量（不计流量倍率的原始字节数）
      */
     @LogAnnotation
-    @PostMapping("/daily-flow")
+    @PostMapping("/dailyFlow")
     public R dailyFlow() {
         Integer userId = JwtUtil.getUserIdFromToken();
         long[] flows = userDailyRawFlowService.getTodayAndYesterday(userId);

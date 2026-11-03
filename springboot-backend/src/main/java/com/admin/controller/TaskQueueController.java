@@ -18,7 +18,7 @@ import java.util.Map;
  * @since 2026-09-24
  */
 @RestController
-@RequestMapping("/api/v1/task-queue")
+@RequestMapping("/api/v1/taskQueue")
 @CrossOrigin
 public class TaskQueueController extends BaseController {
 
@@ -48,7 +48,7 @@ public class TaskQueueController extends BaseController {
 
     @LogAnnotation
     @RequireRole
-    @PostMapping("/error-logs")
+    @PostMapping("/errorLogs")
     public R errorLogs() {
         return taskQueueService.listErrorLogs();
     }

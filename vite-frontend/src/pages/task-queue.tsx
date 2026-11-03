@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { Card, CardBody } from "@heroui/card";
+import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Button } from "@heroui/button";
 import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter } from "@heroui/modal";
 import {
@@ -15,6 +15,7 @@ import toast from 'react-hot-toast';
 
 import { EmptyState } from "@/components/empty-state";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { StatCell } from "@/components/stat-cell";
 import { getTaskQueueList, getTaskQueueHealth, getTaskQueueOverview, getTaskQueueErrorLogs, retryTaskQueue, deleteTaskQueue } from "@/api";
 
 interface TaskQueueItem {
@@ -97,47 +98,6 @@ const getItemState = (item: TaskQueueItem, limit: number): { label: string; colo
   if (item.retryCount > 0) return { label: '重试中', color: 'warning' };
   return { label: '排队中', color: 'default' };
 };
-
-const STAT_TONE_CLASS: Record<string, string> = {
-  warning: 'text-warning-600',
-  success: 'text-success-600'
-};
-
-const StatCard = ({ label, value, tone = 'default', onPress }: { label: string; value: string | number; tone?: 'default' | 'warning' | 'success'; onPress?: () => void }) => (
-  <Card
-    isPressable={!!onPress}
-    onPress={onPress}
-    className={`shadow-sm border border-default-200 ${onPress ? 'hover:border-primary-300 transition-colors' : ''}`}
-  >
-    <CardBody className="py-3 px-4">
-      <p className="text-xs text-default-500">{label}</p>
-      <p className={`text-2xl font-semibold mt-1 ${tone !== 'default' && Number(value) > 0 ? STAT_TONE_CLASS[tone] : 'text-foreground'}`}>{value}</p>
-    </CardBody>
-  </Card>
-);
-
-const HealthCard = ({ health }: { health: TaskQueueHealth | null }) => (
-  <Card className="shadow-sm border border-default-200">
-    <CardBody className="py-3 px-4">
-      <p className="text-xs text-default-500">队列总状态</p>
-      {health ? (
-        <>
-          <div className="flex items-center gap-1.5 mt-1">
-            <span className={`inline-block w-2 h-2 rounded-full ${health.running ? 'bg-success-500' : 'bg-danger-500'}`} />
-            <span className={`text-2xl font-semibold ${health.running ? 'text-foreground' : 'text-danger-600'}`}>
-              {health.running ? '运行中' : '异常'}
-            </span>
-          </div>
-          <p className="text-xs text-default-400 mt-1">
-            最近一次定时扫描：{health.lastSweepTime ? formatDate(health.lastSweepTime) : '尚未执行'}
-          </p>
-        </>
-      ) : (
-        <p className="text-2xl font-semibold mt-1 text-foreground">—</p>
-      )}
-    </CardBody>
-  </Card>
-);
 
 export default function TaskQueuePage() {
   const [loading, setLoading] = useState(true);
@@ -276,23 +236,32 @@ export default function TaskQueuePage() {
   }
 
   return (
-    <div className="px-3 lg:px-6 py-8">
-      <div className="mb-4">
-        <h1 className="text-xl font-semibold">队列监控</h1>
-      </div>
-
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-        <HealthCard health={health} />
-        <StatCard label="待处理" value={pendingCount} />
-        <StatCard label="近一小时成功" value={health?.successLastHour ?? 0} tone="success" />
-        <StatCard label={`${health?.errorLogRetentionDays ?? 7}日内报错数量`} value={health?.errorLogCount ?? 0} tone="warning" onPress={openErrorLogs} />
-      </div>
-
-      <Card className="shadow-sm border border-default-200 mb-4">
+    <div className="management-page px-4 lg:px-6 py-5 lg:py-6">
+      <Card className="management-table-card mb-5">
+        <CardHeader className="px-6 py-4 border-b border-default-100"><h2 className="text-sm font-semibold">队列概览</h2></CardHeader>
         <CardBody className="p-0">
-          <div className="px-4 pt-4 pb-1">
-            <h2 className="text-base font-semibold">当前作业详情</h2>
+          <div className="grid grid-cols-2">
+            <StatCell
+              label="队列总状态"
+              value={health ? (
+                <span className="inline-flex items-center gap-2">
+                  <span className={`inline-block w-2 h-2 rounded-full ${health.running ? 'bg-success-500' : 'bg-danger-500'}`} />
+                  {health.running ? '运行中' : '异常'}
+                </span>
+              ) : '—'}
+              valueTone={health && !health.running ? 'danger' : 'default'}
+              hint={health ? `最近一次定时扫描：${health.lastSweepTime ? formatDate(health.lastSweepTime) : '尚未执行'}` : undefined}
+            />
+            <StatCell label="待处理" value={pendingCount} />
+            <StatCell label="近一小时成功" value={health?.successLastHour ?? 0} valueTone={(health?.successLastHour ?? 0) > 0 ? 'success' : 'default'} />
+            <StatCell label={`${health?.errorLogRetentionDays ?? 7}日内报错数量`} value={health?.errorLogCount ?? 0} valueTone={(health?.errorLogCount ?? 0) > 0 ? 'warning' : 'default'} onClick={openErrorLogs} />
           </div>
+        </CardBody>
+      </Card>
+
+      <Card className="management-table-card mb-5">
+        <CardHeader className="px-6 py-4 border-b border-default-100"><h2 className="text-sm font-semibold">当前作业详情</h2></CardHeader>
+        <CardBody className="p-0">
           <div className="settings-table-scroll">
             <Table
               removeWrapper
@@ -324,18 +293,22 @@ export default function TaskQueuePage() {
         </CardBody>
       </Card>
 
-      <div className="flex items-center gap-2 mb-3 flex-wrap">
-        {([['pending', '待处理'], ['success', '已完成'], ['all', '全部']] as [QueueFilter, string][]).map(([key, label]) => (
-          <Button key={key} size="sm" variant={filter === key ? 'solid' : 'flat'} color={filter === key ? 'primary' : 'default'} onPress={() => setFilter(key)}>
-            {label}
-          </Button>
-        ))}
-        {(health?.exhaustedCount ?? 0) > 0 && (
-          <span className="text-xs text-danger-600">{health?.exhaustedCount} 个任务已达重试上限，需手动处理</span>
-        )}
-      </div>
-
-      <Card className="shadow-sm border border-default-200">
+      <Card className="management-table-card">
+        <CardHeader className="px-6 py-4 border-b border-default-100 flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-3 flex-wrap">
+            <h2 className="text-sm font-semibold">任务列表</h2>
+            {(health?.exhaustedCount ?? 0) > 0 && (
+              <span className="text-xs text-danger-600">{health?.exhaustedCount} 个任务已达重试上限，需手动处理</span>
+            )}
+          </div>
+          <div className="flex items-center gap-1">
+            {([['pending', '待处理'], ['success', '已完成'], ['all', '全部']] as [QueueFilter, string][]).map(([key, label]) => (
+              <Button key={key} size="sm" variant={filter === key ? 'flat' : 'light'} color="default" onPress={() => setFilter(key)}>
+                {label}
+              </Button>
+            ))}
+          </div>
+        </CardHeader>
         <CardBody className="p-0">
           <div className="settings-table-scroll">
             <Table
@@ -406,7 +379,7 @@ export default function TaskQueuePage() {
           {(onClose) => (
             <>
               <ModalHeader className="flex flex-col gap-1">
-                <h2 className="text-lg font-bold">作业详情</h2>
+                <h2 className="text-base font-semibold">作业详情</h2>
                 {detailItem && <span className="text-small text-default-500">#{detailItem.id}</span>}
               </ModalHeader>
               <ModalBody className="pb-6">
@@ -457,7 +430,7 @@ export default function TaskQueuePage() {
                 )}
               </ModalBody>
               <ModalFooter>
-                <Button variant="light" onPress={onClose}>关闭</Button>
+                <Button size="sm" variant="bordered" onPress={onClose}>关闭</Button>
               </ModalFooter>
             </>
           )}
@@ -469,7 +442,7 @@ export default function TaskQueuePage() {
           {() => (
             <>
               <ModalHeader className="flex flex-col gap-1">
-                <h2 className="text-lg font-bold">{health?.errorLogRetentionDays ?? 7}日内报错详情</h2>
+                <h2 className="text-base font-semibold">{health?.errorLogRetentionDays ?? 7}日内报错详情</h2>
                 <span className="text-small text-default-500 font-normal">
                   共 {health?.errorLogCount ?? errorLogs.length} 条{errorLogs.length >= 200 ? '，仅显示最近 200 条' : ''}
                 </span>

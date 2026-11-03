@@ -29,8 +29,8 @@ import java.util.stream.Collectors;
  * 所有方法均对异常静默降级，绝不影响调用方的主流程（充值确认、节点连接处理）。
  * <p>
  * 每类通知的正文支持管理员在推送设置页自定义模板（{@code telegram_tpl_*} 配置项，占位符用 {xxx} 表示，
- * 未配置时使用 DEFAULT_TPL_* 常量作为默认值）；标题固定由代码生成（纯文本，不用 emoji——Telegram 的
- * sendMessage 不支持在文本里内嵌真实图标，emoji 是唯一的图形化选项，这里选择不用，保持纯文字），
+ * 未配置时使用 DEFAULT_TPL_* 常量作为默认值）；标题固定由代码生成（默认纯文本——Telegram 的
+ * sendMessage 不支持在文本里内嵌真实图标，emoji 是唯一的图形化选项；仅管理员的设备离线/恢复通知按要求在标题前加红/绿圆点 emoji，其余通知保持纯文字），
  * 与正文一起以 Telegram HTML 富文本格式（parse_mode=HTML）发送。占位符对应的变量值一律做 HTML 转义，
  * 避免用户可控内容（节点名、失败原因等）破坏消息格式；管理员自己填写的模板文本本身不转义。
  * </p>
@@ -40,6 +40,10 @@ import java.util.stream.Collectors;
 public class NotificationUtil {
 
     private static final String PARSE_MODE_HTML = "HTML";
+
+    /** 红色圆点 / 绿色圆点 emoji（用 Unicode 转义书写，避免源码文件编码问题） */
+    private static final String EMOJI_RED_CIRCLE = "\uD83D\uDD34";
+    private static final String EMOJI_GREEN_CIRCLE = "\uD83D\uDFE2";
 
     private static final String DEFAULT_TPL_PAYMENT_SUCCESS = "金额：¥{amount}\n当前余额：¥{balance}";
     private static final String DEFAULT_TPL_DEVICE_OFFLINE = "设备「{name}」已离线";
@@ -110,21 +114,16 @@ public class NotificationUtil {
             String type = online ? "DEVICE_ONLINE" : "DEVICE_OFFLINE";
             String body = render(tplKey, defaultTpl, vars);
             String text = buildMessage(title, body);
+            // 管理员的设备上下线通知标题前加红/绿圆点 emoji，一眼区分离线与恢复（项目里唯一允许用 emoji 的地方，见类注释）
+            String adminText = buildMessage((online ? EMOJI_GREEN_CIRCLE : EMOJI_RED_CIRCLE) + " [管理员通知] " + title, body);
 
+            // 管理员与普通用户一样只按各自的 notify_device_mode / 设备组范围过滤，
+            // 不再无条件接收全部设备上下线通知（否则白名单/黑名单对管理员不生效）
             for (User candidate : candidates) {
                 if (isBlank(candidate.getTelegramChatId())) continue;
                 if (!shouldNotifyDevice(candidate, nodeGroupIds)) continue;
-                sendWithRetry(candidate.getId(), candidate.getTelegramChatId(), text, type, token);
-            }
-
-            // 管理员无条件接收全部设备上下线通知，不受各自 notify_device_mode 偏好限制
-            List<User> admins = userService.list(new QueryWrapper<User>()
-                    .eq("role_id", 0)
-                    .isNotNull("telegram_chat_id"));
-            String adminText = buildMessage("[管理员通知] " + title, body);
-            for (User admin : admins) {
-                if (isBlank(admin.getTelegramChatId())) continue;
-                sendWithRetry(admin.getId(), admin.getTelegramChatId(), adminText, type, token);
+                boolean isAdmin = candidate.getRoleId() != null && candidate.getRoleId() == 0;
+                sendWithRetry(candidate.getId(), candidate.getTelegramChatId(), isAdmin ? adminText : text, type, token);
             }
         } catch (Exception e) {
             log.warn("发送设备状态通知失败: {}", e.getMessage());
@@ -263,7 +262,7 @@ public class NotificationUtil {
     }
 
     /**
-     * 拼装最终发送的 HTML 消息：粗体标题（代码固定，纯文本不用 emoji）+ 空行 + 正文
+     * 拼装最终发送的 HTML 消息：粗体标题（代码固定，除管理员设备上下线通知外为纯文本）+ 空行 + 正文
      */
     private String buildMessage(String title, String body) {
         return "<b>" + escapeHtml(title) + "</b>\n\n" + body;

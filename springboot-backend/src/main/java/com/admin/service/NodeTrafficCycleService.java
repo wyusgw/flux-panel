@@ -3,6 +3,8 @@ package com.admin.service;
 import com.admin.entity.NodeTrafficCycle;
 import com.baomidou.mybatisplus.extension.service.IService;
 
+import java.time.LocalTime;
+
 public interface NodeTrafficCycleService extends IService<NodeTrafficCycle> {
 
     /**
@@ -13,6 +15,9 @@ public interface NodeTrafficCycleService extends IService<NodeTrafficCycle> {
 
     /** 当前配置的每月重置日（站点设置 node_traffic_reset_day），默认 1，范围 1-31 */
     int getResetDay();
+
+    /** 当前配置的重置时刻（站点设置 node_traffic_reset_time，格式 HH:mm），默认 00:00 */
+    LocalTime getResetTime();
 
     /** 把内存中的最新周期流量落库（定时任务与停机时调用） */
     void flush();

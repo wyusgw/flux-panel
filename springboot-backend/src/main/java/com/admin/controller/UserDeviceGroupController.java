@@ -22,7 +22,7 @@ import java.util.Map;
  * @since 2026-09-24
  */
 @RestController
-@RequestMapping("/api/v1/user-device-group")
+@RequestMapping("/api/v1/userDeviceGroup")
 @CrossOrigin
 public class UserDeviceGroupController extends BaseController {
 
@@ -67,7 +67,7 @@ public class UserDeviceGroupController extends BaseController {
     }
 
     @LogAnnotation
-    @PostMapping("/reset-secret")
+    @PostMapping("/resetSecret")
     public R resetSecret(@RequestBody Map<String, Object> params) {
         Integer userId = JwtUtil.getUserIdFromToken();
         Long id = Long.valueOf(params.get("id").toString());

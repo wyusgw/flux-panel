@@ -5,6 +5,8 @@ import { HeroUIProvider } from "@heroui/system";
 import { useHref, useNavigate } from "react-router-dom";
 import { Toaster } from 'react-hot-toast';
 import { ThemeProvider } from '@/components/theme-provider';
+import { StyleThemeProvider } from '@/components/style-theme';
+import { ErrorDialogHost } from '@/components/error-dialog';
 import { ToastErrorIcon, ToastInfoIcon, ToastSuccessIcon } from '@/components/toast-icons';
 import { I18nProvider } from "@react-aria/i18n";
 
@@ -25,7 +27,9 @@ export function Provider({ children }: ProvidersProps) {
     <I18nProvider locale="zh-CN">
       <HeroUIProvider navigate={navigate} useHref={useHref}>
         <ThemeProvider>
+          <StyleThemeProvider>
           {children}
+          <ErrorDialogHost />
           <Toaster
             position="top-center"
             containerStyle={{ top: 14 }}
@@ -37,6 +41,7 @@ export function Provider({ children }: ProvidersProps) {
               error: { icon: <ToastErrorIcon /> },
             }}
           />
+          </StyleThemeProvider>
         </ThemeProvider>
       </HeroUIProvider>
     </I18nProvider>

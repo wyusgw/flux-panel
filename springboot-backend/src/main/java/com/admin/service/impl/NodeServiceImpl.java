@@ -506,11 +506,16 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
      * @return 格式化的安装命令
      */
     private R buildInstallCommand(Node node) {
+        // 面板后端地址：站点设置里手动填写了就用填写的（面板套了 CDN 或节点需要走其他地址时用）；
+        // 没填则自动识别为管理员当前访问面板的地址
         ViteConfig viteConfig = viteConfigService.getOne(new QueryWrapper<ViteConfig>().eq("name", "ip"));
-        if (viteConfig == null) return R.err("请先前往网站配置中设置ip");
+        String serverAddr = (viteConfig != null && StrUtil.isNotBlank(viteConfig.getValue()))
+                ? viteConfig.getValue().trim()
+                : detectPanelAddress();
+        if (StrUtil.isBlank(serverAddr)) return R.err("无法自动识别面板地址，请先前往站点设置填写面板后端地址");
 
         // 处理服务器地址，如果是IPv6需要添加方括号
-        String processedServerAddr = processServerAddress(viteConfig.getValue());
+        String processedServerAddr = processServerAddress(serverAddr);
 
         String scriptUrl = "https://github.com/wyusgw/flux-panel/releases/latest/download/install.sh";
         // 自动探测路线：依次尝试多个加速镜像下载安装脚本，全部失败则回退到 GitHub 原始地址，
@@ -551,6 +556,39 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
                 + " && bash " + offlineDir + "/offline.sh -a \"" + processedServerAddr + "\" -s \"" + node.getSecret() + "\"");
 
         return R.ok(result);
+    }
+
+    /** 面板地址只允许主机名、IP（含 IPv6 方括号）、冒号和端口，其余字符一律拒绝，避免拼进安装命令后被当成 shell 语法 */
+    private static final java.util.regex.Pattern PANEL_ADDR_PATTERN = java.util.regex.Pattern.compile("^[A-Za-z0-9.\\-:\\[\\]]{1,255}$");
+
+    /**
+     * 自动识别面板地址：优先取前端随请求带来的访问地址（X-Panel-Addr，浏览器地址栏里的 主机:端口），
+     * 其次取反向代理转发的 X-Forwarded-Host，最后取请求的 Host；识别不出或格式不合法返回 null
+     */
+    private String detectPanelAddress() {
+        try {
+            org.springframework.web.context.request.RequestAttributes attributes =
+                    org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
+            if (!(attributes instanceof org.springframework.web.context.request.ServletRequestAttributes)) {
+                return null;
+            }
+            javax.servlet.http.HttpServletRequest request =
+                    ((org.springframework.web.context.request.ServletRequestAttributes) attributes).getRequest();
+            for (String header : new String[]{"X-Panel-Addr", "X-Forwarded-Host", "Host"}) {
+                String value = request.getHeader(header);
+                if (StrUtil.isBlank(value)) {
+                    continue;
+                }
+                // 多级代理时 X-Forwarded-Host 可能是逗号分隔的列表，取第一个
+                value = value.split(",")[0].trim();
+                if (PANEL_ADDR_PATTERN.matcher(value).matches()) {
+                    return value;
+                }
+            }
+        } catch (Exception e) {
+            log.warn("自动识别面板地址失败: " + e.getMessage());
+        }
+        return null;
     }
 
     /**

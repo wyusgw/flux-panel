@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Card, CardBody } from "@heroui/card";
+import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Button } from "@heroui/button";
 import { Input } from "@heroui/input";
 import { Select, SelectItem } from "@heroui/select";
@@ -28,6 +28,7 @@ import { EditIcon, DeleteIcon } from "@/components/icons";
 import { HelpTooltip } from "@/components/help-tooltip";
 import { EmptyState } from "@/components/empty-state";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import RefreshButton from "@/components/refresh-button";
 
 interface MyDeviceGroup {
   id: number;
@@ -157,8 +158,8 @@ export default function SingleTunnelPage() {
     }).catch(() => {});
   }, []);
 
-  const loadData = async () => {
-    setLoading(true);
+  const loadData = async (showLoading = true) => {
+    setLoading(showLoading);
     try {
       const [res, groupRes] = await Promise.all([getMyDeviceGroupList(), getMySingleTunnelGroupList()]);
       if (res.code === 0) {
@@ -398,22 +399,21 @@ export default function SingleTunnelPage() {
   }
 
   return (
-    <div className="px-3 lg:px-6 py-8">
-      <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
-        <div>
-          <h1 className="text-xl font-semibold">单端隧道</h1>
-          <p className="text-sm text-default-500 mt-1">
-            添加自己的设备作为转发规则的入口或出口，添加完成后在此获取对接命令，在你的设备上安装即可连接到面板。
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button size="sm" variant="flat" onPress={() => setGroupManageModalOpen(true)}>管理分组</Button>
-          <Button size="sm" color="primary" onPress={handleAdd}>添加设备</Button>
-        </div>
-      </div>
-
-      <Card className="shadow-sm border border-default-200">
-        <CardBody className="p-0">
+    <div className="management-page px-4 lg:px-6 py-5 lg:py-6">
+      <Card className="management-table-card max-w-[1600px] mx-auto">
+        <CardHeader className="flex-row items-center justify-between gap-4 p-4 border-b border-default-100">
+          <div className="flex items-center gap-3 flex-wrap">
+            <h1 className="text-base font-semibold text-foreground">单端隧道</h1>
+            <RefreshButton onRefresh={() => loadData(false)} />
+          </div>
+        </CardHeader>
+        <CardBody className="p-4 space-y-3">
+          <p className="text-xs text-default-500">添加自己的设备作为转发规则的入口或出口，添加完成后在此获取对接命令，在你的设备上安装即可连接到面板。</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" variant="bordered" onPress={() => setGroupManageModalOpen(true)}>管理分组</Button>
+            <Button size="sm" variant="bordered" onPress={handleAdd}>添加设备</Button>
+          </div>
+          <div className="-mx-4 -mb-4">
           <div className="settings-table-scroll">
             <Table
               removeWrapper
@@ -433,12 +433,12 @@ export default function SingleTunnelPage() {
                     <TableCell className="font-medium">{group.name}</TableCell>
                     <TableCell>{group.direction === 'inbound' ? '入口' : '出口'}</TableCell>
                     <TableCell>
-                      <Chip size="sm" variant="flat" color={group.status === 1 ? 'success' : 'danger'}>
+                      <Chip size="sm" variant="light" color={group.status === 1 ? 'success' : 'danger'}>
                         {group.status === 1 ? '在线' : '离线'}
                       </Chip>
                     </TableCell>
                     <TableCell>
-                      <Chip size="sm" variant="flat" color={group.shared ? 'primary' : 'default'}>
+                      <Chip size="sm" variant="light" color={group.shared ? 'primary' : 'default'}>
                         {group.shared ? '已共享' : '仅自己'}
                       </Chip>
                     </TableCell>
@@ -474,17 +474,18 @@ export default function SingleTunnelPage() {
               </TableBody>
             </Table>
           </div>
-        </CardBody>
+        </div>
+          </CardBody>
       </Card>
 
       <Modal isOpen={modalOpen} onOpenChange={setModalOpen} size="lg" scrollBehavior="outside" backdrop="blur" placement="center">
         <ModalContent>
           {(onClose) => (
             <>
-              <ModalHeader><h2 className="text-lg font-bold">{isEdit ? '编辑设备' : '添加设备'}</h2></ModalHeader>
+              <ModalHeader><h2 className="text-base font-semibold">{isEdit ? '编辑设备' : '添加设备'}</h2></ModalHeader>
               <ModalBody>
                 <div className="space-y-3">
-                  <Input
+                  <Input labelPlacement="outside-top"
                     size="sm" autoComplete="off"
                     label="名称"
                     value={form.name}
@@ -495,7 +496,7 @@ export default function SingleTunnelPage() {
                   />
 
                   {!isEdit && (
-                    <Select
+                    <Select labelPlacement="outside-top" listboxProps={{ emptyContent: <EmptyState compact /> }}
                       size="sm"
                       label={<HelpTooltip content="该设备在转发规则中充当入口还是出口">角色</HelpTooltip>}
                       selectedKeys={[form.direction]}
@@ -510,7 +511,7 @@ export default function SingleTunnelPage() {
                     </Select>
                   )}
 
-                  <Input size="sm" autoComplete="off" label="服务器 IP / 域名" placeholder="例如：203.0.113.10 或 node.example.com" value={form.serverIp} onChange={(e) => setForm(prev => ({ ...prev, serverIp: e.target.value }))} isInvalid={!!errors.serverIp} errorMessage={errors.serverIp} variant="bordered" />
+                  <Input labelPlacement="outside-top" size="sm" autoComplete="off" label="服务器 IP / 域名" placeholder="例如：203.0.113.10 或 node.example.com" value={form.serverIp} onChange={(e) => setForm(prev => ({ ...prev, serverIp: e.target.value }))} isInvalid={!!errors.serverIp} errorMessage={errors.serverIp} variant="bordered" />
 
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
@@ -550,12 +551,12 @@ export default function SingleTunnelPage() {
                   </div>
 
                   <div className="grid grid-cols-2 gap-3">
-                    <Input size="sm" autoComplete="off" label="起始端口" type="number" value={form.portSta.toString()} onChange={(e) => setForm(prev => ({ ...prev, portSta: Number(e.target.value) || 1000 }))} isInvalid={!!errors.portSta} errorMessage={errors.portSta} variant="bordered" />
-                    <Input size="sm" autoComplete="off" label="结束端口" type="number" value={form.portEnd.toString()} onChange={(e) => setForm(prev => ({ ...prev, portEnd: Number(e.target.value) || 65535 }))} isInvalid={!!errors.portEnd} errorMessage={errors.portEnd} variant="bordered" />
+                    <Input labelPlacement="outside-top" size="sm" autoComplete="off" label="起始端口" type="number" value={form.portSta.toString()} onChange={(e) => setForm(prev => ({ ...prev, portSta: Number(e.target.value) || 1000 }))} isInvalid={!!errors.portSta} errorMessage={errors.portSta} variant="bordered" />
+                    <Input labelPlacement="outside-top" size="sm" autoComplete="off" label="结束端口" type="number" value={form.portEnd.toString()} onChange={(e) => setForm(prev => ({ ...prev, portEnd: Number(e.target.value) || 65535 }))} isInvalid={!!errors.portEnd} errorMessage={errors.portEnd} variant="bordered" />
                   </div>
 
                   {form.direction === 'outbound' && (
-                    <Select
+                    <Select labelPlacement="outside-top" listboxProps={{ emptyContent: <EmptyState compact /> }}
                       size="sm"
                       label={<HelpTooltip content="该设备作为隧道转发出口节点时使用的传输协议">协议类型</HelpTooltip>}
                       selectedKeys={[form.protocol]}
@@ -576,7 +577,7 @@ export default function SingleTunnelPage() {
                     </Select>
                   )}
 
-                  <Select
+                  <Select labelPlacement="outside-top" listboxProps={{ emptyContent: <EmptyState compact /> }}
                     size="sm"
                     label="所属分组"
                     placeholder="不分组"
@@ -605,8 +606,8 @@ export default function SingleTunnelPage() {
                 </div>
               </ModalBody>
               <ModalFooter>
-                <Button variant="light" onPress={onClose}>取消</Button>
-                <Button color="primary" onPress={handleSubmit} isLoading={submitLoading}>确定</Button>
+                <Button size="sm" variant="bordered" onPress={onClose}>取消</Button>
+                <Button size="sm" color="primary" onPress={handleSubmit} isLoading={submitLoading}>确定</Button>
               </ModalFooter>
             </>
           )}
@@ -623,7 +624,7 @@ export default function SingleTunnelPage() {
                   <circle cx="12" cy="7.4" r="1.5" fill="#15161a" />
                   <rect x="10.7" y="10.2" width="2.6" height="7.6" rx="1.3" fill="#15161a" />
                 </svg>
-                <h2 className="text-lg font-bold">离线部署</h2>
+                <h2 className="text-lg font-semibold">离线部署</h2>
               </ModalHeader>
               <ModalBody>
                 <div className="space-y-4 text-sm">
@@ -657,7 +658,7 @@ export default function SingleTunnelPage() {
                 </div>
               </ModalBody>
               <ModalFooter>
-                <Button color="primary" onPress={onClose}>知道了</Button>
+                <Button size="sm" color="primary" onPress={onClose}>知道了</Button>
               </ModalFooter>
             </>
           )}
@@ -704,7 +705,7 @@ export default function SingleTunnelPage() {
           {() => (
             <>
               <ModalHeader className="flex flex-col gap-1">
-                <h2 className="text-lg font-bold">管理分组</h2>
+                <h2 className="text-base font-semibold">管理分组</h2>
                 <p className="text-xs text-default-500 font-normal">这里的分组只属于你自己，其他用户看不到也用不了</p>
               </ModalHeader>
               <ModalBody>
@@ -742,7 +743,7 @@ export default function SingleTunnelPage() {
                 </div>
               </ModalBody>
               <ModalFooter>
-                <Button variant="light" onPress={() => setGroupManageModalOpen(false)}>
+                <Button size="sm" variant="bordered" onPress={() => setGroupManageModalOpen(false)}>
                   关闭
                 </Button>
               </ModalFooter>

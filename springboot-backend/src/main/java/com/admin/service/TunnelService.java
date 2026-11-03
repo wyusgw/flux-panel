@@ -56,4 +56,7 @@ public interface TunnelService extends IService<Tunnel> {
      * @return 诊断结果
      */
     R diagnoseTunnel(Long tunnelId);
+
+    /** 诊断详情：只对某一段重新测试，按「诊断详情连接次数」执行 */
+    R diagnoseTunnelDetail(Long tunnelId, String leg, String targetIp, Integer targetPort);
 }

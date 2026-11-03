@@ -7,6 +7,7 @@ import com.admin.entity.PackagePlan;
 import com.admin.entity.RedeemCode;
 import com.admin.entity.User;
 import com.admin.mapper.OrderMapper;
+import com.admin.service.ForwardService;
 import com.admin.service.OrderService;
 import com.admin.service.PackagePlanService;
 import com.admin.service.RechargeService;
@@ -28,6 +29,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.Objects;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -66,6 +68,10 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
     @Autowired
     @Lazy
     private RechargeService rechargeService;
+
+    @Autowired
+    @Lazy
+    private ForwardService forwardService;
 
     /** 提交订单后最多等多久拿结果，超过则返回「处理中」，由前端稍后刷新 */
     private static final long PURCHASE_WAIT_MS = 8000L;
@@ -226,6 +232,12 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         Integer planMaxRules = packagePlan.getMaxRules();
         updateUser.setNum(planMaxRules == null || planMaxRules <= 0 ? UNLIMITED_RULES : planMaxRules);
 
+        // 套餐设置了流量重置（非 -1）时，把重置日与重置时刻写入用户；-1 表示沿用用户当前的重置设置
+        if (packagePlan.getFlowResetTime() != null && packagePlan.getFlowResetTime() >= 0) {
+            updateUser.setFlowResetTime(packagePlan.getFlowResetTime());
+            updateUser.setFlowResetClock(StringUtils.isBlank(packagePlan.getFlowResetClock()) ? "00:00" : packagePlan.getFlowResetClock().trim());
+        }
+
         long baseExpTime = (user.getExpTime() != null && user.getExpTime() > currentTime) ? user.getExpTime() : currentTime;
         if (packagePlan.getDurationDays() != null && packagePlan.getDurationDays() > 0) {
             updateUser.setExpTime(baseExpTime + packagePlan.getDurationDays() * 24L * 60L * 60L * 1000L);
@@ -238,6 +250,11 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         boolean userUpdateResult = userService.updateById(updateUser);
         if (!userUpdateResult) {
             throw new RuntimeException("套餐应用失败");
+        }
+
+        // 换了套餐：套餐限速随之变化，事务提交后把该用户名下运行中规则的限速刷新到节点（续费同一个套餐则不用）
+        if (!Objects.equals(user.getPackageId(), packagePlan.getId())) {
+            forwardService.refreshLimitsAfterCommit(Collections.singletonList(user.getId().intValue()));
         }
 
         // 3. 记录订单

@@ -70,6 +70,13 @@ public class WebSocketServer extends TextWebSocketHandler {
     // 存储节点ID和对应的WebSocket session映射
     private static final ConcurrentHashMap<Long, WebSocketSession> nodeSessions = new ConcurrentHashMap<>();
     
+    // 节点最近一次收到消息的时间（毫秒时间戳）：用于发现"设备已断电/断网但 TCP 连接没有正常关闭"的死连接，
+    // 这种情况服务端收不到 close 事件，如果不主动检测，会一直把节点当作在线
+    private static final ConcurrentHashMap<Long, Long> nodeLastSeen = new ConcurrentHashMap<>();
+
+    // 节点上报间隔约 2~3 秒；超过这个时间没收到任何消息就认为连接已死
+    private static final long NODE_HEARTBEAT_TIMEOUT_MILLIS = 20_000L;
+
     // 为每个session提供锁对象，防止并发发送消息
     private static final ConcurrentHashMap<String, Object> sessionLocks = new ConcurrentHashMap<>();
     
@@ -105,6 +112,10 @@ public class WebSocketServer extends TextWebSocketHandler {
                 String id = session.getAttributes().get("id").toString();
                 String type = session.getAttributes().get("type").toString();
                 String nodeSecret = (String) session.getAttributes().get("nodeSecret");
+
+                if (Objects.equals(type, "1")) {
+                    nodeLastSeen.put(Long.valueOf(id), System.currentTimeMillis());
+                }
 
                 // 尝试解密消息
                 String decryptedPayload = decryptMessageIfNeeded(message.getPayload(), nodeSecret);
@@ -295,6 +306,7 @@ public class WebSocketServer extends TextWebSocketHandler {
                 
                 // 直接覆盖会话映射（不主动关闭旧连接，让它自然断开）
                 nodeSessions.put(nodeId, session);
+                nodeLastSeen.put(nodeId, System.currentTimeMillis());
                 
                 // 如果有旧连接，在覆盖映射后主动关闭它
                 if (existingSession != null && existingSession.isOpen()) {
@@ -401,22 +413,7 @@ public class WebSocketServer extends TextWebSocketHandler {
                 
                 log.info("节点 {} 当前活跃连接关闭，开始验证并更新状态", nodeId);
 
-                    // 连接映射立即清理，保证消息路由的正确性不受宽限期影响
-                    nodeSessions.remove(nodeId);
-
-                    long graceSeconds = resolveOfflineGraceSeconds(nodeId);
-                    if (graceSeconds <= 0) {
-                        markNodeOffline(nodeId);
-                    } else {
-                        log.info("节点 {} 断线，{} 秒宽限期后若仍未重连才标记离线", nodeId, graceSeconds);
-                        offlineCheckScheduler.schedule(() -> {
-                            if (!nodeSessions.containsKey(nodeId)) {
-                                markNodeOffline(nodeId);
-                            } else {
-                                log.info("节点 {} 已在宽限期内重连，跳过离线标记", nodeId);
-                            }
-                        }, graceSeconds, TimeUnit.SECONDS);
-                    }
+                    handleNodeSessionGone(nodeId);
             }
             
             // 清理session锁对象
@@ -424,6 +421,69 @@ public class WebSocketServer extends TextWebSocketHandler {
 
         } catch (Exception e) {
             log.info("关闭连接时发生异常: {}", e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 节点会话已经失效（连接关闭，或长时间没有上报被判定为死连接）后的统一处理：
+     * 立即清理连接映射，再按宽限期设置决定立刻标记离线还是延迟标记
+     */
+    private void handleNodeSessionGone(Long nodeId) {
+        // 连接映射立即清理，保证消息路由的正确性不受宽限期影响
+        nodeSessions.remove(nodeId);
+        nodeLastSeen.remove(nodeId);
+
+        long graceSeconds = resolveOfflineGraceSeconds(nodeId);
+        if (graceSeconds <= 0) {
+            markNodeOffline(nodeId);
+        } else {
+            log.info("节点 {} 断线，{} 秒宽限期后若仍未重连才标记离线", nodeId, graceSeconds);
+            offlineCheckScheduler.schedule(() -> {
+                if (!nodeSessions.containsKey(nodeId)) {
+                    markNodeOffline(nodeId);
+                } else {
+                    log.info("节点 {} 已在宽限期内重连，跳过离线标记", nodeId);
+                }
+            }, graceSeconds, TimeUnit.SECONDS);
+        }
+    }
+
+    /**
+     * 节点心跳检测：节点每 2~3 秒会上报一次系统信息，如果超过 {@link #NODE_HEARTBEAT_TIMEOUT_MILLIS}
+     * 没收到任何消息，说明设备大概率已断电或断网。这种情况下 TCP 连接是"半开"的，服务端收不到 close 事件，
+     * 靠操作系统的 TCP 超时可能要几十分钟甚至更久才发现，期间节点状态一直显示在线。
+     * 这里主动判定为断线：先按正常断线流程清理并标记离线，再尝试关闭底层连接
+     * （不依赖关闭回调，因为对端已死时回调可能迟迟不来；之后即使回调触发，也会因为会话已不是当前会话而跳过）。
+     */
+    @Scheduled(fixedRate = 5000)
+    public void checkNodeHeartbeat() {
+        long now = System.currentTimeMillis();
+        for (java.util.Map.Entry<Long, WebSocketSession> entry : nodeSessions.entrySet()) {
+            Long nodeId = entry.getKey();
+            WebSocketSession session = entry.getValue();
+            Long lastSeen = nodeLastSeen.get(nodeId);
+            if (lastSeen == null) {
+                // 兜底：没有记录时从现在开始计时，避免误判
+                nodeLastSeen.putIfAbsent(nodeId, now);
+                continue;
+            }
+            if (now - lastSeen <= NODE_HEARTBEAT_TIMEOUT_MILLIS) {
+                continue;
+            }
+            // 用 remove(key, value) 保证只处理仍是当前会话的节点，避免和刚好完成的重连冲突
+            if (!nodeSessions.remove(nodeId, session)) {
+                continue;
+            }
+            log.info("节点 {} 已 {} 秒没有上报数据，判定连接已失效", nodeId, (now - lastSeen) / 1000);
+            sessionLocks.remove(session.getId());
+            handleNodeSessionGone(nodeId);
+            offlineCheckScheduler.execute(() -> {
+                try {
+                    session.close();
+                } catch (Exception e) {
+                    log.info("关闭节点 {} 的失效连接失败: {}", nodeId, e.getMessage());
+                }
+            });
         }
     }
 

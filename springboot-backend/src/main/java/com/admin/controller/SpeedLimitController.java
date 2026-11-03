@@ -22,7 +22,7 @@ import java.util.Map;
  * @since 2025-06-04
  */
 @RestController
-@RequestMapping("/api/v1/speed-limit")
+@RequestMapping("/api/v1/speedLimit")
 @CrossOrigin
 public class SpeedLimitController extends BaseController {
 

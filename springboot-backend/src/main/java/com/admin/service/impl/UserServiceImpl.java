@@ -112,6 +112,10 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
 
     @Resource
     @Lazy
+    private ForwardService forwardService;
+
+    @Resource
+    @Lazy
     private InviteCodeService inviteCodeService;
     
     @Resource
@@ -328,6 +332,8 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         }
 
         // 4. 构建更新实体并保存
+        User beforeUpdate = this.getById(userUpdateDto.getId());
+        Long oldPackageId = beforeUpdate != null ? beforeUpdate.getPackageId() : null;
         User updateUser = buildUpdateUserEntity(userUpdateDto);
         boolean result = this.updateById(updateUser);
 
@@ -338,6 +344,10 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         }
 
         if (result) {
+            // 套餐换了：套餐限速随之变化，把该用户名下运行中规则的限速刷新到节点
+            if (userUpdateDto.getPackageId() != null && !Objects.equals(oldPackageId, userUpdateDto.getPackageId())) {
+                forwardService.refreshLimitsAfterCommit(Collections.singletonList(userUpdateDto.getId().intValue()));
+            }
             // 5. 处理到期时间延时任务
             return R.ok(SUCCESS_UPDATE_MSG);
         } else {
@@ -726,6 +736,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     private User buildNewUserEntity(UserDto userDto) {
         User user = new User();
         BeanUtils.copyProperties(userDto, user);
+        user.setFlowResetClock(normalizeResetClock(userDto.getFlowResetClock()));
         
         // 设置加密密码
         user.setPwd(Md5Util.md5(userDto.getPwd()));
@@ -754,6 +765,11 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         return this.getById(userId) != null;
     }
 
+    /** 流量重置时刻留空时按 00:00（每月重置日 0 点整）处理 */
+    private String normalizeResetClock(String clock) {
+        return StrUtil.isBlank(clock) ? "00:00" : clock.trim();
+    }
+
     /**
      * 构建用户更新实体对象
      * 
@@ -763,6 +779,8 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     private User buildUpdateUserEntity(UserUpdateDto userUpdateDto) {
         User user = new User();
         BeanUtils.copyProperties(userUpdateDto, user);
+        // 列是 NOT NULL DEFAULT '00:00'，且 updateById 会跳过 null，所以留空时显式写成 00:00，保证能把自定义时刻改回默认
+        user.setFlowResetClock(normalizeResetClock(userUpdateDto.getFlowResetClock()));
         
         // 处理密码更新
         if (StrUtil.isNotBlank(userUpdateDto.getPwd())) {
@@ -995,6 +1013,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         userInfo.setNum(user.getNum());
         userInfo.setExpTime(user.getExpTime());
         userInfo.setFlowResetTime(user.getFlowResetTime());
+        userInfo.setFlowResetClock(user.getFlowResetClock());
         userInfo.setCreatedTime(user.getCreatedTime());
         userInfo.setUpdatedTime(user.getUpdatedTime());
         userInfo.setGroupId(user.getGroupId());

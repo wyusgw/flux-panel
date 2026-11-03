@@ -3,6 +3,9 @@ package com.admin.service.impl;
 import com.admin.common.lang.R;
 import com.admin.entity.Node;
 import com.admin.entity.NodeDailyRawFlow;
+import com.admin.entity.NodeOnlineHistory;
+import com.admin.mapper.NodeOnlineHistoryMapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.admin.entity.User;
 import com.admin.entity.UserDailyRawFlow;
 import com.admin.service.DashboardService;
@@ -15,6 +18,7 @@ import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -44,6 +48,9 @@ public class DashboardServiceImpl implements DashboardService {
     @Resource
     private NodeService nodeService;
 
+    @Resource
+    private NodeOnlineHistoryMapper nodeOnlineHistoryMapper;
+
     @Override
     public R getFlowStats() {
         String today = LocalDate.now().format(DAY_FORMAT);
@@ -65,6 +72,50 @@ public class DashboardServiceImpl implements DashboardService {
         result.put("todayNodeRanking", rankNodes(todayNodeFlows, nodeNames));
         result.put("yesterdayNodeRanking", rankNodes(yesterdayNodeFlows, nodeNames));
         return R.ok(result);
+    }
+
+    @Override
+    public R getNodeOnlineTrend(String range) {
+        boolean month = "month".equals(range);
+        long now = System.currentTimeMillis();
+        long since = month ? now - 30L * 24 * 60 * 60 * 1000 : now - 24L * 60 * 60 * 1000;
+        List<NodeOnlineHistory> records = nodeOnlineHistoryMapper.selectList(new QueryWrapper<NodeOnlineHistory>()
+                .ge("sample_time", since)
+                .orderByAsc("sample_time"));
+
+        List<Map<String, Object>> points = new ArrayList<>();
+        if (!month) {
+            for (NodeOnlineHistory record : records) {
+                points.add(trendPoint(record.getSampleTime(), record.getOnlineCount(), offlineOf(record)));
+            }
+            return R.ok(points);
+        }
+
+        // 按自然日汇总：取当日采样中的最多在线数与最多离线数；按日期顺序输出，没有采样的日期不补点
+        java.time.ZoneId zone = java.time.ZoneId.systemDefault();
+        Map<LocalDate, int[]> byDay = new java.util.TreeMap<>();
+        for (NodeOnlineHistory record : records) {
+            LocalDate day = java.time.Instant.ofEpochMilli(record.getSampleTime()).atZone(zone).toLocalDate();
+            int[] peak = byDay.computeIfAbsent(day, k -> new int[2]);
+            peak[0] = Math.max(peak[0], record.getOnlineCount() != null ? record.getOnlineCount() : 0);
+            peak[1] = Math.max(peak[1], offlineOf(record));
+        }
+        byDay.forEach((day, peak) -> points.add(trendPoint(day.atStartOfDay(zone).toInstant().toEpochMilli(), peak[0], peak[1])));
+        return R.ok(points);
+    }
+
+    private int offlineOf(NodeOnlineHistory record) {
+        int total = record.getTotalCount() != null ? record.getTotalCount() : 0;
+        int online = record.getOnlineCount() != null ? record.getOnlineCount() : 0;
+        return Math.max(0, total - online);
+    }
+
+    private Map<String, Object> trendPoint(long time, Integer online, int offline) {
+        Map<String, Object> point = new LinkedHashMap<>();
+        point.put("time", time);
+        point.put("online", online != null ? online : 0);
+        point.put("offline", offline);
+        return point;
     }
 
     private long sumRawBytes(List<UserDailyRawFlow> flows) {

@@ -59,7 +59,7 @@ export const HelpTooltip = ({ children, content }: { children: ReactNode; conten
           </button>
         </PopoverTrigger>
         <PopoverContent>
-          <p className="max-w-64 px-1 py-1 text-xs text-foreground">{content}</p>
+          <p className="max-w-64 px-1 py-1 text-xs text-foreground whitespace-pre-line">{content}</p>
         </PopoverContent>
       </Popover>
     </span>

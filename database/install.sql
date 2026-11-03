@@ -37,6 +37,7 @@ CREATE TABLE `forward` (
   `out_port` int(10) DEFAULT NULL,
   `remote_addr` longtext NOT NULL,
   `strategy` varchar(100) NOT NULL DEFAULT 'fifo',
+  `weights` varchar(500) DEFAULT NULL,
   `interface_name` varchar(200) DEFAULT NULL,
   `in_flow` bigint(20) NOT NULL DEFAULT '0',
   `out_flow` bigint(20) NOT NULL DEFAULT '0',
@@ -140,6 +141,20 @@ CREATE TABLE `node_daily_raw_flow` (
   `day` varchar(10) NOT NULL,
   `raw_bytes` bigint(20) NOT NULL DEFAULT '0',
   `updated_time` bigint(20) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- --------------------------------------------------------
+
+--
+-- 表的结构 `node_online_history`：节点在线数量的定时采样记录（每 5 分钟一条，默认保留 31 天），
+-- 供管理员仪表盘「节点在线」曲线图使用
+--
+
+CREATE TABLE `node_online_history` (
+  `id` int(10) NOT NULL,
+  `sample_time` bigint(20) NOT NULL,
+  `online_count` int(10) NOT NULL DEFAULT '0',
+  `total_count` int(10) NOT NULL DEFAULT '0'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- --------------------------------------------------------
@@ -321,7 +336,8 @@ CREATE TABLE `user` (
   `notify_expiry_mode` tinyint(4) NOT NULL DEFAULT '1',
   `notify_flow_mode` tinyint(4) NOT NULL DEFAULT '1',
   `telegram_last_expiry_reminder_date` varchar(10) DEFAULT NULL,
-  `telegram_last_flow_reminder_date` varchar(10) DEFAULT NULL
+  `telegram_last_flow_reminder_date` varchar(10) DEFAULT NULL,
+  `flow_reset_clock` varchar(5) NOT NULL DEFAULT '00:00'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 --
@@ -383,7 +399,9 @@ CREATE TABLE `package_plan` (
   `created_time` bigint(20) NOT NULL,
   `updated_time` bigint(20) DEFAULT NULL,
   `status` int(10) NOT NULL DEFAULT '1',
-  `user_speed_limit` int(11) NOT NULL DEFAULT '0'
+  `user_speed_limit` int(11) NOT NULL DEFAULT '0',
+  `flow_reset_time` bigint(20) NOT NULL DEFAULT '-1',
+  `flow_reset_clock` varchar(5) NOT NULL DEFAULT '00:00'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- --------------------------------------------------------
@@ -600,6 +618,13 @@ ALTER TABLE `node_daily_raw_flow`
   ADD UNIQUE KEY `uniq_node_day` (`node_id`,`day`);
 
 --
+-- 表的索引 `node_online_history`
+--
+ALTER TABLE `node_online_history`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_sample_time` (`sample_time`);
+
+--
 -- 表的索引 `node_traffic_cycle`
 --
 ALTER TABLE `node_traffic_cycle`
@@ -778,6 +803,12 @@ ALTER TABLE `user_daily_raw_flow`
 -- 使用表AUTO_INCREMENT `node_daily_raw_flow`
 --
 ALTER TABLE `node_daily_raw_flow`
+  MODIFY `id` int(10) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=1;
+
+--
+-- 使用表AUTO_INCREMENT `node_online_history`
+--
+ALTER TABLE `node_online_history`
   MODIFY `id` int(10) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=1;
 
 --

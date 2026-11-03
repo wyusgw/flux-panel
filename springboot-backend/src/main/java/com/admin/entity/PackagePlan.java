@@ -69,4 +69,15 @@ public class PackagePlan extends BaseEntity {
      * 套餐用户限速（Mbps，0 为不限速；与转发规则限速、管理员指派的限速取较严格值）
      */
     private Integer userSpeedLimit;
+
+    /**
+     * 套餐流量重置日（-1 沿用用户当前的重置设置，0 不重置，1-31 每月第几日重置）；
+     * 用户购买/续费该套餐时，非 -1 的值会写入用户的流量重置日
+     */
+    private Long flowResetTime;
+
+    /**
+     * 套餐流量重置时刻（HH:mm，默认 00:00），与 flowResetTime 配合使用
+     */
+    private String flowResetClock;
 }

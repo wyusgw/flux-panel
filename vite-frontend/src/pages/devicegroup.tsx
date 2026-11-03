@@ -32,6 +32,7 @@ import { EditIcon, DeleteIcon, SettingsIcon } from "@/components/icons";
 import { HelpTooltip } from "@/components/help-tooltip";
 import { EmptyState } from "@/components/empty-state";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import RefreshButton from "@/components/refresh-button";
 
 const DockIcon = ({ className }: { className?: string }) => (
   <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -172,6 +173,15 @@ const HIDE_OPTIONS = [
   { key: '2', label: '对所有用户隐藏' }
 ];
 
+// 解析「起始-结束」格式的端口范围，格式不对或超出 1-65535、起始大于结束时返回 null
+const parsePortRange = (text: string): [number, number] | null => {
+  const m = text.trim().match(/^(\d{1,5})\s*-\s*(\d{1,5})$/);
+  if (!m) return null;
+  const sta = Number(m[1]), end = Number(m[2]);
+  if (sta < 1 || end > 65535 || sta > end) return null;
+  return [sta, end];
+};
+
 export default function DeviceGroupPage() {
   const [loading, setLoading] = useState(true);
   const [groups, setGroups] = useState<DeviceGroupItem[]>([]);
@@ -182,6 +192,10 @@ export default function DeviceGroupPage() {
 
   const [modalOpen, setModalOpen] = useState(false);
   const [isEdit, setIsEdit] = useState(false);
+  // 新增设备组时，类型选择之前只显示名称、用户组、类型、探针隐藏、备注；选择类型后才显示该类型对应的选项（编辑时始终已有类型）
+  const [typeChosen, setTypeChosen] = useState(false);
+  // 端口范围用单个输入框「起始-结束」填写，这里保存输入框里的原始文字
+  const [portRangeText, setPortRangeText] = useState('');
   const [submitLoading, setSubmitLoading] = useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [groupToDelete, setGroupToDelete] = useState<DeviceGroupItem | null>(null);
@@ -225,14 +239,20 @@ export default function DeviceGroupPage() {
   const [userCountry, setUserCountry] = useState<string | null>(null);
 
   useEffect(() => {
+    if (modalOpen) setPortRangeText(`${form.portSta}-${form.portEnd}`);
+    // 只在弹窗打开时按当前表单初始化输入框文字
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modalOpen]);
+
+  useEffect(() => {
     loadData();
     fetch('https://ipwho.is/').then(res => res.json()).then(data => {
       if (data?.success && data.country_code) setUserCountry(String(data.country_code).toUpperCase());
     }).catch(() => {});
   }, []);
 
-  const loadData = async () => {
-    setLoading(true);
+  const loadData = async (showLoading = true) => {
+    setLoading(showLoading);
     try {
       const [groupsRes, nodesRes, userGroupsRes, nodeGroupsRes] = await Promise.all([
         getDeviceGroupList(),
@@ -271,6 +291,7 @@ export default function DeviceGroupPage() {
 
   const handleAdd = () => {
     setIsEdit(false);
+    setTypeChosen(false);
     setForm(DEFAULT_FORM);
     setErrors({});
     setModalOpen(true);
@@ -278,6 +299,7 @@ export default function DeviceGroupPage() {
 
   const handleEdit = (group: DeviceGroupItem) => {
     setIsEdit(true);
+    setTypeChosen(true);
     setForm({
       id: group.id,
       name: group.name,
@@ -305,7 +327,9 @@ export default function DeviceGroupPage() {
   const validateForm = (): boolean => {
     const newErrors: { [key: string]: string } = {};
     if (!form.name.trim()) newErrors.name = '请输入设备组名称';
-    if (form.direction === 'chain') {
+    if (!typeChosen) {
+      newErrors.direction = '请选择类型';
+    } else if (form.direction === 'chain') {
       if (form.chainHops.length === 0) {
         newErrors.chainHops = '链式出口至少需要配置 1 跳';
       } else if (form.chainHops.some(hop => !hop.targetDeviceGroupId)) {
@@ -314,8 +338,7 @@ export default function DeviceGroupPage() {
     } else {
       if (!form.serverIp.trim()) newErrors.serverIp = '请输入服务器 IP 或域名';
       if (!form.entryIps.some(ip => ip.trim())) newErrors.entryIp = '请至少输入一个入口 IP 或域名';
-      if (form.portSta < 1 || form.portSta > 65535) newErrors.portSta = '端口号必须在1-65535之间';
-      if (form.portEnd < 1 || form.portEnd > 65535) newErrors.portEnd = '端口号必须在1-65535之间';
+      if (!parsePortRange(portRangeText)) newErrors.portRange = '端口范围格式应为「起始-结束」，如 2000-65535，且在 1-65535 之间、起始不大于结束';
     }
     if (form.ratio < 0) newErrors.ratio = '流量倍率不能小于0';
     setErrors(newErrors);
@@ -442,6 +465,7 @@ export default function DeviceGroupPage() {
 
   const handleConfigureOrphan = (node: NodeItem) => {
     setIsEdit(false);
+    setTypeChosen(false);
     setForm({ ...DEFAULT_FORM, name: node.name, nodeId: node.id, serverIp: node.serverIp || '', entryIps: parseEntryIps(node.ip), portSta: node.portSta || 1000, portEnd: node.portEnd || 65535, nodeGroupIds: node.nodeGroupIds || [] });
     setErrors({});
     setModalOpen(true);
@@ -652,32 +676,36 @@ export default function DeviceGroupPage() {
     <div className="management-page px-4 lg:px-6 py-5 lg:py-6">
       <Card className="management-table-card max-w-[1600px] mx-auto">
         <CardHeader className="flex-row items-center justify-between gap-4 p-4 border-b border-default-100">
-          <div><h1 className="text-base font-semibold text-foreground">设备管理</h1><p className="mt-1 text-xs text-default-500">创建并管理入口、出口、监控设备及其访问权限</p></div>
-          <div className="flex gap-2">
-            {selectedGroupIds.length > 0 && <Button size="sm" color="danger" variant="flat" onPress={() => setBatchDeleteModalOpen(true)}>批量删除（{selectedGroupIds.length}）</Button>}
-            <Button size="sm" variant="bordered" onPress={loadData}>刷新</Button>
-            <Button size="sm" color="primary" onPress={handleAdd}>添加设备</Button>
+          <div className="flex items-center gap-3 flex-wrap">
+            <h1 className="text-base font-semibold text-foreground">设备管理</h1>
+            <RefreshButton onRefresh={() => loadData(false)} />
           </div>
         </CardHeader>
-        <CardBody className="p-0"><Table removeWrapper aria-label="设备列表" selectionMode="multiple" selectedKeys={selectedKeys} onSelectionChange={setSelectedKeys} disabledKeys={orphanNodes.map(node => `node-${node.id}`)} classNames={{ base: "w-full", table: "w-full management-table-selectable", th: "management-table-heading", td: "management-table-cell" }}>
+        <CardBody className="p-4 space-y-3">
+          {/* 工具列：与转发规则页一致，描边按钮 */}
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" variant="bordered" onPress={handleAdd}>添加设备</Button>
+            <Button size="sm" variant="bordered" color="danger" isDisabled={selectedGroupIds.length === 0} onPress={() => setBatchDeleteModalOpen(true)}>批量删除{selectedGroupIds.length > 0 ? `（${selectedGroupIds.length}）` : ''}</Button>
+          </div>
+          <div className="-mx-4 -mb-4"><div className="settings-table-scroll"><Table removeWrapper aria-label="设备列表" selectionMode="multiple" selectedKeys={selectedKeys} onSelectionChange={setSelectedKeys} disabledKeys={orphanNodes.map(node => `node-${node.id}`)} classNames={{ base: "w-full", table: "w-full management-table-selectable", th: "management-table-heading", td: "management-table-cell" }}>
           <TableHeader><TableColumn className="w-16">排序</TableColumn><TableColumn>设备 ID</TableColumn><TableColumn>名称</TableColumn><TableColumn>角色</TableColumn><TableColumn>服务器</TableColumn><TableColumn>可见用户组</TableColumn><TableColumn>倍率</TableColumn><TableColumn>备注</TableColumn><TableColumn align="end">操作</TableColumn></TableHeader>
           <TableBody emptyContent={<EmptyState />}>{[
             ...groups.map(group => { const isChainGroup = group.direction === 'chain'; return <TableRow key={`group-${group.id}`} onDragOver={(e: React.DragEvent) => e.preventDefault()} onDrop={() => handleGroupRowDrop(group.id)}><TableCell><span draggable className="cursor-grab active:cursor-grabbing inline-flex" onDragStart={() => { draggedGroupIdRef.current = group.id; }}><DragHandleIcon /></span></TableCell><TableCell>#{group.id}</TableCell><TableCell className="font-medium">{group.name}</TableCell><TableCell>{{ inbound: '入口', outbound: '出口', monitor: '监控', both: '入口＋出口', chain: '链式出口' }[group.direction || 'inbound']}</TableCell><TableCell>{isChainGroup ? <span className="text-default-500">{(group.chainHops || []).length} 跳链路</span> : group.nodeName}</TableCell><TableCell>{userGroupNames(group.userGroupIds)}</TableCell><TableCell>{group.ratio}</TableCell><TableCell>{group.remark || '—'}</TableCell><TableCell><div className="flex justify-end items-center gap-1">{!isChainGroup && group.nodeId && renderDockMenu(group.nodeId, `${group.name} (#${group.id})`)}<Button isIconOnly size="sm" variant="flat" onPress={() => handleEdit(group)} title="编辑"><EditIcon className="w-4 h-4" /></Button>{!isChainGroup && group.nodeId && <Button isIconOnly size="sm" variant="flat" color="default" onPress={() => handleResetSecret(group.nodeId!)} title="重置 Token"><KeyIcon className="w-4 h-4" /></Button>}{!isChainGroup && group.nodeId && <Button isIconOnly size="sm" variant="flat" onPress={() => handleAdvancedEdit(group.nodeId!)} title="高级编辑"><SettingsIcon className="w-4 h-4" /></Button>}<Button isIconOnly size="sm" variant="flat" color="danger" onPress={() => handleDelete(group)} title="删除"><DeleteIcon className="w-4 h-4" /></Button></div></TableCell></TableRow>; }),
             ...orphanNodes.map(node => <TableRow key={`node-${node.id}`}><TableCell>—</TableCell><TableCell>—</TableCell><TableCell className="font-medium">{node.name}</TableCell><TableCell><span className="text-warning">未配置</span></TableCell><TableCell>{node.serverIp || node.ip || '—'}</TableCell><TableCell>—</TableCell><TableCell>—</TableCell><TableCell>此设备尚未建立设备组</TableCell><TableCell><div className="flex justify-end items-center gap-1">{renderDockMenu(node.id, `${node.name} (#${node.id})`)}<Button isIconOnly size="sm" variant="flat" color="default" onPress={() => handleResetSecret(node.id)} title="重置 Token"><KeyIcon className="w-4 h-4" /></Button><Button isIconOnly size="sm" variant="flat" onPress={() => handleAdvancedEdit(node.id)} title="高级编辑"><SettingsIcon className="w-4 h-4" /></Button><Button isIconOnly size="sm" variant="flat" color="danger" onPress={() => handleDeleteNode(node)} title="删除"><DeleteIcon className="w-4 h-4" /></Button><Button size="sm" color="default" onPress={() => handleConfigureOrphan(node)}>补全配置</Button></div></TableCell></TableRow>)
           ]}</TableBody>
-        </Table></CardBody>
+        </Table></div></div></CardBody>
       </Card>
 
-      <Modal isOpen={modalOpen} onOpenChange={setModalOpen} size="lg" scrollBehavior="outside" backdrop="blur" placement="center">
+      <Modal isOpen={modalOpen} onOpenChange={setModalOpen} size="lg" scrollBehavior="outside" backdrop="opaque" placement="top">
         <ModalContent>
           {(onClose) => (
             <>
               <ModalHeader className="flex flex-col gap-1">
-                <h2 className="text-xl font-bold">{isEdit ? '编辑设备组' : '添加设备组'}</h2>
+                <h2 className="text-base font-semibold">{isEdit ? '编辑设备组' : '添加设备组'}</h2>
               </ModalHeader>
               <ModalBody>
                 <div className="space-y-4">
-                  <Input
+                  <Input labelPlacement="outside-top"
                     size="sm" autoComplete="off"
                     label="名称"
                     value={form.name}
@@ -687,13 +715,34 @@ export default function DeviceGroupPage() {
                     variant="bordered"
                   />
 
-                  <Select
+                  <Select listboxProps={{ emptyContent: <EmptyState compact /> }} labelPlacement="outside-top"
                     size="sm"
-                    label={<HelpTooltip content="监控设备仅用于观测；入口＋出口可同时用于两种转发角色；链式出口不绑定自己的物理设备，而是把多个已有的出口设备组串成一条多跳链路">设备角色</HelpTooltip>}
-                    selectedKeys={[form.direction]}
+                    selectionMode="multiple"
+                    label={<HelpTooltip content="仅所选用户组的用户可在添加转发规则时看到此设备组；一个设备组可以同时对多个用户组可见">用户组</HelpTooltip>}
+                    placeholder="留空表示所有用户可见"
+                    selectedKeys={new Set(form.userGroupIds.map(String))}
+                    onSelectionChange={(keys) => {
+                      const ids = Array.from(keys as Set<string>).map(Number);
+                      setForm(prev => ({ ...prev, userGroupIds: ids }));
+                    }}
+                    variant="bordered"
+                  >
+                    {userGroups.map(group => (
+                      <SelectItem key={group.id.toString()}>{group.name || `#${group.id}`}</SelectItem>
+                    ))}
+                  </Select>
+
+                  <Select listboxProps={{ emptyContent: <EmptyState compact /> }} labelPlacement="outside-top"
+                    size="sm"
+                    label={<HelpTooltip content="监控设备仅用于观测；入口＋出口可同时用于两种转发角色；链式出口不绑定自己的物理设备，而是把多个已有的出口设备组串成一条多跳链路">类型</HelpTooltip>}
+                    isInvalid={!!errors.direction}
+                    errorMessage={errors.direction}
+                    selectedKeys={typeChosen ? [form.direction] : []}
                     onSelectionChange={(keys) => {
                       const selectedKey = Array.from(keys)[0] as DeviceGroupForm['direction'];
-                      setForm(prev => ({ ...prev, direction: selectedKey || 'inbound' }));
+                      if (!selectedKey) return;
+                      setTypeChosen(true);
+                      setForm(prev => ({ ...prev, direction: selectedKey }));
                     }}
                     variant="bordered"
                   >
@@ -704,6 +753,9 @@ export default function DeviceGroupPage() {
                     <SelectItem key="chain">链式出口</SelectItem>
                   </Select>
 
+                  {/* 选择类型之后才显示该类型对应的选项 */}
+                  {typeChosen && (
+                    <>
                   {form.direction === 'chain' ? (
                     <div className="space-y-3">
                       <div className="flex items-center justify-between">
@@ -739,7 +791,7 @@ export default function DeviceGroupPage() {
                                 </Button>
                               </div>
                             </div>
-                            <Select
+                            <Select listboxProps={{ emptyContent: <EmptyState compact /> }}
                               size="sm"
                               placeholder="请选择出口"
                               selectedKeys={hop.targetDeviceGroupId ? [hop.targetDeviceGroupId.toString()] : []}
@@ -774,7 +826,7 @@ export default function DeviceGroupPage() {
                     </div>
                   ) : (
                     <>
-                      <Input size="sm" autoComplete="off" label="服务器 IP / 域名" placeholder="例如：203.0.113.10 或 node.example.com" value={form.serverIp} onChange={(e) => setForm(prev => ({ ...prev, serverIp: e.target.value }))} isInvalid={!!errors.serverIp} errorMessage={errors.serverIp} variant="bordered" />
+                      <Input labelPlacement="outside-top" size="sm" autoComplete="off" label="服务器 IP / 域名" placeholder="例如：203.0.113.10 或 node.example.com" value={form.serverIp} onChange={(e) => setForm(prev => ({ ...prev, serverIp: e.target.value }))} isInvalid={!!errors.serverIp} errorMessage={errors.serverIp} variant="bordered" />
 
                       <div className="space-y-2">
                         <div className="flex items-center justify-between">
@@ -813,12 +865,24 @@ export default function DeviceGroupPage() {
                         </Button>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-4">
-                        <Input size="sm" autoComplete="off" label="起始端口" type="number" value={form.portSta.toString()} onChange={(e) => setForm(prev => ({ ...prev, portSta: Number(e.target.value) || 1000 }))} isInvalid={!!errors.portSta} errorMessage={errors.portSta} variant="bordered" />
-                        <Input size="sm" autoComplete="off" label="结束端口" type="number" value={form.portEnd.toString()} onChange={(e) => setForm(prev => ({ ...prev, portEnd: Number(e.target.value) || 65535 }))} isInvalid={!!errors.portEnd} errorMessage={errors.portEnd} variant="bordered" />
-                      </div>
+                      <Input
+                        labelPlacement="outside-top" size="sm" autoComplete="off"
+                        label={<HelpTooltip content="该设备可分配给转发规则使用的监听端口范围，用 - 连接起止端口，例如 2000-65535">端口范围</HelpTooltip>}
+                        placeholder="2000-65535"
+                        value={portRangeText}
+                        onChange={(e) => {
+                          const text = e.target.value;
+                          setPortRangeText(text);
+                          // 输入形如「起始-结束」时同步到表单；格式不对时保留文字，提交校验时再提示
+                          const parsed = parsePortRange(text);
+                          if (parsed) setForm(prev => ({ ...prev, portSta: parsed[0], portEnd: parsed[1] }));
+                        }}
+                        isInvalid={!!errors.portRange}
+                        errorMessage={errors.portRange}
+                        variant="bordered"
+                      />
 
-                      <Select
+                      <Select listboxProps={{ emptyContent: <EmptyState compact /> }} labelPlacement="outside-top"
                         size="sm"
                         selectionMode="multiple"
                         label={<HelpTooltip content="该节点所属的节点组，用于分配套餐/用户组可使用的节点范围；一个节点可以同时属于多个节点组">节点组</HelpTooltip>}
@@ -836,7 +900,7 @@ export default function DeviceGroupPage() {
                       </Select>
 
                       {(form.direction === 'outbound' || form.direction === 'both') && (
-                        <Select
+                        <Select listboxProps={{ emptyContent: <EmptyState compact /> }} labelPlacement="outside-top"
                           size="sm"
                           label={<HelpTooltip content="该出口设备组作为隧道转发出口节点时使用的传输协议">协议类型</HelpTooltip>}
                           selectedKeys={[form.protocol]}
@@ -859,24 +923,7 @@ export default function DeviceGroupPage() {
                     </>
                   )}
 
-                  <Select
-                    size="sm"
-                    selectionMode="multiple"
-                    label={<HelpTooltip content="仅所选用户组的用户可在添加转发规则时看到此设备组；一个设备组可以同时对多个用户组可见">用户组</HelpTooltip>}
-                    placeholder="留空表示所有用户可见"
-                    selectedKeys={new Set(form.userGroupIds.map(String))}
-                    onSelectionChange={(keys) => {
-                      const ids = Array.from(keys as Set<string>).map(Number);
-                      setForm(prev => ({ ...prev, userGroupIds: ids }));
-                    }}
-                    variant="bordered"
-                  >
-                    {userGroups.map(group => (
-                      <SelectItem key={group.id.toString()}>{group.name || `#${group.id}`}</SelectItem>
-                    ))}
-                  </Select>
-
-                  <Input
+                  <Input labelPlacement="outside-top"
                     size="sm" autoComplete="off"
                     label="流量倍率"
                     type="number"
@@ -886,8 +933,12 @@ export default function DeviceGroupPage() {
                     errorMessage={errors.ratio}
                     variant="bordered"
                   />
+                    </>
+                  )}
 
-                  <Select
+
+
+                  <Select listboxProps={{ emptyContent: <EmptyState compact /> }} labelPlacement="outside-top"
                     size="sm"
                     label="在探针中隐藏"
                     selectedKeys={[form.hideInProbe.toString()]}
@@ -902,19 +953,21 @@ export default function DeviceGroupPage() {
                     ))}
                   </Select>
 
-                  <Textarea
+                  <Textarea labelPlacement="outside-top"
                     size="sm" autoComplete="off"
                     label="备注（仅管理员可见）"
                     value={form.remark}
                     onChange={(e) => setForm(prev => ({ ...prev, remark: e.target.value }))}
                     variant="bordered"
-                    minRows={2}
+                    disableAutosize
+                    rows={3}
+                    classNames={{ input: 'resize-y min-h-[4.5rem]' }}
                   />
                 </div>
               </ModalBody>
               <ModalFooter>
-                <Button variant="light" onPress={onClose}>取消</Button>
-                <Button color="default" onPress={handleSubmit} isLoading={submitLoading}>
+                <Button size="sm" variant="bordered" onPress={onClose}>取消</Button>
+                <Button size="sm" color="primary" onPress={handleSubmit} isLoading={submitLoading}>
                   {isEdit ? '保存修改' : '创建'}
                 </Button>
               </ModalFooter>
@@ -939,7 +992,7 @@ export default function DeviceGroupPage() {
           {(onClose) => (
             <>
               <ModalHeader className="flex flex-col gap-1">
-                <h2 className="text-lg font-bold">查看节点配置 - {configTarget.node?.name || '—'}</h2>
+                <h2 className="text-lg font-semibold">查看节点配置 - {configTarget.node?.name || '—'}</h2>
               </ModalHeader>
               <ModalBody>
                 <div className="grid grid-cols-2 gap-3 text-sm">
@@ -971,7 +1024,7 @@ export default function DeviceGroupPage() {
                   <circle cx="12" cy="7.4" r="1.5" fill="#15161a" />
                   <rect x="10.7" y="10.2" width="2.6" height="7.6" rx="1.3" fill="#15161a" />
                 </svg>
-                <h2 className="text-lg font-bold">离线部署</h2>
+                <h2 className="text-lg font-semibold">离线部署</h2>
               </ModalHeader>
               <ModalBody>
                 <div className="space-y-4 text-sm">
@@ -1017,13 +1070,13 @@ export default function DeviceGroupPage() {
           {(onClose) => (
             <>
               <ModalHeader className="flex flex-col gap-1">
-                <h2 className="text-lg font-bold">高级编辑 - {advancedTarget?.name || '—'}</h2>
+                <h2 className="text-base font-semibold">高级编辑 - {advancedTarget?.name || '—'}</h2>
               </ModalHeader>
               <ModalBody>
                 <div className="space-y-2">
                   <div className="text-sm font-medium text-default-700">屏蔽协议</div>
                   <div className="text-xs text-default-500 mb-2">开启开关以屏蔽对应协议</div>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-default-50 dark:bg-default-100 p-3 rounded-md border border-default-200 dark:border-default-100/30">
+                  <div className="grid grid-cols-3 gap-3 bg-default-50 dark:bg-default-100 p-3 rounded-md border border-default-200 dark:border-default-100/30">
                     {(['http', 'tls', 'socks'] as const).map(key => (
                       <div key={key} className="px-3 py-3 rounded-lg bg-white dark:bg-default-50 border border-default-200 dark:border-default-100/30">
                         <div className="text-sm font-medium text-default-700 mb-2 uppercase">{key}</div>
@@ -1037,7 +1090,7 @@ export default function DeviceGroupPage() {
                   </div>
                 </div>
 
-                <Select
+                <Select listboxProps={{ emptyContent: <EmptyState compact /> }} labelPlacement="outside-top"
                   size="sm"
                   className="mt-4"
                   selectionMode="multiple"
@@ -1056,8 +1109,8 @@ export default function DeviceGroupPage() {
                 </Select>
               </ModalBody>
               <ModalFooter>
-                <Button variant="light" onPress={onClose}>取消</Button>
-                <Button color="default" onPress={submitAdvancedEdit} isLoading={advancedLoading}>保存</Button>
+                <Button size="sm" variant="bordered" onPress={onClose}>取消</Button>
+                <Button size="sm" color="primary" onPress={submitAdvancedEdit} isLoading={advancedLoading}>保存</Button>
               </ModalFooter>
             </>
           )}

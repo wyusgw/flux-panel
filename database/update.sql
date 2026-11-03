@@ -1334,3 +1334,76 @@ CREATE TABLE IF NOT EXISTS `node_traffic_cycle` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uniq_node` (`node_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- user 表新增 flow_reset_clock：用户流量重置时刻（HH:mm，默认 00:00），与 flow_reset_time（每月第几日）配合，
+-- 用户管理里可自定义每月重置日的几点几分重置
+SET @sql = (
+  SELECT IF(
+    NOT EXISTS (
+      SELECT 1 FROM information_schema.COLUMNS
+      WHERE table_schema = DATABASE() AND table_name = 'user' AND column_name = 'flow_reset_clock'
+    ),
+    'ALTER TABLE `user` ADD COLUMN `flow_reset_clock` varchar(5) NOT NULL DEFAULT "00:00" COMMENT "流量重置时刻（HH:mm）";',
+    'SELECT "Column `flow_reset_clock` already exists in `user`";'
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- package_plan 表新增流量重置：flow_reset_time（-1 沿用用户当前设置，0 不重置，1-31 每月第几日）与 flow_reset_clock（HH:mm），
+-- 用户购买/续费套餐时，非 -1 的重置设置会写入用户；已有套餐默认 -1，不改变原有行为
+SET @sql = (
+  SELECT IF(
+    NOT EXISTS (
+      SELECT 1 FROM information_schema.COLUMNS
+      WHERE table_schema = DATABASE() AND table_name = 'package_plan' AND column_name = 'flow_reset_time'
+    ),
+    'ALTER TABLE `package_plan` ADD COLUMN `flow_reset_time` bigint(20) NOT NULL DEFAULT -1 COMMENT "流量重置日：-1沿用用户设置，0不重置，1-31每月第几日";',
+    'SELECT "Column `flow_reset_time` already exists in `package_plan`";'
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @sql = (
+  SELECT IF(
+    NOT EXISTS (
+      SELECT 1 FROM information_schema.COLUMNS
+      WHERE table_schema = DATABASE() AND table_name = 'package_plan' AND column_name = 'flow_reset_clock'
+    ),
+    'ALTER TABLE `package_plan` ADD COLUMN `flow_reset_clock` varchar(5) NOT NULL DEFAULT "00:00" COMMENT "流量重置时刻（HH:mm）";',
+    'SELECT "Column `flow_reset_clock` already exists in `package_plan`";'
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- 创建 node_online_history 表（如果不存在）：节点在线数量的定时采样记录（每 5 分钟一条，默认保留 31 天），
+-- 供管理员仪表盘「节点在线」曲线图使用
+CREATE TABLE IF NOT EXISTS `node_online_history` (
+  `id` int(10) NOT NULL AUTO_INCREMENT,
+  `sample_time` bigint(20) NOT NULL,
+  `online_count` int(10) NOT NULL DEFAULT '0',
+  `total_count` int(10) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id`),
+  KEY `idx_sample_time` (`sample_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- forward 表新增 weights：各目标地址的权重（与 remote_addr 按顺序对应，逗号分隔的正整数），
+-- 随机、轮询负载均衡策略按权重分配流量；为空表示不加权，已有规则不受影响
+SET @sql = (
+  SELECT IF(
+    NOT EXISTS (
+      SELECT 1 FROM information_schema.COLUMNS
+      WHERE table_schema = DATABASE() AND table_name = 'forward' AND column_name = 'weights'
+    ),
+    'ALTER TABLE `forward` ADD COLUMN `weights` VARCHAR(500) DEFAULT NULL COMMENT "各目标地址的权重（逗号分隔）";',
+    'SELECT "Column `weights` already exists in `forward`";'
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;

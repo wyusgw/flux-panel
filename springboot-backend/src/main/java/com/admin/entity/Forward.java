@@ -42,6 +42,11 @@ public class Forward extends BaseEntity{
 
     private String strategy;
 
+    /**
+     * 各目标地址的权重（与远程地址按顺序对应，逗号分隔的正整数），随机、轮询策略按权重分配流量；留空表示不加权
+     */
+    private String weights;
+
     private Long inFlow;
 
     private Long outFlow;

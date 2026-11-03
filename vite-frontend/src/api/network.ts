@@ -24,6 +24,16 @@ function getWebViewPanelAddress() {
 
 let baseURL: string = '';
 
+// 当前访问的面板地址（主机:端口）：后端在站点设置里没有填写「面板后端地址」时，用它自动生成节点安装命令。
+// baseURL 是相对路径时就是浏览器地址栏里的地址；App 里是设置的面板地址（绝对路径），取其中的主机和端口
+export const getPanelHost = (): string => {
+  try {
+    return new URL(baseURL || '/', window.location.href).host;
+  } catch {
+    return window.location.host;
+  }
+};
+
 export const reinitializeBaseURL = () => {
   if (isWebViewFunc()) {
     getWebViewPanelAddress();
@@ -76,7 +86,8 @@ const Network = {
         params: data,
         timeout: 30000,
         headers: {
-          "Authorization": window.localStorage.getItem('token')
+          "Authorization": window.localStorage.getItem('token'),
+          "X-Panel-Addr": getPanelHost()
         }
       })
         .then(function(response: AxiosResponse<ApiResponse<T>>) {
@@ -113,7 +124,8 @@ const Network = {
         timeout,
         headers: {
           "Authorization": window.localStorage.getItem('token'),
-          "Content-Type": "application/json"
+          "Content-Type": "application/json",
+          "X-Panel-Addr": getPanelHost()
         }
       })
         .then(function(response: AxiosResponse<ApiResponse<T>>) {

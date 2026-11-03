@@ -20,7 +20,7 @@ import java.util.Map;
  * @since 2026-09-21
  */
 @RestController
-@RequestMapping("/api/v1/forward-group")
+@RequestMapping("/api/v1/forwardGroup")
 @CrossOrigin
 public class ForwardGroupController extends BaseController {
 

@@ -61,7 +61,7 @@ public class PackagePlanController extends BaseController {
 
     @LogAnnotation
     @RequireRole
-    @PostMapping("/batch-delete")
+    @PostMapping("/batchDelete")
     public R batchDelete(@RequestBody Map<String, Object> params) {
         @SuppressWarnings("unchecked")
         List<Object> rawIds = (List<Object>) params.get("ids");

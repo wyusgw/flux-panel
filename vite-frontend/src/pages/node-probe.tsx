@@ -5,6 +5,7 @@ import { Button } from '@heroui/button';
 import axios from 'axios';
 import { getDeviceGroupList, getNodeList, getUserGroupNames, getNodeGroupNames } from '@/api';
 import { ThemeSwitch } from '@/components/theme-switch';
+import { OsLogo } from '@/components/os-logo';
 import { isAdmin } from '@/utils/auth';
 import 'flag-icons/css/flag-icons.min.css';
 
@@ -25,6 +26,7 @@ type Node = {
   connectionStatus?: 'online' | 'offline';
   systemInfo?: {
     cpuUsage: number; cpuModel?: string;
+    osName?: string; osVersion?: string; kernelVersion?: string; arch?: string; virtualization?: string;
     memoryUsage: number; memoryTotal?: number; memoryUsed?: number; memoryAvailable?: number;
     storageUsage: number; storageTotal?: number; storageUsed?: number; storageFree?: number;
     uploadTraffic: number; downloadTraffic: number; cycleUpload?: number; cycleDownload?: number; cycleStart?: number; uploadSpeed: number; downloadSpeed: number;
@@ -45,6 +47,14 @@ const formatUptime = (value = 0) => {
   return `${pad(Math.floor(value / 3600))}:${pad(Math.floor(value % 3600 / 60))}:${pad(Math.floor(value % 60))}`;
 };
 const meterTone = (value?: number) => value === undefined ? 'idle' : value >= 80 ? 'danger' : value >= 50 ? 'warning' : 'safe';
+// 系统标识：agent 上报的是发行版 ID（ubuntu、debian、rhel…）或 GOOS（windows、darwin），这里转成常见的展示名
+const OS_DISPLAY_NAMES: Record<string, string> = {
+  ubuntu: 'Ubuntu', debian: 'Debian', centos: 'CentOS', rhel: 'RHEL', redhat: 'RHEL', rocky: 'Rocky Linux', almalinux: 'AlmaLinux',
+  fedora: 'Fedora', alpine: 'Alpine', arch: 'Arch Linux', manjaro: 'Manjaro', amzn: 'Amazon Linux', ol: 'Oracle Linux', kali: 'Kali Linux',
+  opensuse: 'openSUSE', 'opensuse-leap': 'openSUSE', 'opensuse-tumbleweed': 'openSUSE', sles: 'SUSE', gentoo: 'Gentoo', alpinelinux: 'Alpine',
+  windows: 'Windows', darwin: 'macOS', freebsd: 'FreeBSD', openbsd: 'OpenBSD', linux: 'Linux'
+};
+const osDisplayName = (name?: string) => name ? (OS_DISPLAY_NAMES[name.toLowerCase()] || name.charAt(0).toUpperCase() + name.slice(1)) : '';
 const RegionCell = ({ code }: { code?: string }) => code ? <span className={`fi fi-${code} fis probe-flag`} /> : null;
 
 // 可点击/悬停查看详情的一行 popover 内容
@@ -75,6 +85,15 @@ const buildStatusContent = (node: Node, groupMeta: DeviceGroup | undefined, effe
     </>
   );
 };
+const buildOsContent = (node: Node) => (
+  <>
+    <PopRow><b className="inline-flex items-center gap-1.5"><OsLogo name={node.systemInfo?.osName} />系统</b></PopRow>
+    <PopRow>系统：{[osDisplayName(node.systemInfo?.osName), node.systemInfo?.osVersion].filter(Boolean).join(' ') || '—'}</PopRow>
+    <PopRow>内核：{node.systemInfo?.kernelVersion || '—'}</PopRow>
+    <PopRow>架构：{node.systemInfo?.arch || '—'}</PopRow>
+    <PopRow>虚拟化：{node.systemInfo?.virtualization || '无（物理机或未识别）'}</PopRow>
+  </>
+);
 const buildCpuContent = (node: Node) => (
   <>
     <PopRow><b>CPU</b></PopRow>
@@ -143,6 +162,7 @@ const NodeRow = memo(function NodeRow({ node, regionCode, detailHandlers }: Node
           </svg>
         </span>
       </td>
+      <td>{isOnline && node.systemInfo?.osName ? <span className="probe-os probe-clickable" {...detailHandlers(`os-${node.id}`)}><OsLogo name={node.systemInfo.osName} /><span className="truncate">{osDisplayName(node.systemInfo.osName)}</span></span> : null}</td>
       <td><RegionCell code={regionCode} /></td>
       <td><RegionCell /></td>
       <td className={isOnline ? 'probe-clickable' : ''} {...onlineOnlyHandlers(`conn-recv-${node.id}`)}>{formatSpeed(node.systemInfo?.uploadSpeed)}</td>
@@ -290,6 +310,7 @@ export default function NodeProbePage() {
             return {
               ...node, connectionStatus: 'online', systemInfo: {
                 cpuUsage: Number(info.cpu_usage) || 0, cpuModel: info.cpu_model || undefined,
+                osName: info.os_name || undefined, osVersion: info.os_version || undefined, kernelVersion: info.kernel_version || undefined, arch: info.arch || undefined, virtualization: info.virtualization || undefined,
                 memoryUsage: Number(info.memory_usage) || 0, memoryTotal: Number(info.memory_total) || undefined, memoryUsed: Number(info.memory_used) || undefined, memoryAvailable: Number(info.memory_available) || undefined,
                 storageUsage: Number(info.storage_usage) || 0, storageTotal: Number(info.storage_total) || undefined, storageUsed: Number(info.storage_used) || undefined, storageFree: Number(info.storage_free) || undefined,
                 uploadTraffic: upload, downloadTraffic: download,
@@ -364,6 +385,7 @@ export default function NodeProbePage() {
   const detailNode = detailKey ? nodes.find(n => n.id === Number(detailKey.slice(detailKey.lastIndexOf('-') + 1))) : undefined;
   const detailContent = detailNode && detailKind ? ({
     status: buildStatusContent(detailNode, groupMetaByNodeId.get(detailNode.id), effectiveAdmin, userGroupNames),
+    os: buildOsContent(detailNode),
     cpu: buildCpuContent(detailNode),
     ram: buildRamContent(detailNode),
     storage: buildStorageContent(detailNode),
@@ -421,7 +443,7 @@ export default function NodeProbePage() {
                   <div className="probe-scroll">
                     <table className="probe-table">
                       <thead>
-                        <tr><th>状态</th><th>IPv4 地区</th><th>IPv6 地区</th><th>上行</th><th>下行</th><th>开机时长</th><th>流量</th><th>CPU</th><th>RAM</th><th>存储</th></tr>
+                        <tr><th>状态</th><th>系统</th><th>IPv4 地区</th><th>IPv6 地区</th><th>上行</th><th>下行</th><th>开机时长</th><th>流量</th><th>CPU</th><th>RAM</th><th>存储</th></tr>
                       </thead>
                       <tbody>
                         {nodeGroup.nodes.map(node => (

@@ -15,6 +15,8 @@ import { isAdmin } from '@/utils/auth';
 import { getCachedConfigs, clearConfigCache, updateSiteConfig } from '@/config/site';
 import { HelpTooltip } from '@/components/help-tooltip';
 import { DayOfMonthPicker } from '@/components/day-of-month-picker';
+import { EmptyState } from "@/components/empty-state";
+import { ToastWarningIcon } from '@/components/toast-icons';
 
 interface ConfigItem {
   key: string;
@@ -22,7 +24,7 @@ interface ConfigItem {
   label: string;
   placeholder?: string;
   description?: string;
-  type: 'input' | 'switch' | 'select' | 'textarea' | 'dayOfMonth' | 'paymentChannels' | 'readonly';
+  type: 'input' | 'switch' | 'select' | 'textarea' | 'dayOfMonth' | 'time' | 'paymentChannels' | 'readonly';
   options?: { label: string; value: string; description?: string }[];
   dependsOn?: string; // 依赖的配置项key
   dependsValue?: string; // 依赖的配置项值
@@ -57,8 +59,9 @@ const CONFIG_ITEMS: ConfigItem[] = [
     key: 'ip',
     section: 'basic',
     label: '面板后端地址',
-    placeholder: '请输入面板后端IP:PORT',
-    description: '用于对接节点，格式 ip:port，填面板服务器公网 IP 和后端端口，不要套 CDN',
+    // 留空时自动使用当前访问面板的地址，输入框里只显示这个识别到的值
+    placeholder: typeof window !== 'undefined' ? window.location.host : '',
+    description: '用于对接节点，格式 ip:port。留空则自动使用你当前访问面板的地址生成节点安装命令；面板套了 CDN 或节点需要走其他地址时再手动填写面板服务器的公网 IP 和后端端口，不要套 CDN',
     type: 'input'
   },
   {
@@ -156,35 +159,25 @@ const CONFIG_ITEMS: ConfigItem[] = [
     key: 'theme_policy',
     section: 'basic',
     label: '主题策略',
-    description: '决定用户端默认使用的明暗主题',
+    description: '决定用户端可以使用哪种主题：仅允许其中一种，或两种都允许、默认优先显示其中一种。使用透明主题需要先配置下方的背景图 URL',
     type: 'select',
     options: [
-      { label: '跟随系统', value: 'system' },
-      { label: '浅色主题', value: 'light' },
-      { label: '深色主题', value: 'dark' }
+      { label: '仅允许经典主题', value: 'classic_only' },
+      { label: '仅允许透明主题', value: 'transparent_only' },
+      { label: '优先显示经典主题', value: 'prefer_classic' },
+      { label: '优先显示透明主题', value: 'prefer_transparent' }
     ]
-  },
-  {
-    key: 'transparent_theme_enabled',
-    section: 'basic',
-    label: '透明主题',
-    description: '开启后允许在用户端使用透明主题背景',
-    type: 'switch'
   },
   {
     key: 'transparent_theme_landscape_url',
     section: 'basic',
-    label: '透明主题背景图 URL（横屏）',
-    placeholder: 'https://example.com/background-landscape.jpg',
-    description: '建议使用宽幅图片，适用于桌面与横屏设备',
+    label: '透明主题背景图 URL （横屏视角）',
     type: 'input'
   },
   {
     key: 'transparent_theme_portrait_url',
     section: 'basic',
-    label: '透明主题背景图 URL（竖屏）',
-    placeholder: 'https://example.com/background-portrait.jpg',
-    description: '建议使用直幅图片，适用于手机竖屏设备',
+    label: '透明主题背景图 URL （竖屏视角）',
     type: 'input'
   },
   {
@@ -199,15 +192,30 @@ const CONFIG_ITEMS: ConfigItem[] = [
     key: 'node_traffic_reset_day',
     section: 'basic',
     label: '节点流量重置日',
-    description: '节点状态页的流量每月在这一天 0 点清零并重新累计，默认每月 1 日；当月没有该日期（如 31 日）时按月末处理',
+    description: '节点状态页的流量每月在这一天的「重置时间」清零并重新累计，默认每月 1 日；当月没有该日期（如 31 日）时按月末处理',
     type: 'dayOfMonth'
+  },
+  {
+    key: 'node_traffic_reset_time',
+    section: 'basic',
+    label: '节点流量重置时间',
+    description: '与「节点流量重置日」配合，决定当天几点几分清零，使用服务器所在时区，默认 00:00（0 点整）',
+    type: 'time'
   },
   {
     key: 'diagnosis_ping_count',
     section: 'basic',
     label: '诊断连接次数',
-    placeholder: '15',
-    description: '转发、隧道诊断时每段做几次 TCP 连接，范围 1-30，次数越多结果越详细、耗时也越长，留空则按 15 次处理',
+    placeholder: '4',
+    description: '转发、隧道诊断时每段做几次 TCP 连接（结果卡片里显示的就是这一次的结果），范围 1-30，次数越多耗时越长，留空则按 4 次处理',
+    type: 'input'
+  },
+  {
+    key: 'diagnosis_detail_ping_count',
+    section: 'basic',
+    label: '诊断详情连接次数',
+    placeholder: '8',
+    description: '在诊断结果里点开某一段的详细结果时，会对这一段重新测试，这里设置重新测试的连接次数，范围 1-30，与上面的「诊断连接次数」分开配置，留空则按 8 次处理',
     type: 'input'
   },
   {
@@ -395,6 +403,12 @@ export default function ConfigPage() {
       const response = await updateConfigs(configsToSave);
       if (response.code === 0) {
         toast.success('配置保存成功');
+        // 选了透明主题（或优先显示透明主题）却没配背景图：透明主题不会生效，明确提示，避免以为是保存失败
+        const policyValue = configs.theme_policy;
+        if ((policyValue === 'transparent_only' || policyValue === 'prefer_transparent')
+          && !(configs.transparent_theme_landscape_url || '').trim() && !(configs.transparent_theme_portrait_url || '').trim()) {
+          toast('还没有配置透明主题背景图 URL，透明主题暂时不会生效，将继续显示经典主题', { icon: <ToastWarningIcon />, duration: 6000 });
+        }
         
         // 清除所有配置缓存，强制下次重新获取
         clearConfigCache();
@@ -449,7 +463,7 @@ export default function ConfigPage() {
             onChange={(e) => handleConfigChange(item.key, e.target.value)}
             placeholder={item.placeholder}
             variant="bordered"
-            size="md"
+            size="sm"
             classNames={{
               input: "text-sm",
               inputWrapper: isChanged 
@@ -462,15 +476,16 @@ export default function ConfigPage() {
       case 'textarea':
         return (
           <Textarea autoComplete="off"
+            aria-label={item.label}
             value={configs[item.key] || ''}
             onChange={(e) => handleConfigChange(item.key, e.target.value)}
             placeholder={item.placeholder}
             variant="bordered"
-            size="md"
-            minRows={3}
-            maxRows={8}
+            size="sm"
+            disableAutosize
+            rows={4}
             classNames={{
-              input: "text-sm",
+              input: "text-sm resize-y min-h-[5.5rem]",
               inputWrapper: isChanged
                 ? "border-warning-300 data-[hover=true]:border-warning-400"
                 : ""
@@ -484,21 +499,23 @@ export default function ConfigPage() {
             isSelected={configs[item.key] === 'true'}
             onValueChange={(checked) => handleConfigChange(item.key, checked ? 'true' : 'false')}
             color="primary"
-            size="md"
+            size="sm"
+            aria-label={item.label}
             classNames={{
               wrapper: isChanged ? "border-warning-300" : ""
             }}
-          >
-            <span className="text-sm text-gray-700 dark:text-gray-300">
-              {configs[item.key] === 'true' ? '已启用' : '已禁用'}
-            </span>
-          </Switch>
+          />
         );
 
       case 'select':
         return (
           <Select
-            selectedKeys={configs[item.key] ? [configs[item.key]] : []}
+            // 没有配置过、或配置的是旧版本留下的取值（如主题策略原来的 system/light/dark）时，显示为第一个选项
+            selectedKeys={(() => {
+              const current = configs[item.key];
+              if (item.options?.some(option => option.value === current)) return [current];
+              return item.options?.length && item.key === 'theme_policy' ? [item.options[0].value] : current ? [current] : [];
+            })()}
             onSelectionChange={(keys) => {
               const selectedKey = Array.from(keys)[0] as string;
               if (selectedKey) {
@@ -506,8 +523,9 @@ export default function ConfigPage() {
               }
             }}
             placeholder={`请选择${item.label}`}
+            aria-label={item.label}
             variant="bordered"
-            size="md"
+            size="sm"
             classNames={{
               trigger: isChanged 
                 ? "border-warning-300 data-[hover=true]:border-warning-400" 
@@ -523,6 +541,23 @@ export default function ConfigPage() {
               </SelectItem>
             )) || []}
           </Select>
+        );
+
+      case 'time':
+        return (
+          <Input autoComplete="off"
+            type="time"
+            value={configs[item.key] || '00:00'}
+            onChange={(e) => handleConfigChange(item.key, e.target.value || '00:00')}
+            variant="bordered"
+            size="sm"
+            classNames={{
+              input: "text-sm",
+              inputWrapper: isChanged
+                ? "border-warning-300 data-[hover=true]:border-warning-400"
+                : ""
+            }}
+          />
         );
 
       case 'dayOfMonth':
@@ -562,57 +597,51 @@ export default function ConfigPage() {
   }
 
   return (
-    
-      <div className="settings-page p-4 lg:p-6 max-w-[1600px] mx-auto">
-        <Card className="settings-panel">
-          <CardHeader className="flex flex-row items-center justify-between gap-4 p-4 border-b border-default-100">
-            <div>
-              <h1 className="text-base font-semibold text-foreground">站点设置</h1>
-              <p className="mt-1 text-xs text-default-500">配置站点基本信息、安全选项与用户可见内容</p>
+      <div className="settings-page p-4 lg:p-6 max-w-[1600px] mx-auto space-y-4">
+        {CONFIG_SECTIONS.map((section) => {
+          const items = CONFIG_ITEMS.filter(item => item.section === section.key && shouldShowItem(item));
+          if (items.length === 0) return null;
+          const sectionHasChanges = items.some(item => configs[item.key] !== originalConfigs[item.key]);
+          // 只有主题策略选了透明主题（「仅允许透明主题」「优先显示透明主题」）时，才显示透明主题背景图 URL 两项；
+          // 没配置过或是旧版本留下的取值，按「仅允许经典主题」处理
+          const showTransparentUrls = configs.theme_policy === 'transparent_only' || configs.theme_policy === 'prefer_transparent';
+          const visibleItems = items.filter(item =>
+            item.type !== 'paymentChannels' &&
+            (showTransparentUrls || (item.key !== 'transparent_theme_landscape_url' && item.key !== 'transparent_theme_portrait_url'))
+          );
+
+          // 一行配置：左边标签（有说明的带问号提示），右边控件；多行文本框独占整行，不显示左侧标签
+          const renderRow = (item: ConfigItem) => item.type === 'textarea' ? (
+            <div key={item.key} className="py-1">{renderConfigItem(item)}</div>
+          ) : (
+            <div key={item.key} className="grid grid-cols-1 lg:grid-cols-2 gap-x-8 gap-y-1.5 items-center py-1.5">
+              <div>
+                {item.description ? (
+                  <HelpTooltip content={item.description}><span className="text-sm font-semibold text-foreground">{item.label}</span></HelpTooltip>
+                ) : (
+                  <label className="text-sm font-semibold text-foreground">{item.label}</label>
+                )}
+              </div>
+              <div className="w-full">{renderConfigItem(item)}</div>
             </div>
-          </CardHeader>
+          );
 
-          <CardBody className="p-0">
-            {CONFIG_SECTIONS.map((section) => {
-              const items = CONFIG_ITEMS.filter(item => item.section === section.key && shouldShowItem(item));
-              if (items.length === 0) return null;
-              const sectionHasChanges = items.some(item => configs[item.key] !== originalConfigs[item.key]);
-              // 透明主题背景图 URL 两项不再作为独立的顶层配置行渲染，
-              // 而是收进「透明主题」开关下方的抽屉里，跟随开关一起展开/收起
-              const visibleItems = items.filter(item => item.key !== 'transparent_theme_landscape_url' && item.key !== 'transparent_theme_portrait_url');
-              const transparentThemeChildren = CONFIG_ITEMS.filter(item => item.key === 'transparent_theme_landscape_url' || item.key === 'transparent_theme_portrait_url');
-              const transparentThemeOn = configs.transparent_theme_enabled === 'true';
-
-              return (
-                <section key={section.key} className="settings-section">
-                  <div className="flex items-center justify-between gap-4 px-4 py-4 lg:px-5 border-b border-default-100 bg-default-50/50 dark:bg-white/[0.015]">
-                    <div className="min-w-0">
-                      <h2 className="text-sm font-semibold text-foreground">{section.title}</h2>
-                      <p className="mt-1 text-xs text-default-500">{section.description}</p>
+          return (
+            <Card key={section.key} className="settings-panel">
+              <CardHeader className="px-5 py-4 border-b border-default-100">
+                <h2 className="text-sm font-semibold text-foreground">{section.title}</h2>
+              </CardHeader>
+              <CardBody className="px-5 py-4 gap-0">
+                {section.key === 'payment' ? (
+                  <>
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-8 gap-y-1.5 items-center py-1.5">
+                      <div><HelpTooltip content="订单金额低于该数值时不允许创建支付订单，单位为元"><span className="text-sm font-semibold text-foreground">最小充值金额</span></HelpTooltip></div>
+                      <Input size="sm" autoComplete="off" variant="bordered" value={configs.payment_min_amount || ''} onChange={(event) => handleConfigChange('payment_min_amount', event.target.value)} placeholder="10.00" endContent={<span className="text-sm text-default-500">元</span>} className="w-full" />
                     </div>
-                    <Button
-                      size="sm"
-                      className="flex-shrink-0"
-                      color="default"
-                      variant={sectionHasChanges ? 'solid' : 'flat'}
-                      onPress={() => handleSave(section.key)}
-                      isLoading={saving}
-                      isDisabled={!sectionHasChanges}
-                    >
-                      保存
-                    </Button>
-                  </div>
-                  {section.key === 'payment' ? (
-                    <div className="p-4 lg:p-5">
-                      <div className="grid grid-cols-1 lg:grid-cols-[minmax(260px,0.75fr)_minmax(360px,1.25fr)] gap-3 lg:gap-8 pb-5 border-b border-default-100">
-                        <div className="pt-1"><p className="text-sm font-medium text-foreground">最小充值金额</p><p className="mt-1 text-xs text-default-500">订单金额不得低于此金额，单位为元</p></div>
-                        <Input size="sm" autoComplete="off" value={configs.payment_min_amount || ''} onChange={(event) => handleConfigChange('payment_min_amount', event.target.value)} placeholder="10.00" endContent={<span className="text-sm text-default-500">元</span>} className="w-full max-w-2xl lg:justify-self-end" />
-                      </div>
-                      <div className="flex items-center justify-between gap-3 py-4">
-                        <div><p className="text-sm font-medium text-foreground">支付渠道</p><p className="mt-1 text-xs text-default-500">添加并配置可用的在线支付渠道</p></div>
-                        <Button size="sm" variant="bordered" onPress={addPaymentChannel}>添加支付渠道</Button>
-                      </div>
-                      <div className="settings-table-scroll">
+                    <div className="flex flex-wrap gap-2 py-2">
+                      <Button size="sm" variant="bordered" onPress={addPaymentChannel} startContent={<svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></svg>}>添加支付渠道</Button>
+                    </div>
+                    <div className="settings-table-scroll">
                         <Table removeWrapper aria-label="支付渠道列表" classNames={{ base: "w-full", th: "management-table-heading", td: "management-table-cell", table: "w-full payment-channel-table" }}>
                           <TableHeader><TableColumn className="w-16">排序</TableColumn><TableColumn className="w-32">类型</TableColumn><TableColumn>名称</TableColumn><TableColumn className="w-28">是否启用</TableColumn><TableColumn align="end" className="w-44 text-right">操作</TableColumn></TableHeader>
                           <TableBody emptyContent="暂无支付渠道">
@@ -623,51 +652,27 @@ export default function ConfigPage() {
                           </TableBody>
                         </Table>
                       </div>
-                    </div>
-                  ) : (
-                    <>
-                      {visibleItems.map((item, index) => (
-                        <div
-                          key={item.key}
-                          className={`grid grid-cols-1 lg:grid-cols-[minmax(260px,0.75fr)_minmax(360px,1.25fr)] gap-3 lg:gap-8 px-4 py-5 lg:px-5 ${index < visibleItems.length - 1 ? 'border-b border-default-100' : ''}`}
-                        >
-                          <div className="pt-1">
-                            {item.description ? (
-                              <HelpTooltip content={item.description}><span className="text-sm font-medium text-foreground">{item.label}</span></HelpTooltip>
-                            ) : (
-                              <label className="text-sm font-medium text-foreground">{item.label}</label>
-                            )}
-                          </div>
-                          <div className="w-full max-w-2xl lg:justify-self-end">{renderConfigItem(item)}</div>
-
-                          {item.key === 'transparent_theme_enabled' && (
-                            <div className={`lg:col-span-2 grid transition-[grid-template-rows] duration-300 ease-in-out ${transparentThemeOn ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
-                              <div className="overflow-hidden">
-                                <div className="space-y-4 pt-4 pl-4 border-l-2 border-default-200">
-                                  {transparentThemeChildren.map(child => (
-                                    <div key={child.key}>
-                                      {child.description ? (
-                                        <HelpTooltip content={child.description}><span className="text-sm font-medium text-foreground">{child.label}</span></HelpTooltip>
-                                      ) : (
-                                        <label className="text-sm font-medium text-foreground">{child.label}</label>
-                                      )}
-                                      <div className="mt-2 max-w-2xl">{renderConfigItem(child)}</div>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </>
-                  )}
-                </section>
-              );
-            })}
-          </CardBody>
-        </Card>
-
+                  </>
+                ) : (
+                  <>
+                    {visibleItems.map(renderRow)}
+                  </>
+                )}
+                <div className="flex justify-end pt-3">
+                  <Button
+                    size="sm"
+                    color="primary"
+                    onPress={() => handleSave(section.key)}
+                    isLoading={saving}
+                    isDisabled={!sectionHasChanges}
+                  >
+                    保 存
+                  </Button>
+                </div>
+              </CardBody>
+            </Card>
+          );
+        })}
         {/* 操作提示 */}
         {hasChanges && (
           <Card className="mt-4 bg-warning-50 dark:bg-warning-900/20 border-warning-200 dark:border-warning-800">
@@ -682,47 +687,47 @@ export default function ConfigPage() {
           </Card>
         )}
 
-        <Modal isOpen={isChannelConfigOpen} onClose={onChannelConfigClose} size="lg" backdrop="blur">
+        <Modal isOpen={isChannelConfigOpen} onClose={onChannelConfigClose} size="lg" scrollBehavior="outside" backdrop="blur" placement="center">
           <ModalContent>
             <ModalHeader>{paymentChannels.some(channel => channel.id === configuringChannel?.id) ? '编辑支付渠道' : '添加支付渠道'}</ModalHeader>
             <ModalBody>
               <div className="space-y-3">
-                <Input size="sm" autoComplete="off" label="名称" placeholder="名称不能重复，且不能为空。" value={configuringChannel?.name || ''} onChange={(event) => setConfiguringChannel(channel => channel ? { ...channel, name: event.target.value } : null)} />
-                <Select size="sm" label="类型" selectedKeys={configuringChannel ? [configuringChannel.type] : []} onSelectionChange={(keys) => setConfiguringChannel(channel => channel ? { ...channel, type: Array.from(keys)[0] as PaymentChannel['type'] } : null)}>
+                <Input labelPlacement="outside-top" size="sm" autoComplete="off" label="名称" placeholder="名称不能重复，且不能为空。" value={configuringChannel?.name || ''} onChange={(event) => setConfiguringChannel(channel => channel ? { ...channel, name: event.target.value } : null)} />
+                <Select labelPlacement="outside-top" listboxProps={{ emptyContent: <EmptyState compact /> }} size="sm" label="类型" selectedKeys={configuringChannel ? [configuringChannel.type] : []} onSelectionChange={(keys) => setConfiguringChannel(channel => channel ? { ...channel, type: Array.from(keys)[0] as PaymentChannel['type'] } : null)}>
                   {PAYMENT_TYPES.map(type => <SelectItem key={type.value}>{type.value}</SelectItem>)}
                 </Select>
                 <div className="flex items-center justify-between py-1">
                   <span className="text-sm font-medium text-foreground">启用</span>
                   <Switch isSelected={configuringChannel?.enabled ?? false} onValueChange={(enabled) => setConfiguringChannel(channel => channel ? { ...channel, enabled } : null)} />
                 </div>
-                <Input
+                <Input labelPlacement="outside-top"
                   size="sm" autoComplete="off"
                   label={<HelpTooltip content="支付服务商提供的 API 接口地址">URL</HelpTooltip>}
                   value={configuringChannel?.config?.url || ''}
                   onChange={(event) => setConfiguringChannel(channel => channel ? { ...channel, config: { ...channel.config, url: event.target.value } } : null)}
                 />
-                <Input
+                <Input labelPlacement="outside-top"
                   size="sm" autoComplete="off"
                   label="PID / 商户号"
                   placeholder="只有部分支付类型需要填写"
                   value={configuringChannel?.config?.pid || ''}
                   onChange={(event) => setConfiguringChannel(channel => channel ? { ...channel, config: { ...channel.config, pid: event.target.value } } : null)}
                 />
-                <Input
+                <Input labelPlacement="outside-top"
                   size="sm" autoComplete="off"
                   label="Secret / 密钥"
                   type="password"
                   value={configuringChannel?.config?.secret || ''}
                   onChange={(event) => setConfiguringChannel(channel => channel ? { ...channel, config: { ...channel.config, secret: event.target.value } } : null)}
                 />
-                <Input
+                <Input labelPlacement="outside-top"
                   size="sm" autoComplete="off"
                   label="回调 Host"
                   placeholder="示例：https://xxx.com，留空则使用用户访问的域名"
                   value={configuringChannel?.config?.callbackHost || ''}
                   onChange={(event) => setConfiguringChannel(channel => channel ? { ...channel, config: { ...channel.config, callbackHost: event.target.value } } : null)}
                 />
-                <Input
+                <Input labelPlacement="outside-top"
                   size="sm" autoComplete="off"
                   label={<HelpTooltip content="该支付渠道收取的手续费比例">费率</HelpTooltip>}
                   type="number"
@@ -732,7 +737,7 @@ export default function ConfigPage() {
                 />
               </div>
             </ModalBody>
-            <ModalFooter><Button variant="light" onPress={onChannelConfigClose}>取消</Button><Button color="default" onPress={saveChannelConfig}>确定</Button></ModalFooter>
+            <ModalFooter><Button size="sm" variant="bordered" onPress={onChannelConfigClose}>取消</Button><Button size="sm" color="primary" onPress={saveChannelConfig}>确定</Button></ModalFooter>
           </ModalContent>
         </Modal>
       </div>

@@ -19,7 +19,7 @@ import java.util.Map;
  */
 @RestController
 @CrossOrigin
-@RequestMapping("/api/v1/telegram-log")
+@RequestMapping("/api/v1/telegramLog")
 public class TelegramSendLogController {
 
     @Autowired

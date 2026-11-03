@@ -22,6 +22,8 @@ func ParseChainSelector(cfg *config.SelectorConfig) selector.Selector[chain.Chai
 		strategy = xs.FIFOStrategy[chain.Chainer]()
 	case "hash":
 		strategy = xs.HashStrategy[chain.Chainer]()
+	case "leastconn", "lc":
+		strategy = xs.LeastConnStrategy[chain.Chainer]()
 	default:
 		strategy = xs.RoundRobinStrategy[chain.Chainer]()
 	}
@@ -47,6 +49,8 @@ func ParseNodeSelector(cfg *config.SelectorConfig) selector.Selector[*chain.Node
 		strategy = xs.FIFOStrategy[*chain.Node]()
 	case "hash":
 		strategy = xs.HashStrategy[*chain.Node]()
+	case "leastconn", "lc":
+		strategy = xs.LeastConnStrategy[*chain.Node]()
 	default:
 		strategy = xs.RoundRobinStrategy[*chain.Node]()
 	}

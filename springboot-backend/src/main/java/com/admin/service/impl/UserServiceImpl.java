@@ -8,6 +8,8 @@ import cn.hutool.core.util.StrUtil;
 import com.admin.common.dto.*;
 import com.admin.common.lang.R;
 import com.admin.common.utils.GostUtil;
+import com.admin.common.utils.CaptchaProviderUtil;
+import com.admin.common.utils.HttpContextUtils;
 import com.admin.common.utils.JwtUtil;
 import com.admin.common.utils.Md5Util;
 import com.admin.common.utils.NotificationUtil;
@@ -152,6 +154,21 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
 
     // ========== 公共接口实现 ==========
 
+    /** 登录请求的客户端 IP：优先取反向代理带来的 X-Real-IP / X-Forwarded-For，供第三方验证码校验时一起提交 */
+    private String clientIp() {
+        try {
+            javax.servlet.http.HttpServletRequest request = HttpContextUtils.getHttpServletRequest();
+            String ip = request.getHeader("X-Real-IP");
+            if (StringUtils.isBlank(ip)) {
+                String forwarded = request.getHeader("X-Forwarded-For");
+                ip = StringUtils.isBlank(forwarded) ? null : forwarded.split(",")[0].trim();
+            }
+            return StringUtils.isBlank(ip) ? request.getRemoteAddr() : ip;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     /**
      * 用户登录
      * 验证验证码、用户名密码，检查账户状态，生成JWT令牌
@@ -162,12 +179,16 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     @Override
     public R login(LoginDto loginDto) {
 
-        // 1. 验证验证码
-        ViteConfig viteConfig = viteConfigService.getOne(new QueryWrapper<ViteConfig>().eq("name", "captcha_enabled"));
-        if (viteConfig != null && Objects.equals(viteConfig.getValue(), "true")) {
+        // 1. 验证验证码：内置验证码校验前端换来的票据，Google / Cloudflare 校验前端拿到的令牌
+        int captchaMode = CaptchaProviderUtil.resolveMode(viteConfigService);
+        if (captchaMode == CaptchaProviderUtil.MODE_BUILT_IN) {
             if (StringUtils.isBlank(loginDto.getCaptchaId())) return R.err("验证码校验失败");
             boolean valid = ((SecondaryVerificationApplication) application).secondaryVerification(loginDto.getCaptchaId());
             if (!valid)  return R.err("验证码校验失败");
+        } else if (captchaMode == CaptchaProviderUtil.MODE_GOOGLE || captchaMode == CaptchaProviderUtil.MODE_CLOUDFLARE) {
+            if (!CaptchaProviderUtil.verifyToken(viteConfigService, captchaMode, loginDto.getCaptchaToken(), clientIp())) {
+                return R.err("验证码校验失败");
+            }
         }
 
 

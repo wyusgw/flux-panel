@@ -153,14 +153,22 @@ html, body {
   box-shadow: none;
 }
 
-/* 卡片头部（标题 + 操作按钮）在移动端也保持左右横排：标题区可收缩换行，按钮区不收缩，装不下时头部可左右滑动 */
-.management-table-card [data-slot="header"]:not(.flex-col) {
+/* 卡片头部（标题 + 操作按钮）在移动端也保持一行横排：标题区与按钮区都不收缩、不换行，装不下时头部左右滑动 */
+.management-table-card > .flex-row:first-child {
   flex-direction: row;
   flex-wrap: nowrap;
   overflow-x: auto;
 }
-.management-table-card [data-slot="header"]:not(.flex-col) > :not(:first-child) {
+.management-table-card > .flex-row:first-child > * {
   flex-shrink: 0;
+  flex-wrap: nowrap;
+}
+.management-table-card > .flex-row:first-child > * > * {
+  flex-shrink: 0;
+}
+.management-table-card > .flex-row:first-child h1,
+.management-table-card > .flex-row:first-child h2 {
+  white-space: nowrap;
 }
 
 .dark .management-table-card {

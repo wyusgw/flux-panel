@@ -48,7 +48,13 @@ public class ViteConfigServiceImpl extends ServiceImpl<ViteConfigMapper, ViteCon
         List<ViteConfig> configList = this.list();
         Map<String, String> configMap = new HashMap<>();
         
+        boolean admin = isAdminRequest();
         for (ViteConfig config : configList) {
+            // 服务端密钥（名称以 _secret_key 结尾，如验证码的 Secret Key）只给管理员；
+            // 这个接口不需要登录就能访问，不能把密钥返回给其他人
+            if (!admin && isSecretConfig(config.getName())) {
+                continue;
+            }
             configMap.put(config.getName(), config.getValue());
         }
         
@@ -71,7 +77,7 @@ public class ViteConfigServiceImpl extends ServiceImpl<ViteConfigMapper, ViteCon
         queryWrapper.eq("name", name);
         ViteConfig config = this.getOne(queryWrapper);
 
-        if (config == null) {
+        if (config == null || (isSecretConfig(config.getName()) && !isAdminRequest())) {
             return R.err(ERROR_CONFIG_NOT_FOUND);
         }
 
@@ -133,6 +139,23 @@ public class ViteConfigServiceImpl extends ServiceImpl<ViteConfigMapper, ViteCon
     }
 
     // ========== 私有辅助方法 ==========
+
+    /** 服务端密钥类配置：名称以 _secret_key 结尾 */
+    private static boolean isSecretConfig(String name) {
+        return name != null && name.endsWith("_secret_key");
+    }
+
+    /** 当前请求是否来自管理员：必须带有签名和有效期都通过校验的管理员令牌，不能只看令牌里自称的角色 */
+    private static boolean isAdminRequest() {
+        try {
+            String token = com.admin.common.utils.HttpContextUtils.getHttpServletRequest().getHeader("Authorization");
+            return token != null && com.admin.common.utils.JwtUtil.validateToken(token)
+                    && Integer.valueOf(0).equals(com.admin.common.utils.JwtUtil.getRoleIdFromToken(token));
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
 
     /**
      * 更新或创建配置项

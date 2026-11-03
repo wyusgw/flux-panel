@@ -23,8 +23,8 @@ export default function H5Layout({
   const [singleTunnelEnabled, setSingleTunnelEnabled] = useState(false);
   const [lookingGlassEnabled, setLookingGlassEnabled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  // 「管理」二级菜单是否展开：默认折叠；进入某个管理页面时自动展开，方便看到当前所在位置
-  const [manageOpen, setManageOpen] = useState(() => managementNavItems.some(item => item.path === location.pathname));
+  // 「管理」二级菜单是否展开：默认展开（与桌面端一致），用户可手动收起
+  const [manageOpen, setManageOpen] = useState(true);
   const [username] = useState(() => localStorage.getItem('name') || 'Admin');
 
   useEffect(() => {

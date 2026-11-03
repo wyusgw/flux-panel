@@ -68,12 +68,24 @@ const RechargeTrend = ({ data }: { data: TrendPoint[] }) => (
 );
 
 // 节点在线统计曲线图：独立的一张图表卡片，横轴为时间、纵轴为节点数量（整数，从 0 起），带横向网格线与数据点。
-// 只画一条线：在线节点数；离线数量不单独画线，悬停提示里同时显示在线与离线数。
+// 画两条线：在线节点数（蓝）与离线节点数（橙），头部带图例，悬停提示里同时显示在线与离线数。
 // 「近 24 小时」为每 5 分钟一个采样点，「近 30 天」按自然日取当日最多在线数与最多离线数；
 // 没有数据时提示「数据采集中」，接口失败提示「数据不可用」
 type OnlinePoint = { time: number; online: number; offline: number };
 type OnlineRange = 'day' | 'month';
-const LINE_COLOR = '#2a78d6';
+// 颜色取分类色板的第 1、2 位，浅色/深色模式各用一组（已校验色觉障碍下可区分）
+// recharts 把颜色直接写在 SVG 属性上，用 CSS 变量传入，深色模式在卡片上切换变量值
+const CHART_COLOR_VARS = '[--online-color:#2a78d6] dark:[--online-color:#3987e5] [--offline-color:#eb6834] dark:[--offline-color:#d95926]';
+const ONLINE_COLOR = 'var(--online-color)';
+const OFFLINE_COLOR = 'var(--offline-color)';
+const ONLINE_BG = 'bg-[var(--online-color)]';
+const OFFLINE_BG = 'bg-[var(--offline-color)]';
+const LegendKey = ({ colorClass, label }: { colorClass: string; label: string }) => (
+  <span className="inline-flex items-center gap-1.5 text-xs text-default-600">
+    <span className={`inline-block w-3 h-[2px] rounded-full ${colorClass}`} />
+    {label}
+  </span>
+);
 const pad2 = (n: number) => String(n).padStart(2, '0');
 const formatClock = (time: number) => { const d = new Date(time); return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`; };
 const formatMonthDay = (time: number) => { const d = new Date(time); return `${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; };
@@ -107,10 +119,14 @@ const NodeOnlineChart = () => {
   const showDots = range === 'month' || data.length <= 3;
 
   return (
-    <Card className="dashboard-panel mb-5 min-w-0" shadow="none">
+    <Card className={`dashboard-panel mb-5 min-w-0 ${CHART_COLOR_VARS}`} shadow="none">
       <CardHeader className="px-6 py-4 border-b border-default-100 flex items-center justify-between gap-3 flex-wrap">
         <h2 className="text-sm font-semibold">节点在线统计</h2>
         <div className="flex items-center gap-4 flex-wrap">
+          <div className="flex items-center gap-3">
+            <LegendKey colorClass={ONLINE_BG} label="在线" />
+            <LegendKey colorClass={OFFLINE_BG} label="离线" />
+          </div>
           <div className="flex items-center gap-1">
             <Button size="sm" variant={range === 'day' ? 'flat' : 'light'} color="default" onPress={() => setRange('day')}>近 24 小时</Button>
             <Button size="sm" variant={range === 'month' ? 'flat' : 'light'} color="default" onPress={() => setRange('month')}>近 30 天</Button>
@@ -137,13 +153,14 @@ const NodeOnlineChart = () => {
                     return (
                       <div className="bg-white dark:bg-default-100 border border-default-200 rounded-lg px-3 py-2 text-xs shadow-lg">
                         <p className="text-default-500">{range === 'month' ? `${formatFullDate(row.time)}（当日最多）` : `${formatMonthDay(row.time)} ${formatClock(row.time)}`}</p>
-                        <p className="mt-1 font-medium text-foreground">在线 {row.online}</p>
-                        <p className="mt-0.5 font-medium text-foreground">离线 {row.offline}</p>
+                        <p className="mt-1 flex items-center gap-1.5 font-medium text-foreground"><span className={`inline-block w-2 h-2 rounded-full ${ONLINE_BG}`} />在线 {row.online}</p>
+                        <p className="mt-0.5 flex items-center gap-1.5 font-medium text-foreground"><span className={`inline-block w-2 h-2 rounded-full ${OFFLINE_BG}`} />离线 {row.offline}</p>
                       </div>
                     );
                   }}
                 />
-                <Line type="monotone" dataKey="online" stroke={LINE_COLOR} strokeWidth={2} dot={showDots ? { r: 2.5, fill: LINE_COLOR, stroke: 'none' } : false} activeDot={{ r: 4 }} isAnimationActive={false} />
+                <Line type="monotone" dataKey="online" name="在线" stroke={ONLINE_COLOR} strokeWidth={2} dot={showDots ? { r: 4, fill: ONLINE_COLOR, stroke: 'none' } : false} activeDot={{ r: 5, fill: ONLINE_COLOR, stroke: 'none' }} isAnimationActive={false} />
+                <Line type="monotone" dataKey="offline" name="离线" stroke={OFFLINE_COLOR} strokeWidth={2} dot={showDots ? { r: 4, fill: OFFLINE_COLOR, stroke: 'none' } : false} activeDot={{ r: 5, fill: OFFLINE_COLOR, stroke: 'none' }} isAnimationActive={false} />
               </LineChart>
             </ResponsiveContainer>
           )}

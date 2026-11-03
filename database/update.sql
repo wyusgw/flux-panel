@@ -1350,3 +1350,33 @@ SET @sql = (
 PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
+
+-- package_plan 表新增流量重置：flow_reset_time（-1 沿用用户当前设置，0 不重置，1-31 每月第几日）与 flow_reset_clock（HH:mm），
+-- 用户购买/续费套餐时，非 -1 的重置设置会写入用户；已有套餐默认 -1，不改变原有行为
+SET @sql = (
+  SELECT IF(
+    NOT EXISTS (
+      SELECT 1 FROM information_schema.COLUMNS
+      WHERE table_schema = DATABASE() AND table_name = 'package_plan' AND column_name = 'flow_reset_time'
+    ),
+    'ALTER TABLE `package_plan` ADD COLUMN `flow_reset_time` bigint(20) NOT NULL DEFAULT -1 COMMENT "流量重置日：-1沿用用户设置，0不重置，1-31每月第几日";',
+    'SELECT "Column `flow_reset_time` already exists in `package_plan`";'
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @sql = (
+  SELECT IF(
+    NOT EXISTS (
+      SELECT 1 FROM information_schema.COLUMNS
+      WHERE table_schema = DATABASE() AND table_name = 'package_plan' AND column_name = 'flow_reset_clock'
+    ),
+    'ALTER TABLE `package_plan` ADD COLUMN `flow_reset_clock` varchar(5) NOT NULL DEFAULT "00:00" COMMENT "流量重置时刻（HH:mm）";',
+    'SELECT "Column `flow_reset_clock` already exists in `package_plan`";'
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;

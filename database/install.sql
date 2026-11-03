@@ -384,7 +384,9 @@ CREATE TABLE `package_plan` (
   `created_time` bigint(20) NOT NULL,
   `updated_time` bigint(20) DEFAULT NULL,
   `status` int(10) NOT NULL DEFAULT '1',
-  `user_speed_limit` int(11) NOT NULL DEFAULT '0'
+  `user_speed_limit` int(11) NOT NULL DEFAULT '0',
+  `flow_reset_time` bigint(20) NOT NULL DEFAULT '-1',
+  `flow_reset_clock` varchar(5) NOT NULL DEFAULT '00:00'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- --------------------------------------------------------

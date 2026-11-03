@@ -226,6 +226,12 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         Integer planMaxRules = packagePlan.getMaxRules();
         updateUser.setNum(planMaxRules == null || planMaxRules <= 0 ? UNLIMITED_RULES : planMaxRules);
 
+        // 套餐设置了流量重置（非 -1）时，把重置日与重置时刻写入用户；-1 表示沿用用户当前的重置设置
+        if (packagePlan.getFlowResetTime() != null && packagePlan.getFlowResetTime() >= 0) {
+            updateUser.setFlowResetTime(packagePlan.getFlowResetTime());
+            updateUser.setFlowResetClock(StringUtils.isBlank(packagePlan.getFlowResetClock()) ? "00:00" : packagePlan.getFlowResetClock().trim());
+        }
+
         long baseExpTime = (user.getExpTime() != null && user.getExpTime() > currentTime) ? user.getExpTime() : currentTime;
         if (packagePlan.getDurationDays() != null && packagePlan.getDurationDays() > 0) {
             updateUser.setExpTime(baseExpTime + packagePlan.getDurationDays() * 24L * 60L * 60L * 1000L);

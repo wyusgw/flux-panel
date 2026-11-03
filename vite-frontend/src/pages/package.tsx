@@ -13,6 +13,8 @@ import { EmptyState } from "@/components/empty-state";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { EditIcon, DeleteIcon } from "@/components/icons";
 import { HelpTooltip } from "@/components/help-tooltip";
+import { FieldLabel } from "@/components/form-field";
+import { DayOfMonthPicker } from "@/components/day-of-month-picker";
 import {
   createPackagePlan,
   getPackagePlanList,
@@ -44,6 +46,8 @@ interface PackagePlanItem {
   hidden: number;
   sort: number;
   userSpeedLimit: number;
+  flowResetTime?: number;
+  flowResetClock?: string;
 }
 
 interface UserGroupItem {
@@ -62,6 +66,9 @@ interface PackagePlanForm {
   price: number;
   hidden: number;
   userSpeedLimit: number;
+  // 流量重置日：-1 沿用用户当前设置，0 不重置，1-31 每月第几日；用户购买/续费套餐时写入用户
+  flowResetTime: number;
+  flowResetClock: string;
 }
 
 const DEFAULT_FORM: PackagePlanForm = {
@@ -73,7 +80,20 @@ const DEFAULT_FORM: PackagePlanForm = {
   maxRules: 0,
   price: 0,
   hidden: 0,
-  userSpeedLimit: 0
+  userSpeedLimit: 0,
+  flowResetTime: -1,
+  flowResetClock: '00:00'
+};
+
+// 下拉里直接列出的每月重置日个数，其余日期以及非 00:00 的重置时刻通过「自定义」设置（与用户管理一致）
+const PRESET_RESET_DAYS = 8;
+
+const isCustomReset = (day: number, clock?: string) => day > 0 && (day > PRESET_RESET_DAYS || (!!clock && clock !== '00:00'));
+
+const formatFlowReset = (day?: number, clock?: string) => {
+  if (day === undefined || day === null || day < 0) return '沿用用户设置';
+  if (day === 0) return '不重置';
+  return `每月 ${day} 日${clock && clock !== '00:00' ? ` ${clock}` : ''}`;
 };
 
 export default function PackagePlanPage() {
@@ -89,6 +109,7 @@ export default function PackagePlanPage() {
   const [planToDelete, setPlanToDelete] = useState<PackagePlanItem | null>(null);
 
   const [form, setForm] = useState<PackagePlanForm>(DEFAULT_FORM);
+  const [customReset, setCustomReset] = useState(false);
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
 
   const [selectedKeys, setSelectedKeys] = useState<any>(new Set([]));
@@ -143,6 +164,7 @@ export default function PackagePlanPage() {
   const handleAdd = () => {
     setIsEdit(false);
     setForm(DEFAULT_FORM);
+    setCustomReset(false);
     setErrors({});
     setModalOpen(true);
   };
@@ -159,8 +181,11 @@ export default function PackagePlanPage() {
       maxRules: plan.maxRules,
       price: plan.price,
       hidden: plan.hidden,
-      userSpeedLimit: plan.userSpeedLimit ?? 0
+      userSpeedLimit: plan.userSpeedLimit ?? 0,
+      flowResetTime: plan.flowResetTime ?? -1,
+      flowResetClock: plan.flowResetClock || '00:00'
     });
+    setCustomReset(isCustomReset(plan.flowResetTime ?? -1, plan.flowResetClock));
     setErrors({});
     setModalOpen(true);
   };
@@ -293,6 +318,7 @@ export default function PackagePlanPage() {
               <TableColumn>有效期</TableColumn>
               <TableColumn>规则数</TableColumn>
               <TableColumn>用户限速</TableColumn>
+              <TableColumn>流量重置</TableColumn>
               <TableColumn>价格</TableColumn>
               <TableColumn>隐藏</TableColumn>
               <TableColumn align="end">操作</TableColumn>
@@ -308,6 +334,7 @@ export default function PackagePlanPage() {
                   <TableCell>{plan.durationDays > 0 ? `${plan.durationDays} 天` : '永久'}</TableCell>
                   <TableCell>{plan.maxRules > 0 ? plan.maxRules : '不限'}</TableCell>
                   <TableCell>{plan.userSpeedLimit > 0 ? `${plan.userSpeedLimit} Mbps` : '不限速'}</TableCell>
+                  <TableCell>{formatFlowReset(plan.flowResetTime, plan.flowResetClock)}</TableCell>
                   <TableCell>{plan.price > 0 ? `${plan.price} 元` : '免费'}</TableCell>
                   <TableCell>{plan.hidden === 1 ? '是' : '否'}</TableCell>
                   <TableCell>
@@ -333,6 +360,16 @@ export default function PackagePlanPage() {
               </ModalHeader>
               <ModalBody>
                 <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <FieldLabel tip="隐藏后该套餐不会出现在商城列表中，仍可通过兑换码兑换">商城隐藏</FieldLabel>
+                    <Switch
+                      size="sm"
+                      aria-label="商城隐藏"
+                      isSelected={form.hidden === 1}
+                      onValueChange={(checked) => setForm(prev => ({ ...prev, hidden: checked ? 1 : 0 }))}
+                    />
+                  </div>
+
                   <Input labelPlacement="outside-top"
                     size="sm" autoComplete="off"
                     label="名称"
@@ -421,13 +458,56 @@ export default function PackagePlanPage() {
                     endContent={<span className="px-2 py-0.5 -mr-1 rounded-md bg-default-100 dark:bg-default-50/10 text-default-500 text-xs font-medium">Mbps</span>}
                   />
 
-                  <div className="flex items-center justify-between">
-                    <span className="text-small text-foreground">在商城隐藏</span>
-                    <Switch
-                      isSelected={form.hidden === 1}
-                      onValueChange={(checked) => setForm(prev => ({ ...prev, hidden: checked ? 1 : 0 }))}
-                    />
-                  </div>
+                  <Select labelPlacement="outside-top" listboxProps={{ emptyContent: <EmptyState compact /> }}
+                    size="sm"
+                    label={<HelpTooltip content="用户购买或续费该套餐时，会把这里的流量重置设置写入该用户；选择「沿用用户设置」则不修改用户原有的重置设置">流量重置</HelpTooltip>}
+                    selectedKeys={[customReset ? 'custom' : form.flowResetTime < 0 ? 'inherit' : form.flowResetTime.toString()]}
+                    onSelectionChange={(keys) => {
+                      const value = Array.from(keys)[0] as string;
+                      if (!value) return;
+                      if (value === 'custom') {
+                        // 选择「自定义」：沿用当前已选的重置日（原先是「沿用」或「不重置」则默认每月 1 日），重置时刻由下方输入框决定
+                        setCustomReset(true);
+                        setForm(prev => ({ ...prev, flowResetTime: prev.flowResetTime > 0 ? prev.flowResetTime : 1 }));
+                      } else {
+                        // 选择固定的每月几号、「不重置」或「沿用用户设置」：重置时刻恢复为默认 0 点
+                        setCustomReset(false);
+                        setForm(prev => ({ ...prev, flowResetTime: value === 'inherit' ? -1 : Number(value), flowResetClock: '00:00' }));
+                      }
+                    }}
+                    variant="bordered"
+                  >
+                    <>
+                      <SelectItem key="inherit" textValue="沿用用户设置">沿用用户设置</SelectItem>
+                      <SelectItem key="0" textValue="不重置">不重置</SelectItem>
+                      <SelectItem key="custom" textValue="自定义">自定义</SelectItem>
+                      {Array.from({ length: PRESET_RESET_DAYS }, (_, i) => i + 1).map(day => (
+                        <SelectItem key={day.toString()} textValue={`每月${day}号`}>每月{day}号</SelectItem>
+                      ))}
+                    </>
+                  </Select>
+
+                  {customReset && (
+                    <>
+                      <div>
+                        <p className="pb-1.5 text-small font-medium text-foreground">自定义重置日期</p>
+                        <DayOfMonthPicker
+                          size="sm"
+                          value={String(form.flowResetTime)}
+                          onChange={(value) => setForm(prev => ({ ...prev, flowResetTime: Number(value) }))}
+                        />
+                      </div>
+                      <Input labelPlacement="outside-top"
+                        size="sm" autoComplete="off"
+                        label="自定义重置时刻"
+                        type="time"
+                        value={form.flowResetClock}
+                        onChange={(e) => setForm(prev => ({ ...prev, flowResetClock: e.target.value || '00:00' }))}
+                        variant="bordered"
+                      />
+                    </>
+                  )}
+
                 </div>
               </ModalBody>
               <ModalFooter>

@@ -3,7 +3,10 @@ package com.admin.common.dto;
 import lombok.Data;
 
 import javax.validation.constraints.NotBlank;
+import javax.validation.constraints.Max;
+import javax.validation.constraints.Min;
 import javax.validation.constraints.NotNull;
+import javax.validation.constraints.Pattern;
 
 import java.math.BigDecimal;
 
@@ -43,4 +46,17 @@ public class PackagePlanUpdateDto {
      * 套餐用户限速（Mbps，0 为不限速）
      */
     private Integer userSpeedLimit;
+
+    /**
+     * 套餐流量重置日（-1 沿用用户当前设置，0 不重置，1-31 每月第几日）
+     */
+    @Min(value = -1, message = "流量重置日不合法")
+    @Max(value = 31, message = "流量重置日不合法")
+    private Long flowResetTime;
+
+    /**
+     * 套餐流量重置时刻（HH:mm），留空按 00:00 处理
+     */
+    @Pattern(regexp = "^$|^([01]\\d|2[0-3]):[0-5]\\d$", message = "流量重置时刻格式应为 HH:mm")
+    private String flowResetClock;
 }

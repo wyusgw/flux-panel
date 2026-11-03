@@ -22,7 +22,7 @@ public class GlobalExceptionHandler {
         BindingResult result = e.getBindingResult();
         ObjectError objectError = result.getAllErrors().stream().findFirst().get();
         log.info("实体校验异常：----------------{}", objectError.getDefaultMessage());
-        return R.err(500, objectError.getDefaultMessage());
+        return R.err(400, objectError.getDefaultMessage());
     }
 
     // 未授权异常捕获

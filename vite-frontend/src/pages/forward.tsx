@@ -11,12 +11,15 @@ import type { SortDescriptor } from "@heroui/table";
 import { TablePagination } from "@/components/table-pagination";
 import { FieldLabel, UnitField } from "@/components/form-field";
 import { Chip } from "@heroui/chip";
+import { Popover, PopoverTrigger, PopoverContent } from "@heroui/popover";
+import { Checkbox, CheckboxGroup } from "@heroui/checkbox";
 import { Spinner } from "@heroui/spinner";
 import { Accordion, AccordionItem } from "@heroui/accordion";
 import toast from 'react-hot-toast';
 import { copyText } from '@/utils/clipboard';
 import { EmptyState } from "@/components/empty-state";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { showApiFailure } from "@/components/error-dialog";
 import { ToastWarningIcon } from "@/components/toast-icons";
 import { HelpTooltip } from "@/components/help-tooltip";
 import { DiagnosisResultItem, DispatchStats, DiagnosisLeg, DiagnosisPanelFeedback } from "@/components/tcp-ping-diagnosis";
@@ -46,6 +49,7 @@ import RefreshButton from "@/components/refresh-button";
 // ========== 图标（转发规则页专用的一批简单线性小图标） ==========
 const IconSearch = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" /><path strokeLinecap="round" d="M21 21l-4.3-4.3" /></svg>;
 const IconStats = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 20V10M12 20V4M20 20v-7" /></svg>;
+const IconFilter = () => <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M3 4h18l-7 8.5V19l-4 2v-8.5L3 4z" /></svg>;
 const IconGroup = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" /></svg>;
 const IconAddSingle = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>;
 const IconImport = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 4h10l6 6v10a1 1 0 01-1 1H4a1 1 0 01-1-1V5a1 1 0 011-1z" /><path strokeLinecap="round" strokeLinejoin="round" d="M12 12v6m0-6l-3 3m3-3l3 3" /></svg>;
@@ -200,6 +204,8 @@ export default function ForwardPage() {
   // 表格列排序（未点击表头时保持规则原有的自定义顺序）与分页
   const [sortDescriptor, setSortDescriptor] = useState<SortDescriptor | undefined>(undefined);
   const [page, setPage] = useState(1);
+  // 状态列筛选：空数组表示不过滤（显示全部状态），否则只显示选中状态的规则
+  const [statusFilter, setStatusFilter] = useState<string[]>([]);
   const [pageSize, setPageSize] = useState(10);
   const [batchLoading, setBatchLoading] = useState(false);
 
@@ -519,23 +525,23 @@ export default function ForwardPage() {
     const newErrors: {[key: string]: string} = {};
     
     if (!form.name.trim()) {
-      newErrors.name = '请输入转发名称';
+      newErrors.name = '名称不能为空';
     } else if (form.name.length < 2 || form.name.length > 50) {
       newErrors.name = '转发名称长度应在2-50个字符之间';
     }
     
     if (entryMode === 'tunnel') {
       if (!form.tunnelId) {
-        newErrors.tunnelId = '请选择关联隧道';
+        newErrors.tunnelId = '关联隧道不能为空';
       }
     } else {
       if (!form.inDeviceGroupId) {
-        newErrors.inDeviceGroupId = '请选择入口设备组';
+        newErrors.inDeviceGroupId = '入口设备组不能为空';
       }
     }
 
     if (!form.remoteAddr.trim()) {
-      newErrors.remoteAddr = '请输入远程地址';
+      newErrors.remoteAddr = '远程地址不能为空';
     } else {
       // 验证地址格式
       const addresses = form.remoteAddr.split('\n').map(addr => addr.trim()).filter(addr => addr);
@@ -566,8 +572,16 @@ export default function ForwardPage() {
     if (form.ipLimit < 0) newErrors.ipLimit = 'IP 限制不能小于0';
     if (form.connLimit < 0) newErrors.connLimit = '连接数限制不能小于0';
 
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    // 校验不通过时不再把输入框标红，而是弹出失败提示框（与服务端返回失败时的样式一致），
+    // 标题带 400；一次只提示表单里排在最前面的那一项，改好再提交时依次提示下一项，不把所有问题堆在同一个框里
+    const messages = Object.values(newErrors);
+    if (messages.length > 0) {
+      setErrors({});
+      showApiFailure(isEdit ? '规则更新' : '规则创建', { code: 400, msg: messages[0] });
+      return false;
+    }
+    setErrors({});
+    return true;
   };
 
   // 新增转发
@@ -652,7 +666,7 @@ export default function ForwardPage() {
             setDeleteModalOpen(false);
             loadData();
           } else {
-            toast.error(forceRes.msg || '强制删除失败');
+            showApiFailure('规则强制删除', forceRes);
           }
         }
       }
@@ -742,7 +756,7 @@ export default function ForwardPage() {
         setModalOpen(false);
         loadData();
       } else {
-        toast.error(res.msg || '操作失败');
+        showApiFailure(isEdit ? '规则更新' : '规则创建', res);
       }
     } catch (error) {
       console.error('提交失败:', error);
@@ -791,7 +805,7 @@ export default function ForwardPage() {
             ? { ...f, serviceRunning: !targetState }
             : f
         ));
-        toast.error(res.msg || '操作失败');
+        showApiFailure(targetState ? '规则启动' : '规则暂停', res);
       }
     } catch (error) {
       // 操作失败，恢复UI状态
@@ -1216,6 +1230,11 @@ export default function ForwardPage() {
       );
     }
 
+    // 状态筛选：表头「状态」列的漏斗图标，可多选
+    if (statusFilter.length > 0) {
+      filteredForwards = filteredForwards.filter(forward => statusFilter.includes(String(forward.status)));
+    }
+
     return [...filteredForwards].sort((a, b) => (a.inx ?? 0) - (b.inx ?? 0) || a.id - b.id);
   };
 
@@ -1446,8 +1465,8 @@ export default function ForwardPage() {
         </div>
 
         {/* 规则列表 */}
-        {myForwards.length > 0 ? (
-            <div className="-mx-4 -mb-4">
+        {/* 没有规则或筛选后没有匹配时也保留表格：表头（含状态筛选图标）始终可见，表体显示「暂无数据」 */}
+        <div className="-mx-4 -mb-4">
               <div className="settings-table-scroll">
                 <Table
                   removeWrapper
@@ -1464,10 +1483,41 @@ export default function ForwardPage() {
                     <TableColumn key="in" allowsSorting>入口</TableColumn>
                     <TableColumn key="out" allowsSorting>出口</TableColumn>
                     <TableColumn key="flow" allowsSorting>已用流量</TableColumn>
-                    <TableColumn key="status" allowsSorting>状态</TableColumn>
+                    <TableColumn key="status">
+                      <div className="flex items-center gap-1.5">
+                        状态
+                        <Popover placement="bottom-start">
+                          <PopoverTrigger>
+                            <button
+                              type="button"
+                              aria-label="筛选状态"
+                              title="筛选状态"
+                              className={`inline-flex items-center justify-center rounded p-0.5 transition-colors ${statusFilter.length > 0 ? 'text-primary' : 'text-default-400 hover:text-default-600'}`}
+                            >
+                              <IconFilter />
+                            </button>
+                          </PopoverTrigger>
+                          <PopoverContent>
+                            <div className="p-2 min-w-[120px]">
+                              <CheckboxGroup
+                                aria-label="状态筛选"
+                                size="sm"
+                                value={statusFilter}
+                                onValueChange={(values) => { setStatusFilter(values); setPage(1); }}
+                              >
+                                <Checkbox value="1">正常</Checkbox>
+                                <Checkbox value="0">暂停</Checkbox>
+                                <Checkbox value="-1">异常</Checkbox>
+                              </CheckboxGroup>
+                              <Button size="sm" variant="light" className="mt-2 w-full" isDisabled={statusFilter.length === 0} onPress={() => { setStatusFilter([]); setPage(1); }}>清除筛选</Button>
+                            </div>
+                          </PopoverContent>
+                        </Popover>
+                      </div>
+                    </TableColumn>
                     <TableColumn key="actions" align="end">操作</TableColumn>
                   </TableHeader>
-                  <TableBody items={displayForwards}>
+                  <TableBody items={displayForwards} emptyContent={<EmptyState />}>
                     {(forward) => {
                       const statusDisplay = getStatusDisplay(forward.status);
                       const strategyDisplay = getStrategyDisplay(forward.strategy);
@@ -1538,18 +1588,17 @@ export default function ForwardPage() {
                 </Table>
               </div>
               <div className="border-t border-default-100">
-                <TablePagination
-                  total={myForwards.length}
-                  page={Math.min(page, Math.max(1, Math.ceil(myForwards.length / pageSize)))}
-                  pageSize={pageSize}
-                  onPageChange={setPage}
-                  onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}
-                />
+                {myForwards.length > 0 && (
+                  <TablePagination
+                    total={myForwards.length}
+                    page={Math.min(page, Math.max(1, Math.ceil(myForwards.length / pageSize)))}
+                    pageSize={pageSize}
+                    onPageChange={setPage}
+                    onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}
+                  />
+                )}
               </div>
             </div>
-        ) : (
-          <EmptyState />
-        )}
         </CardBody>
         </Card>
 

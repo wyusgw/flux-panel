@@ -20,7 +20,7 @@ import java.util.Map;
  * @since 2026-09-21
  */
 @RestController
-@RequestMapping("/api/v1/redeem-code")
+@RequestMapping("/api/v1/redeemCode")
 @CrossOrigin
 public class RedeemCodeController extends BaseController {
 
@@ -29,7 +29,7 @@ public class RedeemCodeController extends BaseController {
 
     @LogAnnotation
     @RequireRole
-    @PostMapping("/batch-create")
+    @PostMapping("/batchCreate")
     public R batchCreate(@Validated @RequestBody RedeemCodeBatchDto dto) {
         return redeemCodeService.batchCreate(dto);
     }

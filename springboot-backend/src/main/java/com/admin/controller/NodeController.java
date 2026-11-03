@@ -63,7 +63,7 @@ public class NodeController extends BaseController {
 
     @LogAnnotation
     @RequireRole
-    @PostMapping("/reset-secret")
+    @PostMapping("/resetSecret")
     public R resetSecret(@RequestBody Map<String, Object> params) {
         Long id = Long.valueOf(params.get("id").toString());
         return nodeService.resetSecret(id);

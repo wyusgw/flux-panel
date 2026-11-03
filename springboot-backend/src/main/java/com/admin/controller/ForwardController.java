@@ -60,7 +60,7 @@ public class ForwardController extends BaseController {
     }
 
     @LogAnnotation
-    @PostMapping("/force-delete")
+    @PostMapping("/forceDelete")
     public R forceDelete(@RequestBody Map<String, Object> params) {
         Long id = Long.valueOf(params.get("id").toString());
         return forwardService.forceDeleteForward(id);
@@ -98,7 +98,7 @@ public class ForwardController extends BaseController {
      * @return 更新结果
      */
     @LogAnnotation
-    @PostMapping("/update-order")
+    @PostMapping("/updateOrder")
     public R updateForwardOrder(@RequestBody Map<String, Object> params) {
         return forwardService.updateForwardOrder(params);
     }
@@ -107,7 +107,7 @@ public class ForwardController extends BaseController {
      * "我的转发规则"页「统计数据」弹窗：当前用户今日/昨日累计流量（不计流量倍率的原始字节数）
      */
     @LogAnnotation
-    @PostMapping("/daily-flow")
+    @PostMapping("/dailyFlow")
     public R dailyFlow() {
         Integer userId = JwtUtil.getUserIdFromToken();
         long[] flows = userDailyRawFlowService.getTodayAndYesterday(userId);

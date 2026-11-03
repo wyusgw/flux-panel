@@ -18,7 +18,7 @@ import org.springframework.web.bind.annotation.*;
  * @since 2026-09-27
  */
 @RestController
-@RequestMapping("/api/v1/looking-glass")
+@RequestMapping("/api/v1/lookingGlass")
 @CrossOrigin
 public class LookingGlassController extends BaseController {
 

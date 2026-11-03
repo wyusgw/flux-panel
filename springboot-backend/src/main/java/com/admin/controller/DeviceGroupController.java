@@ -22,7 +22,7 @@ import java.util.Map;
  * @since 2026-09-21
  */
 @RestController
-@RequestMapping("/api/v1/device-group")
+@RequestMapping("/api/v1/deviceGroup")
 @CrossOrigin
 public class DeviceGroupController extends BaseController {
 
@@ -60,7 +60,7 @@ public class DeviceGroupController extends BaseController {
 
     @LogAnnotation
     @RequireRole
-    @PostMapping("/batch-delete")
+    @PostMapping("/batchDelete")
     public R batchDelete(@RequestBody Map<String, Object> params) {
         @SuppressWarnings("unchecked")
         List<Object> rawIds = (List<Object>) params.get("ids");
@@ -82,7 +82,7 @@ public class DeviceGroupController extends BaseController {
      */
     @LogAnnotation
     @RequireRole
-    @PostMapping("/offline-config")
+    @PostMapping("/offlineConfig")
     public R updateOfflineConfig(@RequestBody Map<String, Object> params) {
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> groups = (List<Map<String, Object>>) params.get("groups");

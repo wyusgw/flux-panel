@@ -20,7 +20,7 @@ import java.util.Map;
  * @since 2026-09-24
  */
 @RestController
-@RequestMapping("/api/v1/invite-code")
+@RequestMapping("/api/v1/inviteCode")
 @CrossOrigin
 public class InviteCodeController extends BaseController {
 
@@ -29,7 +29,7 @@ public class InviteCodeController extends BaseController {
 
     @LogAnnotation
     @RequireRole
-    @PostMapping("/batch-create")
+    @PostMapping("/batchCreate")
     public R batchCreate(@Validated @RequestBody InviteCodeBatchDto dto) {
         return inviteCodeService.batchCreate(dto);
     }

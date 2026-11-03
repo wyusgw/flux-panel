@@ -22,7 +22,7 @@ import java.util.Map;
  * @since 2026-09-21
  */
 @RestController
-@RequestMapping("/api/v1/user-group")
+@RequestMapping("/api/v1/userGroup")
 @CrossOrigin
 public class UserGroupController extends BaseController {
 
@@ -69,7 +69,7 @@ public class UserGroupController extends BaseController {
 
     @LogAnnotation
     @RequireRole
-    @PostMapping("/batch-delete")
+    @PostMapping("/batchDelete")
     public R batchDelete(@RequestBody Map<String, Object> params) {
         @SuppressWarnings("unchecked")
         List<Object> rawIds = (List<Object>) params.get("ids");

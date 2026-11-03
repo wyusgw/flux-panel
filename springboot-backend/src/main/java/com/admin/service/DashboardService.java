@@ -12,4 +12,9 @@ public interface DashboardService {
      * 今日/昨日系统总流量、用户流量排行、节点流量排行（均为不计流量倍率的原始流量）
      */
     R getFlowStats();
+
+    /**
+     * 最近 24 小时的节点在线数量趋势（每 5 分钟一个采样点：时间、在线数、节点总数）
+     */
+    R getNodeOnlineTrend();
 }

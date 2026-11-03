@@ -3,6 +3,9 @@ package com.admin.service.impl;
 import com.admin.common.lang.R;
 import com.admin.entity.Node;
 import com.admin.entity.NodeDailyRawFlow;
+import com.admin.entity.NodeOnlineHistory;
+import com.admin.mapper.NodeOnlineHistoryMapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.admin.entity.User;
 import com.admin.entity.UserDailyRawFlow;
 import com.admin.service.DashboardService;
@@ -44,6 +47,9 @@ public class DashboardServiceImpl implements DashboardService {
     @Resource
     private NodeService nodeService;
 
+    @Resource
+    private NodeOnlineHistoryMapper nodeOnlineHistoryMapper;
+
     @Override
     public R getFlowStats() {
         String today = LocalDate.now().format(DAY_FORMAT);
@@ -65,6 +71,22 @@ public class DashboardServiceImpl implements DashboardService {
         result.put("todayNodeRanking", rankNodes(todayNodeFlows, nodeNames));
         result.put("yesterdayNodeRanking", rankNodes(yesterdayNodeFlows, nodeNames));
         return R.ok(result);
+    }
+
+    @Override
+    public R getNodeOnlineTrend() {
+        long since = System.currentTimeMillis() - 24L * 60 * 60 * 1000;
+        List<NodeOnlineHistory> records = nodeOnlineHistoryMapper.selectList(new QueryWrapper<NodeOnlineHistory>()
+                .ge("sample_time", since)
+                .orderByAsc("sample_time"));
+        List<Map<String, Object>> points = records.stream().map(record -> {
+            Map<String, Object> point = new LinkedHashMap<>();
+            point.put("time", record.getSampleTime());
+            point.put("online", record.getOnlineCount());
+            point.put("total", record.getTotalCount());
+            return point;
+        }).collect(Collectors.toList());
+        return R.ok(points);
     }
 
     private long sumRawBytes(List<UserDailyRawFlow> flows) {

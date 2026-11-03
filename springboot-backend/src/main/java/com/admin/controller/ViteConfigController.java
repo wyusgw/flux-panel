@@ -29,7 +29,7 @@ public class ViteConfigController extends BaseController {
      * 获取后端信息（构建版本、当前服务器时间等），供前端「主页 - 后端信息」面板展示
      */
     @LogAnnotation
-    @PostMapping("/backend-info")
+    @PostMapping("/backendInfo")
     public R getBackendInfo() {
         Map<String, Object> info = new LinkedHashMap<>();
         info.put("time", System.currentTimeMillis() / 1000);
@@ -75,7 +75,7 @@ public class ViteConfigController extends BaseController {
      */
     @LogAnnotation
     @RequireRole
-    @PostMapping("/update-single")
+    @PostMapping("/updateSingle")
     public R updateConfig(@RequestBody Map<String, Object> params) {
         String name = params.get("name").toString();
         String value = params.get("value").toString();

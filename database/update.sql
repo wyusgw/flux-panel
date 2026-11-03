@@ -1380,3 +1380,14 @@ SET @sql = (
 PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
+
+-- 创建 node_online_history 表（如果不存在）：节点在线数量的定时采样记录（每 5 分钟一条，默认保留 7 天），
+-- 供管理员仪表盘「节点在线」曲线图使用
+CREATE TABLE IF NOT EXISTS `node_online_history` (
+  `id` int(10) NOT NULL AUTO_INCREMENT,
+  `sample_time` bigint(20) NOT NULL,
+  `online_count` int(10) NOT NULL DEFAULT '0',
+  `total_count` int(10) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id`),
+  KEY `idx_sample_time` (`sample_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

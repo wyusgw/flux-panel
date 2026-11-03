@@ -16,11 +16,11 @@ import java.util.Objects;
 
 @RestController
 @CrossOrigin
-@RequestMapping("/api/v1/open_api")
+@RequestMapping("/api/v1/openApi")
 public class OpenApiController extends BaseController {
 
     @LogAnnotation
-    @GetMapping("/sub_store")
+    @GetMapping("/subStore")
     public Object create(
             @RequestParam("user") String user,
             @RequestParam("pwd") String pwd,

@@ -25,8 +25,15 @@ public class DashboardController {
 
     @LogAnnotation
     @RequireRole
-    @PostMapping("/flow-stats")
+    @PostMapping("/flowStats")
     public R getFlowStats() {
         return dashboardService.getFlowStats();
+    }
+
+    @LogAnnotation
+    @RequireRole
+    @PostMapping("/nodeOnlineTrend")
+    public R getNodeOnlineTrend() {
+        return dashboardService.getNodeOnlineTrend();
     }
 }

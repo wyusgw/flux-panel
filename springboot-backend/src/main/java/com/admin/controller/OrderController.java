@@ -58,14 +58,14 @@ public class OrderController extends BaseController {
 
     @LogAnnotation
     @RequireRole
-    @PostMapping("/manual-create")
+    @PostMapping("/manualCreate")
     public R manualCreate(@RequestBody Map<String, Object> params) {
         return orderService.manualCreateOrder(params);
     }
 
     @LogAnnotation
     @RequireRole
-    @PostMapping("/update-status")
+    @PostMapping("/updateStatus")
     public R updateStatus(@RequestBody Map<String, Object> params) {
         Long id = Long.valueOf(params.get("id").toString());
         Integer orderStatus = Integer.valueOf(params.get("orderStatus").toString());
@@ -74,7 +74,7 @@ public class OrderController extends BaseController {
 
     @LogAnnotation
     @RequireRole
-    @PostMapping("/batch-delete")
+    @PostMapping("/batchDelete")
     public R batchDelete(@RequestBody Map<String, Object> params) {
         @SuppressWarnings("unchecked")
         List<Object> rawIds = (List<Object>) params.get("ids");

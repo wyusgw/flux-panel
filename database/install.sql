@@ -145,6 +145,20 @@ CREATE TABLE `node_daily_raw_flow` (
 -- --------------------------------------------------------
 
 --
+-- 表的结构 `node_online_history`：节点在线数量的定时采样记录（每 5 分钟一条，默认保留 7 天），
+-- 供管理员仪表盘「节点在线」曲线图使用
+--
+
+CREATE TABLE `node_online_history` (
+  `id` int(10) NOT NULL,
+  `sample_time` bigint(20) NOT NULL,
+  `online_count` int(10) NOT NULL DEFAULT '0',
+  `total_count` int(10) NOT NULL DEFAULT '0'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- --------------------------------------------------------
+
+--
 -- 表的结构 `node_traffic_cycle`：节点状态页的周期流量（默认每月 1 日重置，重置日可在站点设置 node_traffic_reset_day 调整），
 -- 由节点上报的网卡累计流量按差值累加得到，服务器重启导致网卡计数器归零时也不会丢失已累计的部分
 --
@@ -603,6 +617,13 @@ ALTER TABLE `node_daily_raw_flow`
   ADD UNIQUE KEY `uniq_node_day` (`node_id`,`day`);
 
 --
+-- 表的索引 `node_online_history`
+--
+ALTER TABLE `node_online_history`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_sample_time` (`sample_time`);
+
+--
 -- 表的索引 `node_traffic_cycle`
 --
 ALTER TABLE `node_traffic_cycle`
@@ -781,6 +802,12 @@ ALTER TABLE `user_daily_raw_flow`
 -- 使用表AUTO_INCREMENT `node_daily_raw_flow`
 --
 ALTER TABLE `node_daily_raw_flow`
+  MODIFY `id` int(10) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=1;
+
+--
+-- 使用表AUTO_INCREMENT `node_online_history`
+--
+ALTER TABLE `node_online_history`
   MODIFY `id` int(10) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=1;
 
 --

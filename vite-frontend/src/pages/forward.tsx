@@ -1663,6 +1663,8 @@ export default function ForwardPage() {
                       variant="bordered"
                     />
                     
+                    {/* 转发方式：「入口/出口」按入口、出口设备组转发；「隧道转发」走已分配的隧道。
+                        两种方式始终都显示，隧道下拉里只列出分配了权限的隧道，没有可用隧道时下拉里会提示 */}
                     <div className="flex gap-2">
                       <Button
                         size="sm"
@@ -1671,7 +1673,7 @@ export default function ForwardPage() {
                         onPress={() => setEntryMode('device')}
                         className="flex-1"
                       >
-                        入口/出口设备组
+                        入口/出口
                       </Button>
                       <Button
                         size="sm"
@@ -1680,7 +1682,7 @@ export default function ForwardPage() {
                         onPress={() => setEntryMode('tunnel')}
                         className="flex-1"
                       >
-                        选择隧道
+                        隧道转发
                       </Button>
                     </div>
 
@@ -1755,7 +1757,7 @@ export default function ForwardPage() {
                         size="sm"
                         labelPlacement="outside-top"
                         label="选择隧道"
-                        listboxProps={{ emptyContent: <EmptyState compact /> }}
+                        listboxProps={{ emptyContent: <EmptyState compact text="暂无可用隧道" /> }}
                         placeholder="请选择关联的隧道"
                         selectedKeys={form.tunnelId ? [form.tunnelId.toString()] : []}
                         onSelectionChange={(keys) => {
@@ -2380,7 +2382,7 @@ export default function ForwardPage() {
           </ModalContent>
         </Modal>
 
-        {/* 管理分组模态框 */}
+        {/* 分组管理侧栏：从右侧滑出，整列高度，不遮挡的部分点击空白处关闭 */}
         <Modal
           isOpen={groupManageModalOpen}
           onOpenChange={(open) => {
@@ -2390,56 +2392,75 @@ export default function ForwardPage() {
               setGroupEditingId(null);
             }
           }}
-          size="lg"
-          scrollBehavior="outside"
+          hideCloseButton
+          scrollBehavior="inside"
           backdrop="blur"
-          placement="center"
+          radius="none"
+          classNames={{
+            wrapper: 'justify-end items-stretch',
+            base: 'm-0 h-full max-h-full w-[380px] max-w-full rounded-none',
+          }}
+          motionProps={{
+            variants: {
+              enter: { x: 0, opacity: 1, transition: { duration: 0.25, ease: 'easeOut' } },
+              exit: { x: 80, opacity: 0, transition: { duration: 0.18, ease: 'easeIn' } },
+            },
+            initial: { x: 80, opacity: 0 },
+          }}
         >
           <ModalContent>
-            {() => (
+            {(onClose) => (
               <>
-                <ModalHeader className="flex flex-col gap-1">
-                  <h2 className="text-lg font-semibold">管理分组</h2>
+                <ModalHeader className="flex items-center gap-3 px-5 py-4 border-b border-default-100">
+                  <button type="button" aria-label="关闭" onClick={onClose} className="inline-flex items-center justify-center text-default-500 hover:text-foreground transition-colors">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" /></svg>
+                  </button>
+                  <h2 className="text-base font-semibold">分组管理</h2>
                 </ModalHeader>
-                <ModalBody>
-                  <div className="flex gap-2">
+                <ModalBody className="px-5 py-5 gap-5">
+                  <div className="rounded-medium border border-default-200 overflow-hidden">
+                    <div className="px-4 py-3 border-b border-default-200 text-sm font-semibold">现有分组列表</div>
+                    {scopedForwardGroups.length === 0 ? (
+                      <div className="py-6"><EmptyState compact /></div>
+                    ) : (
+                      <div className="max-h-72 overflow-y-auto divide-y divide-default-100">
+                        {scopedForwardGroups.map(group => (
+                          <div key={group.id} className="flex items-center justify-between gap-2 px-4 py-2.5">
+                            <span className="text-sm text-foreground min-w-0 truncate">{group.name}（{group.ruleCount} 条规则）</span>
+                            <div className="flex gap-1 flex-shrink-0">
+                              <Button size="sm" variant="light" onPress={() => handleEditGroupStart(group)}>编辑</Button>
+                              <Button size="sm" variant="light" color="danger" onPress={() => handleDeleteGroup(group)}>删除</Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <FieldLabel>{groupEditingId ? '编辑分组' : '新增分组'}</FieldLabel>
                     <Input
-                      size="sm" autoComplete="off"
-                      placeholder="分组名称"
+                      aria-label="分组名称" size="sm" autoComplete="off" variant="bordered"
+                      placeholder="请输入分组名称"
                       value={groupNameInput}
                       onChange={(e) => setGroupNameInput(e.target.value)}
-                      variant="bordered"
-                      className="flex-1"
                     />
-                    <Button color="default" onPress={handleCreateGroup} isLoading={groupSubmitLoading}>
-                      {groupEditingId ? '保存' : '添加'}
-                    </Button>
-                    {groupEditingId && (
-                      <Button variant="light" onPress={() => { setGroupEditingId(null); setGroupNameInput(''); }}>
-                        取消
+                    <div className="mt-3 flex items-center gap-2">
+                      <Button size="sm" color="primary" onPress={handleCreateGroup} isLoading={groupSubmitLoading}>
+                        {groupEditingId ? '保 存' : '添 加'}
                       </Button>
-                    )}
+                      {groupEditingId && (
+                        <Button size="sm" variant="light" onPress={() => { setGroupEditingId(null); setGroupNameInput(''); }}>
+                          取消
+                        </Button>
+                      )}
+                    </div>
                   </div>
-                  <div className="space-y-2 mt-2 max-h-64 overflow-y-auto">
-                    {scopedForwardGroups.length === 0 && (
-                      <p className="text-small text-default-500">暂无分组</p>
-                    )}
-                    {scopedForwardGroups.map(group => (
-                      <div key={group.id} className="flex items-center justify-between p-2 rounded-lg bg-default-100">
-                        <span className="text-small text-foreground">{group.name}（{group.ruleCount} 条规则）</span>
-                        <div className="flex gap-2">
-                          <Button size="sm" variant="light" onPress={() => handleEditGroupStart(group)}>编辑</Button>
-                          <Button size="sm" variant="light" color="danger" onPress={() => handleDeleteGroup(group)}>删除</Button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+
+                  <p className="border-l-2 border-default-300 bg-default-50 dark:bg-default-100/30 px-3 py-2 text-xs leading-relaxed text-default-600">
+                    若您对项目进行了添加/删除操作，分组的项目数量可能不会及时更新。可以点击“刷新”按钮更新。
+                  </p>
                 </ModalBody>
-                <ModalFooter>
-                  <Button variant="light" onPress={() => setGroupManageModalOpen(false)}>
-                    关闭
-                  </Button>
-                </ModalFooter>
               </>
             )}
           </ModalContent>

@@ -26,7 +26,7 @@ import java.util.Map;
 public class TcpPingDiagnosisUtil {
 
     /** 每个目标默认做几次 TCP 连接尝试（参考 ping 命令逐次列出结果），可在站点设置 diagnosis_ping_count 中调整 */
-    public static final int DEFAULT_PING_COUNT = 15;
+    public static final int DEFAULT_PING_COUNT = 4;
     public static final int MIN_PING_COUNT = 1;
     public static final int MAX_PING_COUNT = 30;
     private static final String CONFIG_PING_COUNT = "diagnosis_ping_count";
@@ -47,6 +47,35 @@ public class TcpPingDiagnosisUtil {
         void setViteConfigService(ViteConfigService service) {
             TcpPingDiagnosisUtil.viteConfigService = service;
         }
+    }
+
+    /**
+     * 汇总诊断的面板反馈（发出 / 失败 / 回收任务）：每一次连接尝试算一个任务，
+     * 所以统计的是入口端反馈与出口端反馈各段连接明细的总和，而不是「段」的个数。
+     * <ul>
+     *   <li>sent：发出任务 = 每段应做的连接次数之和</li>
+     *   <li>failed：发出失败 = 下发失败（没有拿到节点反馈）的那些段的连接次数之和</li>
+     *   <li>recovered：回收任务 = 实际收到的连接反馈条数之和（旧版节点没有逐次明细时，按该段应做的次数计）</li>
+     * </ul>
+     */
+    public static Map<String, Object> buildDispatchStats(List<TcpPingDiagnosisResult> results) {
+        int pingCount = getPingCount();
+        long sent = 0, failed = 0, recovered = 0;
+        for (TcpPingDiagnosisResult result : results) {
+            sent += pingCount;
+            if (result.isDispatchFailed()) {
+                failed += pingCount;
+            }
+            if (result.isRecovered()) {
+                List<Map<String, Object>> attempts = result.getAttempts();
+                recovered += (attempts != null && !attempts.isEmpty()) ? attempts.size() : pingCount;
+            }
+        }
+        Map<String, Object> stats = new HashMap<>();
+        stats.put("sent", sent);
+        stats.put("failed", failed);
+        stats.put("recovered", recovered);
+        return stats;
     }
 
     /** 当前生效的诊断次数：站点设置未配置或非法时用默认值，超出范围时收敛到 [MIN, MAX] */

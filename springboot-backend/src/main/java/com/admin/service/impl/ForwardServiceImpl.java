@@ -625,12 +625,8 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         }
 
         // 7. 构建诊断报告
-        long dispatchFailedCount = results.stream().filter(TcpPingDiagnosisResult::isDispatchFailed).count();
-        long recoveredCount = results.stream().filter(TcpPingDiagnosisResult::isRecovered).count();
-        Map<String, Object> dispatchStats = new HashMap<>();
-        dispatchStats.put("sent", results.size());
-        dispatchStats.put("failed", dispatchFailedCount);
-        dispatchStats.put("recovered", recoveredCount);
+        // 面板反馈按连接尝试统计：入口端反馈与出口端反馈的连接明细合计
+        Map<String, Object> dispatchStats = TcpPingDiagnosisUtil.buildDispatchStats(results);
 
         Map<String, Object> diagnosisReport = new HashMap<>();
         diagnosisReport.put("forwardId", id);

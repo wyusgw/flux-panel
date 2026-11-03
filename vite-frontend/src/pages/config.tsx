@@ -214,8 +214,8 @@ const CONFIG_ITEMS: ConfigItem[] = [
     key: 'diagnosis_ping_count',
     section: 'basic',
     label: '诊断连接次数',
-    placeholder: '15',
-    description: '转发、隧道诊断时每段做几次 TCP 连接，范围 1-30，次数越多结果越详细、耗时也越长，留空则按 15 次处理',
+    placeholder: '4',
+    description: '转发、隧道诊断时每段做几次 TCP 连接，范围 1-30，次数越多结果越详细、耗时也越长，留空则按 4 次处理',
     type: 'input'
   },
   {

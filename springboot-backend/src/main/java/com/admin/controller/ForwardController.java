@@ -118,12 +118,20 @@ public class ForwardController extends BaseController {
     }
 
     /**
-     * "我的转发规则"页「统计数据」弹窗：当前用户今日/昨日累计流量（不计流量倍率的原始字节数）
+     * 转发规则页「统计数据」弹窗：今日/昨日累计流量（不计流量倍率的原始字节数）。
+     * 默认查当前用户；带 userId 时查指定用户，查别人的数据仅限管理员（用户转发规则页）
      */
     @LogAnnotation
     @PostMapping("/dailyFlow")
-    public R dailyFlow() {
+    public R dailyFlow(@RequestBody(required = false) Map<String, Object> params) {
         Integer userId = JwtUtil.getUserIdFromToken();
+        if (params != null && params.get("userId") != null) {
+            Integer targetUserId = Integer.valueOf(params.get("userId").toString());
+            if (!targetUserId.equals(userId) && !Integer.valueOf(0).equals(JwtUtil.getRoleIdFromToken())) {
+                return R.err("无权查看该用户的统计数据");
+            }
+            userId = targetUserId;
+        }
         long[] flows = userDailyRawFlowService.getTodayAndYesterday(userId);
         Map<String, Object> data = new HashMap<>();
         data.put("todayFlow", flows[0]);

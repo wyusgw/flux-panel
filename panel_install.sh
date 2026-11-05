@@ -223,6 +223,34 @@ generate_random() {
   LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c16
 }
 
+# 从标准输入计算小写十六进制 MD5（Linux 用 md5sum，macOS 用 md5）
+md5_hex() {
+  if command -v md5sum &> /dev/null; then
+    md5sum | awk '{print $1}'
+  else
+    md5 -q
+  fi
+}
+
+# 生成首次安装的管理员密码（随机串的 32 位哈希值），并把它的 MD5 写入数据库初始化文件。
+# 后端登录校验的就是密码的 MD5。按模式替换，所以重复安装、复用本地 install.sql 时同样生效。
+set_initial_admin_password() {
+  local install_sql_file="$1"
+  local install_sql_tmp="$install_sql_file.admin.$$"
+
+  ADMIN_PASSWORD=$(generate_random | md5_hex)
+  local admin_pwd_hash
+  admin_pwd_hash=$(printf '%s' "$ADMIN_PASSWORD" | md5_hex)
+
+  sed -E "s/^\(1, 'admin', '[0-9a-f]{32}'/(1, 'admin', '$admin_pwd_hash'/" "$install_sql_file" > "$install_sql_tmp"
+  if ! grep -q "^(1, 'admin', '$admin_pwd_hash'" "$install_sql_tmp"; then
+    rm -f "$install_sql_tmp"
+    echo "生成管理员密码失败：$install_sql_file 中没有找到管理员初始数据"
+    return 1
+  fi
+  mv "$install_sql_tmp" "$install_sql_file"
+}
+
 # 删除脚本自身
 delete_self() {
   echo ""
@@ -290,12 +318,19 @@ install_panel() {
     fi
     mv "$install_sql_tmp" "$install_sql_file"
   fi
+  set_initial_admin_password "$install_sql_file" || return 1
   echo "文件准备完成"
 
   # 自动检测并配置 IPv6 支持
   if check_ipv6_support; then
     echo "系统支持 IPv6，自动启用 IPv6 配置..."
     configure_docker_ipv6
+  fi
+
+  # 数据卷已存在时 MySQL 不会重新执行初始化文件，新生成的密码不会生效
+  local db_volume_exists=false
+  if docker volume inspect mysql_data &> /dev/null; then
+    db_volume_exists=true
   fi
 
   cat > .env <<EOF
@@ -313,8 +348,13 @@ EOF
   echo "部署完成"
   echo "访问地址: http://服务器IP:$FRONTEND_PORT"
   echo "部署完成后请阅读下使用文档，求求了啊，不要上去就是一顿操作"
-  echo "默认管理员账号: admin / admin"
-  echo "登录后请立即修改默认密码！"
+  if [[ "$db_volume_exists" == "true" ]]; then
+    echo "检测到已有数据卷 mysql_data，数据库没有重新初始化，管理员账号密码保持不变"
+  else
+    echo "管理员账号: admin"
+    echo "管理员密码: $ADMIN_PASSWORD"
+    echo "密码只显示这一次，请立即保存；登录后可自行修改"
+  fi
 
 
 }

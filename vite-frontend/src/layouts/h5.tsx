@@ -3,7 +3,6 @@ import { useNavigate, useLocation } from 'react-router-dom';
 
 import toast from 'react-hot-toast';
 
-import { Logo } from '@/components/icons';
 import { ThemeSwitch } from '@/components/theme-switch';
 import { siteConfig, getCachedConfigs } from '@/config/site';
 import { primaryNavItems, managementNavItems } from '@/config/nav-items';
@@ -93,8 +92,8 @@ export default function H5Layout({
   return (
     <div className="flex flex-col min-h-screen bg-gray-100 dark:bg-black">
       {/* 顶部导航栏 */}
-      <header className="bg-white dark:bg-black shadow-sm border-b border-gray-200 dark:border-gray-600 h-14 safe-top flex-shrink-0 flex items-center justify-between px-4 relative z-10">
-        <div className="flex items-center gap-2">
+      <header className="app-topbar h-16 flex items-center justify-between px-4 sm:px-6 safe-top flex-shrink-0 relative z-10">
+        <div className="flex items-center gap-2 min-w-0">
           <button
             onClick={() => setMenuOpen(true)}
             aria-label="打开导航菜单"
@@ -104,11 +103,10 @@ export default function H5Layout({
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
             </svg>
           </button>
-          <Logo size={20} />
-          <h1 className="text-sm font-bold text-foreground">{siteConfig.name}</h1>
+          <h1 className="app-topbar-brand text-foreground truncate">{siteConfig.name}</h1>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-4 shrink-0 ml-3">
           <UserMenu username={username} onLogout={handleLogout} />
           <ThemeSwitch />
         </div>

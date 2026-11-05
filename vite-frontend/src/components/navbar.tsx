@@ -8,7 +8,7 @@ import {
 import { isWebViewFunc } from '@/utils/panel';
 import { useNavigate } from "react-router-dom";
 
-import { Logo } from "@/components/icons";
+import { GuestMenu } from "@/components/user-menu";
 import { ThemeSwitch } from "@/components/theme-switch";
 import { siteConfig, getCachedConfig } from "@/config/site";
 
@@ -65,7 +65,7 @@ export const Navbar = () => {
 
   return (
     <>
-      <HeroUINavbar maxWidth="xl" position="sticky" height="60px" className="shrink-0">
+      <HeroUINavbar maxWidth="full" position="sticky" height="64px" isBlurred={false} className="app-topbar shrink-0" classNames={{ wrapper: 'px-4 sm:px-6' }}>
         <NavbarContent className="basis-1/5 sm:basis-full" justify="start">
           <NavbarBrand className="gap-2 max-w-fit">
             <Link
@@ -73,13 +73,13 @@ export const Navbar = () => {
               color="foreground"
               href="/"
             >
-              <Logo size={24} />
-              <p className="font-bold text-inherit truncate">{appName}</p>
+              <p className="app-topbar-brand text-inherit truncate">{appName}</p>
             </Link>
           </NavbarBrand>
         </NavbarContent>
 
         <NavbarContent className="basis-1/5 sm:basis-full" justify="end">
+          {!localStorage.getItem('token') && <GuestMenu onLogin={() => navigate('/')} />}
           <ThemeSwitch />
           {/* WebView设置图标 */}
           {isWebView && (

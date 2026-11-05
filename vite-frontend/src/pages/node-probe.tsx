@@ -395,7 +395,7 @@ export default function NodeProbePage() {
 
   return (
     <main className="probe-page min-h-screen">
-      <header className="probe-topbar">
+      <header className="probe-topbar app-topbar">
         <div className="probe-brand">
           <Button size="sm" variant="flat" color="default" onPress={() => navigate(admin ? '/admin/dashboard' : '/dashboard')} startContent={<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l9-9 9 9M5 10v10a1 1 0 001 1h4a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1h4a1 1 0 001-1V10" /></svg>}>
             返回主页

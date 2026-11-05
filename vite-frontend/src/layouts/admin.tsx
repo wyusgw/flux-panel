@@ -3,7 +3,6 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { Button } from "@heroui/button";
 import toast from 'react-hot-toast';
 
-import { Logo } from '@/components/icons';
 import { ThemeSwitch } from '@/components/theme-switch';
 import { UserMenu } from '@/components/user-menu';
 import { ToastWarningIcon } from '@/components/toast-icons';
@@ -262,8 +261,8 @@ export default function AdminLayout({
   return (
     <div className={`admin-shell flex flex-col ${isMobile ? 'min-h-screen' : 'h-screen'} bg-gray-100 dark:bg-black`}>
       {/* 顶栏：横跨整个窗口，左侧站点名称，右侧用户菜单与主题切换；侧边栏从顶栏下方开始，直接以菜单项起头 */}
-      <header className="bg-white dark:bg-[#111214] shadow-none border-b border-gray-200 dark:border-[#292b2f] h-14 flex items-center justify-between px-4 lg:px-6 relative z-10 shrink-0">
-        <div className="flex items-center gap-3">
+      <header className="app-topbar h-16 flex items-center justify-between px-4 sm:px-6 relative z-10 shrink-0">
+        <div className="flex items-center gap-3 min-w-0">
           {/* 移动端菜单按钮 */}
           {isMobile && (
             <Button
@@ -277,14 +276,10 @@ export default function AdminLayout({
               </svg>
             </Button>
           )}
-          <Logo size={24} />
-          <div className="flex items-baseline gap-2 min-w-0">
-            <h1 className="text-base font-bold text-foreground whitespace-nowrap">{siteConfig.name}</h1>
-            <span className="text-xs text-default-500 hidden sm:inline">v{siteConfig.version}</span>
-          </div>
+          <h1 className="app-topbar-brand text-foreground truncate">{siteConfig.name}</h1>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-4 shrink-0">
           <UserMenu username={username} onLogout={handleLogout} />
           <ThemeSwitch />
         </div>

@@ -34,12 +34,12 @@ curl -L https://raw.githubusercontent.com/wyusgw/flux-panel/refs/heads/beta/inst
 
 ```
 
-#### 默认管理员账号
+#### 管理员账号
 
 - **账号**: admin
-- **密码**: admin
+- **密码**: 使用面板安装脚本时随机生成安装完成后显示在终端里
 
-> 首次登录后请立即修改默认密码！
+> 不通过安装脚本、直接导入 `database/install.sql` 部署时，默认密码仍为 admin，首次登录后请立即修改！
 
 
 ## 免责声明

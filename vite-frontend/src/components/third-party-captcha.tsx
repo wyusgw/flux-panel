@@ -81,7 +81,7 @@ export function ThirdPartyCaptcha({ provider, siteKey, onToken, onCancel, onErro
             sitekey: siteKey,
             theme: isDark ? 'dark' : 'light',
             callback: (token: string) => callbacks.current.onToken(token),
-            'error-callback': () => callbacks.current.onError('验证码加载失败，请检查站点密钥是否正确'),
+            'error-callback': () => callbacks.current.onError('验证码验证失败或加载失败'),
           });
         };
         // reCAPTCHA 要在 ready 之后才能 render

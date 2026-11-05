@@ -290,7 +290,7 @@ const getInitialConfigs = (): Record<string, string> => {
   
   try {
     configKeys.forEach(key => {
-      const cachedValue = localStorage.getItem('vite_config_' + key);
+      const cachedValue = localStorage.getItem('config_' + key);
       if (cachedValue) {
         initialConfigs[key] = cachedValue;
       }

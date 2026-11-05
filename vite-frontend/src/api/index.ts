@@ -173,7 +173,7 @@ export const diagnoseForwardDetail = (data: { forwardId: number; leg?: string; t
 
 // 转发排序操作
 export const updateForwardOrder = (data: { forwards: Array<{ id: number; inx: number }> }) => Network.post("/forward/updateOrder", data);
-export const getForwardDailyFlow = () => Network.post("/forward/dailyFlow");
+export const getForwardDailyFlow = (userId?: number) => Network.post("/forward/dailyFlow", userId ? { userId } : {});
 
 // 转发规则分组CRUD操作 - 全部使用POST请求
 export const createForwardGroup = (data: any) => Network.post("/forwardGroup/create", data);

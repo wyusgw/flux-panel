@@ -20,6 +20,11 @@ export const primaryNavItems: NavItem[] = [
     icon: navIcons['/dashboard']
   },
   {
+    path: '/account-center',
+    label: '个人中心',
+    icon: navIcons['/account-center']
+  },
+  {
     path: '/forward',
     label: '转发管理',
     icon: navIcons['/forward']
@@ -33,11 +38,6 @@ export const primaryNavItems: NavItem[] = [
     path: '/orders',
     label: '我的订单',
     icon: navIcons['/orders']
-  },
-  {
-    path: '/account-center',
-    label: '个人中心',
-    icon: navIcons['/account-center']
   },
   {
     path: '/single-tunnel',

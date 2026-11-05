@@ -112,15 +112,15 @@ export default function RegisterPage() {
 
   return (
     <DefaultLayout>
-      <section className="flex flex-col items-center justify-center gap-4 py-4 sm:py-8 md:py-10 pb-20 min-h-[calc(100dvh-120px)] sm:min-h-[calc(100dvh-200px)]">
+      <section className="flex flex-col items-center gap-4 pt-6 pb-20 sm:pt-[90px]">
         <div className="w-full max-w-[400px] px-4 sm:px-0">
-          <Card className="w-full">
-            <CardHeader className="px-6 pt-5 pb-4">
-              <h1 className="text-lg font-bold text-foreground">注册</h1>
+          <Card className="auth-card w-full">
+            <CardHeader className="px-6 py-4">
+              <h1 className="text-base font-bold text-foreground">注册</h1>
             </CardHeader>
             <Divider />
             <CardBody className="px-6 py-6">
-              <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-6">
                 <Input autoComplete="off"
                   size="sm"
                   placeholder="用户名"
@@ -153,7 +153,7 @@ export default function RegisterPage() {
                       onClick={() => setShowPassword(prev => !prev)}
                       tabIndex={-1}
                     >
-                      {showPassword ? <EyeOffIcon className="w-4 h-4" /> : <EyeIcon className="w-4 h-4" />}
+                      {showPassword ? <EyeIcon className="w-4 h-4" /> : <EyeOffIcon className="w-4 h-4" />}
                     </button>
                   }
                 />
@@ -177,7 +177,7 @@ export default function RegisterPage() {
                       onClick={() => setShowConfirmPassword(prev => !prev)}
                       tabIndex={-1}
                     >
-                      {showConfirmPassword ? <EyeOffIcon className="w-4 h-4" /> : <EyeIcon className="w-4 h-4" />}
+                      {showConfirmPassword ? <EyeIcon className="w-4 h-4" /> : <EyeOffIcon className="w-4 h-4" />}
                     </button>
                   }
                 />
@@ -198,18 +198,19 @@ export default function RegisterPage() {
                   />
                 )}
 
-                <div className="flex items-center gap-4 mt-1">
+                <div className="flex items-center gap-3.5">
                   <Button
                     size="sm"
-                    color="default"
+                    color="primary"
+                    className="auth-submit"
                     onClick={handleRegister}
                     isLoading={loading}
                     disabled={loading}
                   >
-                    {loading ? "注册中..." : "注册"}
+                    {loading ? "注册中..." : "注 册"}
                   </Button>
 
-                  <Link to="/" className="text-primary text-small">
+                  <Link to="/" className="auth-link text-small">
                     前往登录
                   </Link>
                 </div>

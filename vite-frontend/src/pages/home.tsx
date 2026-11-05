@@ -3,7 +3,7 @@ import { Accordion, AccordionItem } from "@heroui/accordion";
 import { useEffect, useState } from "react";
 
 import { getConfigByName, getBackendInfo } from "@/api";
-import { siteConfig, getCachedConfigs } from "@/config/site";
+import { PANEL_VERSION, getCachedConfigs } from "@/config/site";
 
 interface SiteInfo {
   title: string;
@@ -69,34 +69,40 @@ export default function HomePage() {
   }, []);
 
   return (
-    <div className="dashboard-home px-4 lg:px-6 py-5 lg:py-6 max-w-[1200px] mx-auto">
-      <section className="mb-5 lg:mb-6">
-        <h1 className="text-xl font-semibold tracking-tight text-foreground">欢迎使用 {siteConfig.name}</h1>
-      </section>
+    <div className="dashboard-home px-4 lg:px-6 py-5 lg:py-6">
+      <section className="dashboard-panel bg-content1 flex flex-col gap-4 px-4 lg:px-6 pt-8 pb-6">
+        <h1 className="text-xl font-semibold tracking-tight text-foreground">欢迎使用</h1>
+        <p className="mb-2 text-lg font-semibold text-foreground">面板版本: {PANEL_VERSION}</p>
 
-      <Card className="dashboard-panel">
-        <CardHeader className="gap-2 pb-3 border-b border-default-100">
-          <svg className="w-5 h-5 text-primary" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
-            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-          </svg>
-          <h2 className="text-base font-semibold text-foreground">系统公告</h2>
-        </CardHeader>
-        <CardBody className="min-h-32 p-4">
-          {loading ? (
-            <div className="flex items-center gap-3 py-3 text-sm text-default-500">
-              <span className="animate-spin h-4 w-4 border-2 border-default-300 border-t-primary rounded-full" />
-              正在加载公告…
-            </div>
-          ) : announcement ? (
-            <p className="text-sm leading-7 text-foreground whitespace-pre-wrap">{announcement}</p>
-          ) : (
-            <p className="py-3 text-sm text-default-500">暂无系统公告</p>
-          )}
-        </CardBody>
-      </Card>
+        <Card className="home-inner-card" shadow="none">
+          <CardHeader className="px-6 py-4 border-b border-default-100">
+            <h2 className="text-base font-semibold text-foreground">系统公告</h2>
+          </CardHeader>
+          <CardBody className="min-h-24 px-6 py-4">
+            {loading ? (
+              <div className="flex items-center gap-3 py-3 text-sm text-default-500">
+                <span className="animate-spin h-4 w-4 border-2 border-default-300 border-t-primary rounded-full" />
+                正在加载公告…
+              </div>
+            ) : announcement ? (
+              <p className="text-sm leading-7 text-foreground whitespace-pre-wrap">{announcement}</p>
+            ) : (
+              <p className="py-3 text-sm text-default-500">暂无系统公告</p>
+            )}
+          </CardBody>
+        </Card>
 
-      <div className="mt-4">
-        <Accordion variant="bordered" selectionMode="multiple">
+        <Accordion
+          variant="bordered"
+          selectionMode="multiple"
+          className="home-inner-card home-accordion"
+          itemClasses={{
+            trigger: 'flex-row-reverse gap-3 px-4 py-3',
+            title: 'text-sm',
+            indicator: 'rotate-180 data-[open=true]:rotate-[-90deg]',
+            content: 'px-4 pt-0 pb-3',
+          }}
+        >
           <AccordionItem key="site-info" title="站点信息">
             <pre className="text-xs font-mono text-default-600 bg-default-100 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap break-all">
               {siteInfo ? JSON.stringify(siteInfo, null, 2) : '加载中...'}
@@ -108,7 +114,7 @@ export default function HomePage() {
             </pre>
           </AccordionItem>
         </Accordion>
-      </div>
+      </section>
     </div>
   );
 }

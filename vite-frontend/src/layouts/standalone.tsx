@@ -19,10 +19,10 @@ export default function StandaloneLayout({ children }: { children: React.ReactNo
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-gray-100 dark:bg-[#0c0d0f]">
-      <header className="bg-white dark:bg-[#111214] border-b border-gray-200 dark:border-[#292b2f] h-14 flex items-center justify-between px-4 lg:px-6 shrink-0">
-        <h1 className="text-sm font-bold text-foreground whitespace-nowrap">{siteConfig.name}</h1>
-        <div className="flex items-center gap-3">
+    <div className="min-h-screen flex flex-col bg-gray-100 dark:bg-black">
+      <header className="app-topbar h-16 flex items-center justify-between px-4 sm:px-6 shrink-0">
+        <h1 className="app-topbar-brand text-foreground truncate">{siteConfig.name}</h1>
+        <div className="flex items-center gap-4 shrink-0 ml-3">
           <UserMenu username={username} onLogout={handleLogout} />
           <ThemeSwitch />
         </div>

@@ -309,7 +309,7 @@ export default function ForwardPage() {
     setStatsModalOpen(true);
     setDailyFlowLoading(true);
     try {
-      const res = await getForwardDailyFlow();
+      const res = await getForwardDailyFlow(isImpersonating && impersonateUserId ? impersonateUserId : undefined);
       if (res.code === 0) {
         setDailyFlow({ today: Number(res.data?.todayFlow) || 0, yesterday: Number(res.data?.yesterdayFlow) || 0 });
       } else {
@@ -1459,7 +1459,7 @@ export default function ForwardPage() {
 
       <div className="management-page px-4 lg:px-6 py-5 lg:py-6 forward-page">
         <Card className="management-table-card max-w-[1600px] mx-auto">
-        {/* 页面头部：标题与搜索/刷新放在同一行，统计数据（仅自己的转发规则页）紧跟其后 */}
+        {/* 页面头部：标题与搜索/刷新放在同一行，统计数据紧跟其后 */}
         <CardHeader className="flex-row items-center justify-between gap-4 p-4 border-b border-default-100">
           <div className="flex items-center gap-3 flex-wrap">
             <h1 className="text-base font-semibold text-foreground">
@@ -1467,7 +1467,7 @@ export default function ForwardPage() {
             </h1>
             <Button size="sm" variant="bordered" startContent={<IconSearch />} onPress={() => setSearchModalOpen(true)}>搜索规则</Button>
             <RefreshButton refreshing={refreshing} isDisabled={loading} onRefresh={handleRefresh} />
-            {!isImpersonating && <Button size="sm" variant="bordered" startContent={<IconStats />} onPress={openStats}>统计数据</Button>}
+            <Button size="sm" variant="bordered" startContent={<IconStats />} onPress={openStats}>统计数据</Button>
           </div>
           <div className="flex items-center gap-2">
             {isImpersonating && window.opener && (

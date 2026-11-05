@@ -125,13 +125,13 @@ html, body {
 
 /* Desktop console styling, based on the supplied compact dark-panel references. */
 .dark .admin-shell {
-  background: #0c0d0f;
+  background: #000;
 }
 
 .dark .dashboard-home .dashboard-panel {
-  background: #151618;
-  border: 1px solid #2b2d31;
-  border-radius: 6px;
+  background: #171717;
+  border: 1px solid #2a2a2a;
+  border-radius: 8px;
   box-shadow: none;
 }
 
@@ -149,8 +149,76 @@ html, body {
 .settings-panel,
 .dashboard-home .dashboard-panel {
   border: 1px solid #e4e4e7;
-  border-radius: 6px;
+  border-radius: 8px;
   box-shadow: none;
+}
+
+/* 主页大卡片里的内层卡片（公告、站点信息折叠面板） */
+.home-inner-card {
+  border: 1px solid #e4e4e7;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: none;
+}
+.dark .home-inner-card {
+  border-color: #2a2a2a;
+  background: #1c1c1c;
+}
+.home-accordion {
+  padding: 0;
+}
+html.theme-transparent .home-accordion {
+  background: transparent;
+}
+
+/* 导航栏「管理」分组的展开收起：高度用先快后慢的曲线过渡，子项逐个淡入并轻微下滑（收起时一起淡出）；
+   收起动画结束后才隐藏，隐藏后子项也不会被键盘聚焦 */
+.nav-collapse {
+  --nav-ease: cubic-bezier(0.22, 0.8, 0.24, 1);
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  visibility: hidden;
+  transition: grid-template-rows 0.36s var(--nav-ease), opacity 0.24s ease, visibility 0.36s;
+}
+.nav-collapse.is-open {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  visibility: visible;
+}
+.nav-collapse > * {
+  min-height: 0;
+  overflow: hidden;
+}
+.nav-collapse > * > * {
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: opacity 0.2s ease, transform 0.28s var(--nav-ease);
+}
+.nav-collapse.is-open > * > * {
+  opacity: 1;
+  transform: none;
+}
+.nav-collapse.is-open > * > :nth-child(2) { transition-delay: 18ms; }
+.nav-collapse.is-open > * > :nth-child(3) { transition-delay: 36ms; }
+.nav-collapse.is-open > * > :nth-child(4) { transition-delay: 54ms; }
+.nav-collapse.is-open > * > :nth-child(5) { transition-delay: 72ms; }
+.nav-collapse.is-open > * > :nth-child(6) { transition-delay: 90ms; }
+.nav-collapse.is-open > * > :nth-child(7) { transition-delay: 108ms; }
+.nav-collapse.is-open > * > :nth-child(8) { transition-delay: 126ms; }
+.nav-collapse.is-open > * > :nth-child(9) { transition-delay: 144ms; }
+.nav-collapse.is-open > * > :nth-child(10) { transition-delay: 162ms; }
+@media (prefers-reduced-motion: reduce) {
+  .nav-collapse,
+  .nav-collapse > * > *,
+  .nav-collapse.is-open > * > * {
+    transition: none;
+  }
+}
+
+/* 后台桌面端内容区：各页面根元素的内边距统一成与侧栏、顶栏等距 */
+.admin-main > * {
+  padding: 12px 16px 16px 14px;
 }
 
 /* 全站统一的顶栏（登录前后）。透明主题下沿用下方 html.theme-transparent 的半透明样式 */
@@ -294,26 +362,26 @@ html.dark:not(.theme-transparent) .app-topbar {
 }
 
 .dark .management-table-card {
-  background: #151618;
-  border: 1px solid #2b2d31;
-  border-radius: 6px;
+  background: #171717;
+  border: 1px solid #2a2a2a;
+  border-radius: 8px;
   box-shadow: none;
 }
 
 .dark .management-search {
-  background: #111214;
-  border-color: #34363b;
+  background: #141414;
+  border-color: #3a3a3d;
 }
 
 .dark .management-table-heading {
-  background: #1b1c1f;
+  background: #1f1f1f;
   color: #a7abb3;
   font-size: 12px;
   font-weight: 600;
 }
 
 .dark .management-table-cell {
-  border-bottom-color: #292b2f;
+  border-bottom-color: #2a2a2a;
   color: #d8dadd;
   font-size: 13px;
 }
@@ -329,21 +397,21 @@ html.dark:not(.theme-transparent) .app-topbar {
 }
 
 .dark .settings-panel {
-  background: #151618;
-  border: 1px solid #2b2d31;
-  border-radius: 6px;
+  background: #171717;
+  border: 1px solid #2a2a2a;
+  border-radius: 8px;
   box-shadow: none;
 }
 
 .dark .settings-panel [data-slot="input-wrapper"],
 .dark .settings-panel [data-slot="trigger"] {
-  background: #111214;
-  border-color: #34363b;
+  background: #141414;
+  border-color: #3a3a3d;
 }
 
 .dark .payment-channel-row {
-  background: #111214;
-  border-color: #34363b;
+  background: #141414;
+  border-color: #3a3a3d;
 }
 
 .probe-page { background: #fcf8fe; color: #332b3b; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
@@ -362,7 +430,7 @@ td.probe-clickable:hover { text-decoration: underline; text-underline-offset: 2p
 .probe-empty { max-width: 640px; margin: 60px auto; padding: 28px 32px; text-align: center; }.probe-empty h2 { font-size: 22px; font-weight: 750; color: #332b3b; margin: 0 0 10px; }.probe-empty p { font-size: 13px; color: #8b8292; line-height: 1.6; margin: 0; }
 @keyframes probe-spin { to { transform: rotate(360deg); } }
 @keyframes probe-pulse { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
-.dark .probe-page { background: #0d0e10; color: #e4e2e6; }.dark .probe-topbar { background: rgb(17 18 20 / 90%); border-bottom-color: #2a2b2f; }.dark .probe-mark { color: #a78bfa; }.dark .probe-topbar p { color: #9a94a3; }.dark .probe-title { background: #16171a; border-color: #34363b; color: #e4e2e6; }.dark .probe-title em { color: #9a94a3; }.dark .probe-total { background: #211a33; color: #c9b8ee; }.dark .probe-scroll { background: rgb(17 18 20 / 65%); }.dark .probe-table th { color: #b7b2bd; border-bottom-color: #34363b; }.dark .probe-table td { border-bottom-color: #26272b; }.dark .probe-meter { background: #2a2b2f; }.dark .probe-node-popover { background: #16171a; border-color: #34363b; }.dark .probe-node-popover-row { color: #b7b2bd; }.dark .probe-node-popover-row b { color: #e4e2e6; }.dark .probe-loading-ring { background: conic-gradient(from 0deg, transparent, #a78bfa); }.dark .probe-loading p { color: #9a94a3; }.dark .probe-table th:first-child, .dark .probe-table td:first-child { background: #0d0e10; }.dark .probe-empty h2 { color: #e4e2e6; }.dark .probe-empty p { color: #9a94a3; }
+.dark .probe-page { background: #000; color: #e4e2e6; }.dark .probe-topbar { background: rgb(17 18 20 / 90%); border-bottom-color: #2a2b2f; }.dark .probe-mark { color: #a78bfa; }.dark .probe-topbar p { color: #9a94a3; }.dark .probe-title { background: #16171a; border-color: #3a3a3d; color: #e4e2e6; }.dark .probe-title em { color: #9a94a3; }.dark .probe-total { background: #211a33; color: #c9b8ee; }.dark .probe-scroll { background: rgb(17 18 20 / 65%); }.dark .probe-table th { color: #b7b2bd; border-bottom-color: #3a3a3d; }.dark .probe-table td { border-bottom-color: #26272b; }.dark .probe-meter { background: #2a2b2f; }.dark .probe-node-popover { background: #16171a; border-color: #3a3a3d; }.dark .probe-node-popover-row { color: #b7b2bd; }.dark .probe-node-popover-row b { color: #e4e2e6; }.dark .probe-loading-ring { background: conic-gradient(from 0deg, transparent, #a78bfa); }.dark .probe-loading p { color: #9a94a3; }.dark .probe-table th:first-child, .dark .probe-table td:first-child { background: #000; }.dark .probe-empty h2 { color: #e4e2e6; }.dark .probe-empty p { color: #9a94a3; }
 /* 节点状态页分组标题栏：移动端保持「名称 + 上行/下行合计」横向一排，不换行不截断，宽度不够时整排可左右滑动 */
 .probe-group-head { overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none; }
 .probe-group-head::-webkit-scrollbar { display: none; }

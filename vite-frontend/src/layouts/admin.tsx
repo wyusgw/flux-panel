@@ -44,6 +44,11 @@ export default function AdminLayout({
       icon: navIcons['/dashboard']
     },
     {
+      path: '/account-center',
+      label: '个人中心',
+      icon: navIcons['/account-center']
+    },
+    {
       path: '/admin/dashboard',
       label: '仪表盘',
       adminOnly: true,
@@ -63,11 +68,6 @@ export default function AdminLayout({
       path: '/orders',
       label: '我的订单',
       icon: navIcons['/orders']
-    },
-    {
-      path: '/account-center',
-      label: '个人中心',
-      icon: navIcons['/account-center']
     },
     {
       path: '/single-tunnel',
@@ -294,21 +294,20 @@ export default function AdminLayout({
         />
       )}
 
-      {/* 左侧菜单栏：扁平列表，线条图标 + 常规字重，没有分隔线；「管理」是可折叠的分组标题，展开后子项缩进并带浅底色 */}
+      {/* 左侧菜单栏：桌面端是与顶栏、窗口边缘留出间距的圆角悬浮卡片；扁平列表，线条图标 + 常规字重，没有分隔线；「管理」是可折叠的分组标题，展开后子项缩进并带浅底色 */}
       <aside className={`
         ${isMobile ? 'fixed' : 'relative'} 
         ${isMobile && !mobileMenuVisible ? '-translate-x-full' : 'translate-x-0'}
-        ${isMobile ? 'w-64' : 'w-60'} 
-        bg-white dark:bg-[#0c0d0f]
+        ${isMobile ? 'w-64' : 'w-[200px] mt-3 ml-3 rounded-t-lg overflow-hidden border border-b-0 border-gray-200 dark:border-[#171717]'} 
+        bg-white dark:bg-[#171717]
         shadow-none
-        border-r border-gray-200 dark:border-[#292b2f]
         z-50 
         transition-transform duration-300 ease-in-out
         flex flex-col shrink-0
-        ${isMobile ? 'h-screen' : 'h-full'}
+        ${isMobile ? 'h-screen' : ''}
         ${isMobile ? 'top-0 left-0' : ''}
       `}>
-        <nav className="flex-1 py-2 overflow-y-auto hide-scrollbar">
+        <nav className="flex-1 min-h-0 py-0.5 overflow-y-auto hide-scrollbar">
           <ul>
             {primaryMenuItems.map((item) => {
               const isActive = location.pathname === item.path;
@@ -341,13 +340,13 @@ export default function AdminLayout({
                   className="w-full flex items-center justify-between gap-3 px-6 h-11 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/[0.04] transition-colors"
                 >
                   <span>管理</span>
-                  <svg className={`w-4 h-4 transition-transform duration-200 ${managementMenuOpen ? '' : 'rotate-180'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <svg className={`w-4 h-4 transition-transform duration-[360ms] ease-[cubic-bezier(0.22,0.8,0.24,1)] ${managementMenuOpen ? '' : 'rotate-180'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="m6 15 6-6 6 6" />
                   </svg>
                 </button>
 
-                {managementMenuOpen && (
-                  <ul className="bg-gray-50 dark:bg-[#16171a]">
+                <div className={`nav-collapse${managementMenuOpen ? ' is-open' : ''}`}>
+                  <ul className="bg-gray-50/70 dark:bg-[#141414]">
                     {managementMenuItems.map((item) => {
                       const isActive = location.pathname === item.path;
                       return (
@@ -365,7 +364,7 @@ export default function AdminLayout({
                       );
                     })}
                   </ul>
-                )}
+                </div>
               </li>
             )}
           </ul>
@@ -374,7 +373,7 @@ export default function AdminLayout({
       </aside>
 
       {/* 主内容区域 */}
-      <main className={`flex-1 min-w-0 bg-gray-100 dark:bg-[#0c0d0f] ${isMobile ? '' : 'overflow-y-auto'}`}>
+      <main className={`flex-1 min-w-0 ${isMobile ? '' : 'admin-main overflow-y-auto'}`}>
         {children}
       </main>
       </div>

@@ -149,14 +149,14 @@ export default function H5Layout({
                   >
                     <span>管理</span>
                     <svg
-                      className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${manageOpen ? 'rotate-180' : ''}`}
+                      className={`w-4 h-4 text-gray-400 transition-transform duration-[360ms] ease-[cubic-bezier(0.22,0.8,0.24,1)] ${manageOpen ? 'rotate-180' : ''}`}
                       fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"
                     >
                       <path strokeLinecap="round" strokeLinejoin="round" d="M6 9l6 6 6-6" />
                     </svg>
                   </button>
-                  <div className={`grid transition-all duration-200 ease-out ${manageOpen ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}>
-                    <div className={`overflow-hidden ${manageOpen ? '' : 'invisible'}`}>
+                  <div className={`nav-collapse${manageOpen ? ' is-open' : ''}`}>
+                    <div>
                       {filteredManagementNavItems.map((item) => {
                         const isActive = location.pathname === item.path;
                         return (

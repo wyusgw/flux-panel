@@ -7,6 +7,9 @@ const CACHE_PREFIX = 'vite_config_';
 const VERSION = "1.4.3";
 const APP_VERSION = "1.0.3";
 
+/** 面板版本号：构建日期（YYYYMMDD），由 vite.config.ts 在构建时写入 */
+export const PANEL_VERSION = __PANEL_VERSION__;
+
 const getInitialConfig = () => {
   if (typeof window === 'undefined') {
     return {

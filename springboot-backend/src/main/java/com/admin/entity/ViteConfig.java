@@ -3,6 +3,7 @@ package com.admin.entity;
 import com.admin.entity.BaseEntity;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
@@ -15,6 +16,7 @@ import lombok.EqualsAndHashCode;
  * @since 2025-07-24
  */
 @Data
+@TableName("config")
 public class ViteConfig {
 
     private static final long serialVersionUID = 1L;

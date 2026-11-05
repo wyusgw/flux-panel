@@ -482,8 +482,34 @@ PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
 
--- 创建 vite_config 表（如果不存在）
-CREATE TABLE IF NOT EXISTS `vite_config` (
+-- vite_config 表改名为 config，可重复执行：
+-- 只有旧表时直接改名；两张表都在（全新安装后导入了旧备份）时以旧表的值为准合并进 config，再删除旧表
+SET @old_config_exists = (SELECT COUNT(*) FROM information_schema.TABLES WHERE table_schema = DATABASE() AND table_name = 'vite_config');
+SET @new_config_exists = (SELECT COUNT(*) FROM information_schema.TABLES WHERE table_schema = DATABASE() AND table_name = 'config');
+
+SET @sql = IF(@old_config_exists = 1 AND @new_config_exists = 0,
+  'RENAME TABLE `vite_config` TO `config`',
+  'SELECT "Table `vite_config` rename skipped"');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @sql = IF(@old_config_exists = 1 AND @new_config_exists = 1,
+  'INSERT INTO `config` (`name`, `value`, `time`) SELECT `name`, `value`, `time` FROM `vite_config` ON DUPLICATE KEY UPDATE `value` = VALUES(`value`), `time` = VALUES(`time`)',
+  'SELECT "Table `vite_config` merge skipped"');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @sql = IF(@old_config_exists = 1 AND @new_config_exists = 1,
+  'DROP TABLE `vite_config`',
+  'SELECT "Table `vite_config` drop skipped"');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- 创建 config 表（如果不存在）
+CREATE TABLE IF NOT EXISTS `config` (
   `id` int(10) NOT NULL AUTO_INCREMENT,
   `name` varchar(200) NOT NULL,
   `value` varchar(200) NOT NULL,

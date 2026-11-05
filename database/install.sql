@@ -555,10 +555,10 @@ CREATE TABLE `user_tunnel` (
 -- --------------------------------------------------------
 
 --
--- 表的结构 `vite_config`
+-- 表的结构 `config`
 --
 
-CREATE TABLE `vite_config` (
+CREATE TABLE `config` (
   `id` int(10) NOT NULL,
   `name` varchar(200) NOT NULL,
   `value` varchar(200) NOT NULL,
@@ -566,10 +566,10 @@ CREATE TABLE `vite_config` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 --
--- 转存表中的数据 `vite_config`
+-- 转存表中的数据 `config`
 --
 
-INSERT INTO `vite_config` (`id`, `name`, `value`, `time`) VALUES
+INSERT INTO `config` (`id`, `name`, `value`, `time`) VALUES
 (1, 'app_name', 'flux', 1755147963000);
 
 --
@@ -682,9 +682,9 @@ ALTER TABLE `user_tunnel`
   ADD PRIMARY KEY (`id`);
 
 --
--- 表的索引 `vite_config`
+-- 表的索引 `config`
 --
-ALTER TABLE `vite_config`
+ALTER TABLE `config`
   ADD PRIMARY KEY (`id`),
   ADD UNIQUE KEY `name` (`name`);
 
@@ -866,9 +866,9 @@ ALTER TABLE `user_tunnel`
   MODIFY `id` int(10) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=1;
 
 --
--- 使用表AUTO_INCREMENT `vite_config`
+-- 使用表AUTO_INCREMENT `config`
 --
-ALTER TABLE `vite_config`
+ALTER TABLE `config`
   MODIFY `id` int(10) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=1;
 
 --

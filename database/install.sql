@@ -73,6 +73,7 @@ CREATE TABLE `device_group` (
   `ratio` decimal(10,2) NOT NULL DEFAULT '1.00',
   `hide_in_probe` int(10) NOT NULL DEFAULT '0',
   `remark` varchar(500) DEFAULT NULL,
+  `config` longtext COMMENT '高级编辑保存的 JSON 配置',
   `sort` int(10) NOT NULL DEFAULT '0',
   `offline_grace_enabled` tinyint(1) DEFAULT NULL,
   `offline_grace_seconds` int(10) DEFAULT NULL,
@@ -209,6 +210,7 @@ CREATE TABLE `node` (
   `http` int(10) NOT NULL DEFAULT '0',
   `tls` int(10) NOT NULL DEFAULT '0',
   `socks` int(10) NOT NULL DEFAULT '0',
+  `ss` int(10) NOT NULL DEFAULT '0',
   `created_time` bigint(20) NOT NULL,
   `updated_time` bigint(20) DEFAULT NULL,
   `status` int(10) NOT NULL
@@ -287,7 +289,7 @@ CREATE TABLE `tunnel` (
   `name` varchar(100) NOT NULL,
   `traffic_ratio` decimal(10,1) NOT NULL DEFAULT '1.0',
   `in_node_id` int(10) NOT NULL,
-  `in_ip` varchar(100) NOT NULL,
+  `in_ip` longtext NOT NULL,
   `out_node_id` int(10) NOT NULL,
   `out_ip` varchar(100) NOT NULL,
   `type` int(10) NOT NULL,
@@ -337,7 +339,12 @@ CREATE TABLE `user` (
   `notify_flow_mode` tinyint(4) NOT NULL DEFAULT '1',
   `telegram_last_expiry_reminder_date` varchar(10) DEFAULT NULL,
   `telegram_last_flow_reminder_date` varchar(10) DEFAULT NULL,
-  `flow_reset_clock` varchar(5) NOT NULL DEFAULT '00:00'
+  `flow_reset_clock` varchar(5) NOT NULL DEFAULT '00:00',
+  `demo_mode` tinyint(4) NOT NULL DEFAULT '0',
+  `demo_areas` varchar(255) DEFAULT NULL,
+  `demo_restore_time` varchar(5) DEFAULT NULL,
+  `menu_permissions` varchar(500) DEFAULT NULL,
+  `remark` varchar(500) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 --
@@ -571,6 +578,22 @@ CREATE TABLE `config` (
 
 INSERT INTO `config` (`id`, `name`, `value`, `time`) VALUES
 (1, 'app_name', 'flux', 1755147963000);
+
+--
+-- 表的结构 `demo_change_log`：演示账号的改动记录，用于定时恢复
+--
+
+CREATE TABLE IF NOT EXISTS `demo_change_log` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `user_id` bigint(20) NOT NULL,
+  `table_name` varchar(64) NOT NULL,
+  `row_id` varchar(64) NOT NULL,
+  `before_json` longtext,
+  `after_json` longtext,
+  `created_time` bigint(20) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_user_row` (`user_id`,`table_name`,`row_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 --
 -- 转储表的索引

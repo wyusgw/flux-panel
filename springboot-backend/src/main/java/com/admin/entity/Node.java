@@ -41,6 +41,9 @@ public class Node extends BaseEntity {
 
     private Integer socks;
 
+    /** 是否屏蔽 Shadowsocks 等全加密协议：0 否，1 是 */
+    private Integer ss;
+
     /** 该节点所属的节点组ID列表（多对多，非持久化字段，通过 node_group_relation 表维护） */
     @TableField(exist = false)
     private List<Long> nodeGroupIds;

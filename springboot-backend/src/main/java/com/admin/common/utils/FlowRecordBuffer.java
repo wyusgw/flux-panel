@@ -94,7 +94,7 @@ public class FlowRecordBuffer {
         payload.put(isUser ? "userId" : "nodeId", isUser ? (Object) Integer.valueOf(id) : (Object) Long.valueOf(id));
         payload.put("day", day);
         payload.put("rawBytes", bytes);
-        payload.put("summary", (isUser ? "用户#" : "节点#") + id + " 流量统计 " + day);
+        payload.put("summary", (isUser ? "用户" : "节点#") + id + " 流量统计 " + day);
 
         Long queueId = taskQueueService.enqueue(isUser ? "USER_FLOW_RECORD" : "NODE_FLOW_RECORD", null,
                 payload.toJSONString(), Collections.emptyList(), null);

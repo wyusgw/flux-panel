@@ -60,4 +60,20 @@ public class UserDto {
      * 自动续费（0-关闭，1-开启）
      */
     private Integer autoRenew;
+
+    /**
+     * 演示模式（0-关闭，1-开启）：只有管理员才能开启，开启后是演示管理员，只读且敏感数据打码
+     */
+    private Integer demoMode;
+
+    /**
+     * 是否管理员。不传时编辑用户不改变角色；取消管理员时演示模式一起关闭
+     */
+    private Boolean admin;
+
+    /**
+     * 备注
+     */
+    @javax.validation.constraints.Size(max = 500, message = "备注不能超过500个字符")
+    private String remark;
 } 

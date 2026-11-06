@@ -32,6 +32,11 @@ public class GlobalExceptionHandler {
         return R.err(401, e.getMessage());
     }
 
+    @ExceptionHandler(value = ReadOnlyException.class)
+    public R handleReadOnlyException(ReadOnlyException e) {
+        return R.err(403, e.getMessage());
+    }
+
     @ExceptionHandler(value = Exception.class)
     public R Exception(Exception e){
         log.info("异常：----------------{}", e.getMessage());

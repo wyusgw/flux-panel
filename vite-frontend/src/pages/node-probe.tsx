@@ -1,3 +1,4 @@
+import { useFixedTitle } from "@/hooks/use-fixed-title";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
@@ -6,6 +7,7 @@ import axios from 'axios';
 import { getDeviceGroupList, getNodeList, getUserGroupNames, getNodeGroupNames } from '@/api';
 import { ThemeSwitch } from '@/components/theme-switch';
 import { OsLogo } from '@/components/os-logo';
+import { EmptyState } from "@/components/empty-state";
 import { isAdmin } from '@/utils/auth';
 import 'flag-icons/css/flag-icons.min.css';
 
@@ -201,6 +203,8 @@ const NodeRow = memo(function NodeRow({ node, regionCode, detailHandlers }: Node
 export default function NodeProbePage() {
   const navigate = useNavigate();
   const admin = isAdmin();
+  // 浏览器标题：用户名 身份@当前访问的地址或域名
+  useFixedTitle(`${localStorage.getItem('name') || ''} ${admin ? '管理员' : '普通用户'}@${window.location.host}`);
   // 管理员专用：临时切换成普通用户视角预览节点状态页，不影响实际权限
   const [viewAsUser, setViewAsUser] = useState(false);
   const effectiveAdmin = admin && !viewAsUser;
@@ -436,7 +440,7 @@ export default function NodeProbePage() {
           <div className="probe-loading"><div className="probe-loading-ring" /><p>加载节点状态…</p></div>
         ) : visibleNodeGroups.length === 0 ? (
           <div className="probe-empty">
-            <h2>暂无数据</h2>
+            <EmptyState className="pb-3" />
             <p>{effectiveAdmin ? '暂无节点组数据，请前往"设备管理"将节点归入节点组后再查看' : '暂无可显示的节点'}</p>
           </div>
         ) : (

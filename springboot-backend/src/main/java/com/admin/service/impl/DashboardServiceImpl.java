@@ -146,7 +146,7 @@ public class DashboardServiceImpl implements DashboardService {
                 .map(f -> {
                     Long userId = f.getUserId() != null ? f.getUserId().longValue() : null;
                     Map<String, Object> row = new LinkedHashMap<>();
-                    row.put("name", names.getOrDefault(userId, "用户#" + f.getUserId()));
+                    row.put("name", names.getOrDefault(userId, "用户" + f.getUserId()));
                     row.put("value", f.getRawBytes());
                     return row;
                 }).collect(Collectors.toList());

@@ -8,8 +8,8 @@ interface EmptyStateProps {
 }
 
 export const EmptyState = ({ text = "暂无数据", className, compact = false }: EmptyStateProps) => (
-  <div className={`flex flex-col items-center justify-center ${compact ? 'gap-1' : 'gap-3'} ${className ?? (compact ? 'py-3' : 'py-16')}`}>
-    <NoDataIcon className={`${compact ? 'w-10 h-10' : 'w-16 h-16'} text-default-300`} />
-    <p className={`${compact ? 'text-xs' : 'text-sm'} text-default-500`}>{text}</p>
+  <div className={`flex flex-col items-center justify-center gap-2 ${className ?? (compact ? 'py-3' : 'py-12')}`}>
+    <NoDataIcon className={`${compact ? 'w-12' : 'w-16'} h-auto`} />
+    <p className={`${compact ? 'text-xs' : 'text-sm'} text-default-400 dark:text-[#595959]`}>{text}</p>
   </div>
 );

@@ -28,6 +28,11 @@ public interface NodeService extends IService<Node> {
 
     R getInstallCommand(Long id);
 
+    /**
+     * 查询节点配置：节点信息、所属设备组和用到这些设备组的转发规则，不含节点密钥
+     */
+    R getNodeConfig(Long id);
+
     R resetSecret(Long id);
 
 }

@@ -264,6 +264,7 @@ func (w *WebSocketReporter) connect() error {
 		Http   int    `json:"http"`
 		Tls    int    `json:"tls"`
 		Socks  int    `json:"socks"`
+		Ss     int    `json:"ss"`
 	}
 
 	var cfg LocalConfig
@@ -273,7 +274,7 @@ func (w *WebSocketReporter) connect() error {
 
 	// 使用最新的配置重新构建 URL
 	currentURL := "ws://" + w.addr + "/system-info?type=1&secret=" + w.secret + "&version=" + w.version +
-		"&http=" + strconv.Itoa(cfg.Http) + "&tls=" + strconv.Itoa(cfg.Tls) + "&socks=" + strconv.Itoa(cfg.Socks)
+		"&http=" + strconv.Itoa(cfg.Http) + "&tls=" + strconv.Itoa(cfg.Tls) + "&socks=" + strconv.Itoa(cfg.Socks) + "&ss=" + strconv.Itoa(cfg.Ss)
 
 	u, err := url.Parse(currentURL)
 	if err != nil {
@@ -305,7 +306,7 @@ func (w *WebSocketReporter) connect() error {
 		return nil
 	})
 
-	fmt.Printf("WebSocket连接建立成功 (http=%d, tls=%d, socks=%d)\n", cfg.Http, cfg.Tls, cfg.Socks)
+	fmt.Printf("WebSocket连接建立成功 (http=%d, tls=%d, socks=%d, ss=%d)\n", cfg.Http, cfg.Tls, cfg.Socks, cfg.Ss)
 	return nil
 }
 
@@ -1016,18 +1017,19 @@ func (w *WebSocketReporter) handleSetProtocol(data interface{}) error {
 		return fmt.Errorf("序列化协议设置失败: %v", err)
 	}
 
-	// 支持 {"http":0/1, "tls":0/1, "socks":0/1}
+	// 支持 {"http":0/1, "tls":0/1, "socks":0/1, "ss":0/1}
 	var req struct {
 		HTTP  *int `json:"http"`
 		TLS   *int `json:"tls"`
 		SOCKS *int `json:"socks"`
+		SS    *int `json:"ss"`
 	}
 	if err := json.Unmarshal(jsonData, &req); err != nil {
 		return fmt.Errorf("解析协议设置失败: %v", err)
 	}
 
 	// 读取当前值作为默认
-	httpVal, tlsVal, socksVal := 0, 0, 0
+	httpVal, tlsVal, socksVal, ssVal := 0, 0, 0, 0
 
 	if req.HTTP != nil {
 		if *req.HTTP != 0 && *req.HTTP != 1 {
@@ -1047,19 +1049,25 @@ func (w *WebSocketReporter) handleSetProtocol(data interface{}) error {
 		}
 		socksVal = *req.SOCKS
 	}
+	if req.SS != nil {
+		if *req.SS != 0 && *req.SS != 1 {
+			return fmt.Errorf("ss 取值必须为0或1")
+		}
+		ssVal = *req.SS
+	}
 
 	// 设置至 service，全量传递（未提供的值沿用0）
-	service.SetProtocolBlock(httpVal, tlsVal, socksVal)
+	service.SetProtocolBlock(httpVal, tlsVal, socksVal, ssVal)
 
 	// 同步写入本地 config.json
-	if err := updateLocalConfigJSON(httpVal, tlsVal, socksVal); err != nil {
+	if err := updateLocalConfigJSON(httpVal, tlsVal, socksVal, ssVal); err != nil {
 		return fmt.Errorf("写入config.json失败: %v", err)
 	}
 	return nil
 }
 
-// updateLocalConfigJSON 将 http/tls/socks 写入工作目录下的 config.json
-func updateLocalConfigJSON(httpVal int, tlsVal int, socksVal int) error {
+// updateLocalConfigJSON 将 http/tls/socks/ss 写入工作目录下的 config.json
+func updateLocalConfigJSON(httpVal int, tlsVal int, socksVal int, ssVal int) error {
 	path := "config.json"
 
 	// 读取现有配置
@@ -1069,6 +1077,7 @@ func updateLocalConfigJSON(httpVal int, tlsVal int, socksVal int) error {
 		Http   int    `json:"http"`
 		Tls    int    `json:"tls"`
 		Socks  int    `json:"socks"`
+		Ss     int    `json:"ss"`
 	}
 
 	var cfg LocalConfig
@@ -1079,6 +1088,7 @@ func updateLocalConfigJSON(httpVal int, tlsVal int, socksVal int) error {
 	cfg.Http = httpVal
 	cfg.Tls = tlsVal
 	cfg.Socks = socksVal
+	cfg.Ss = ssVal
 
 	// 写回
 	data, err := json.MarshalIndent(cfg, "", "  ")
@@ -1316,10 +1326,10 @@ func getStorageInfo() StorageInfo {
 }
 
 // StartWebSocketReporterWithConfig 使用配置字段启动WebSocket报告器
-func StartWebSocketReporterWithConfig(addr string, secret string, http int, tls int, socks int, version string) *WebSocketReporter {
+func StartWebSocketReporterWithConfig(addr string, secret string, http int, tls int, socks int, ss int, version string) *WebSocketReporter {
 
 	// 构建初始 WebSocket URL
-	fullURL := "ws://" + addr + "/system-info?type=1&secret=" + secret + "&version=" + version + "&http=" + strconv.Itoa(http) + "&tls=" + strconv.Itoa(tls) + "&socks=" + strconv.Itoa(socks)
+	fullURL := "ws://" + addr + "/system-info?type=1&secret=" + secret + "&version=" + version + "&http=" + strconv.Itoa(http) + "&tls=" + strconv.Itoa(tls) + "&socks=" + strconv.Itoa(socks) + "&ss=" + strconv.Itoa(ss)
 
 	fmt.Printf("WebSocket连接URL: %s\n", fullURL)
 

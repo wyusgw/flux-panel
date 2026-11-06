@@ -28,6 +28,7 @@ import (
 	xnet "github.com/go-gost/x/internal/net"
 	xmetrics "github.com/go-gost/x/metrics"
 	xstats "github.com/go-gost/x/observer/stats"
+	"github.com/go-gost/x/service/protodetect"
 	"github.com/rs/xid"
 )
 
@@ -50,14 +51,17 @@ var isHttp = 0
 
 var isSocks = 0
 
+var isSs = 0
+
 var needWrap = false
 
 // SetProtocolBlock sets protocol blocking switches and recomputes wrapper need
-func SetProtocolBlock(httpOn int, tlsOn int, socksOn int) {
+func SetProtocolBlock(httpOn int, tlsOn int, socksOn int, ssOn int) {
     isHttp = httpOn
     isTls = tlsOn
     isSocks = socksOn
-    needWrap = isTls+isSocks+isHttp > 0
+    isSs = ssOn
+    needWrap = isTls+isSocks+isHttp+isSs > 0
 }
 
 type Option func(opts *options)
@@ -68,7 +72,7 @@ func init() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	needWrap = isTls+isSocks+isHttp > 0
+	needWrap = isTls+isSocks+isHttp+isSs > 0
 }
 
 func AdmissionOption(admission admission.Admission) Option {
@@ -288,7 +292,7 @@ func (s *defaultService) Serve() error {
 			}
 
 			if needWrap {
-				conn = wrapConnPDetection(conn)
+				conn = wrapConnPDetection(conn, protodetect.IsRelayHandler(s.handler))
 			}
 
 			if err := s.handler.Handle(ctx, conn); err != nil {
@@ -442,10 +446,11 @@ func (ServiceEvent) Type() observer.EventType {
 	return observer.EventStatus
 }
 
-func wrapConnPDetection(conn net.Conn) net.Conn {
+func wrapConnPDetection(conn net.Conn, relay bool) net.Conn {
 	return &detectConn{
 		Conn:   conn,
 		reader: bufio.NewReader(conn),
+		relay:  relay,
 	}
 }
 
@@ -453,6 +458,8 @@ type detectConn struct {
 	net.Conn
 	reader   *bufio.Reader
 	detected bool
+	relay    bool
+	ss       protodetect.Observer
 }
 
 func (c *detectConn) Read(b []byte) (int, error) {
@@ -463,12 +470,22 @@ func (c *detectConn) Read(b []byte) (int, error) {
 			return 0, fmt.Errorf("connection blocked")
 		}
 	}
+	// 隧道的 relay 报文不按全加密判断；用户流量已经在隧道入口的转发服务上检查过了
+	if n > 0 && isSs == 1 && !c.relay && !isUDPConn(c.Conn) && c.ss.Feed(b[:n]) {
+		c.Conn.Close()
+		return 0, fmt.Errorf("connection blocked")
+	}
 	return n, err
+}
+
+func isUDPConn(conn net.Conn) bool {
+	network := conn.RemoteAddr().Network()
+	return network == "udp" || network == "udp4" || network == "udp6"
 }
 
 func detectProtocol(data []byte, conn net.Conn) (blocked bool) {
 	// 如果是 UDP，则不检测，直接放行
-	if conn.RemoteAddr().Network() == "udp" || conn.RemoteAddr().Network() == "udp4" || conn.RemoteAddr().Network() == "udp6" {
+	if isUDPConn(conn) {
 		return false
 	}
 
@@ -569,6 +586,7 @@ type Config struct {
 	Http   int    `json:"http"`
 	Tls    int    `json:"tls"`
 	Socks  int    `json:"socks"`
+	Ss     int    `json:"ss"`
 }
 
 func LoadConfig(configPath string) (string, error) {
@@ -589,6 +607,7 @@ func LoadConfig(configPath string) (string, error) {
 	isTls = config.Tls
 	isSocks = config.Socks
 	isHttp = config.Http
+	isSs = config.Ss
 
 	return "", nil
 

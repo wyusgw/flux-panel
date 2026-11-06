@@ -85,7 +85,7 @@ function DiagnosisDetailModal({
 }) {
   const addr = result ? `${result.targetIp}${result.targetPort ? ':' + result.targetPort : ''}` : '';
   return (
-    <Modal isOpen={result !== null} onOpenChange={(open) => !open && onClose()} size="lg" backdrop="blur" placement="center">
+    <Modal isOpen={result !== null} onOpenChange={(open) => !open && onClose()} size="lg" backdrop="opaque" placement="center">
       <ModalContent>
         {result && (
           <>

@@ -1,17 +1,13 @@
+import { LoginOutlined, LogoutOutlined } from "@/components/ant-icons";
 import { useEffect, useRef, useState } from "react";
 import { UserIcon } from "@/components/icons";
 
 export const LogoutIcon = ({ className = 'w-3.5 h-3.5' }: { className?: string }) => (
-  <svg className={className} fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
-    <path d="M18.4 7.5A8 8 0 1020 12h-7" />
-  </svg>
+  <LoginOutlined className={className} />
 );
 
 const LoginIcon = ({ className = 'w-4 h-4' }: { className?: string }) => (
-  <svg className={className} fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
-    <path d="M18.4 7.5A8 8 0 1020 12h-9" />
-    <path d="M14 8.5L10.5 12l3.5 3.5" />
-  </svg>
+  <LogoutOutlined className={className} />
 );
 
 // 顶栏右上角的两块式标识（登录前后共用）：文字与用户图标分别高亮。

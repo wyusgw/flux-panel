@@ -1,3 +1,4 @@
+import { ExclamationCircleFilled, InfoCircleFilled, TagsOutlined } from "@/components/ant-icons";
 import { useState, useEffect } from "react";
 import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Button } from "@heroui/button";
@@ -37,10 +38,25 @@ const PAYMENT_TYPE_LABELS: Record<PaymentChannel['type'], string> = {
 };
 
 const NoPaymentIcon = () => (
-  <svg className="w-16 h-16 text-default-300" viewBox="0 0 64 64" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round">
-    <path d="M50 20V13a5 5 0 00-5-5H13a6 6 0 00-6 6v34a6 6 0 006 6h37a5 5 0 005-5V28a5 5 0 00-5-5H13" />
-    <rect x="38" y="31" width="19" height="13" rx="4" />
-    <circle cx="45" cy="37.5" r="1.8" fill="currentColor" stroke="none" />
+  <svg width="105" height="102" viewBox="31 8 105 102" fill="none" aria-hidden="true">
+    <defs>
+      <linearGradient id="no-payment-shadow" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stopColor="#939395" />
+        <stop offset="1" stopColor="#5f5f60" />
+      </linearGradient>
+    </defs>
+    <ellipse cx="75.700" cy="101.700" rx="44.700" ry="7.700" fill="url(#no-payment-shadow)" />
+    <path d="M51 64 40 76h71.500l-11-12H51Z" fill="#7e848b" />
+    <path d="M51 31.500a1.500 1.500 0 0 1 1.500-1.500h46.600a1.500 1.500 0 0 1 1.500 1.500V76H51V31.500Z" fill="#aeaeb0" />
+    <rect x="58" y="37.500" width="36" height="18.500" rx="1" fill="#9da0a4" />
+    <rect x="58" y="63.400" width="36" height="2.500" rx="1.250" fill="#9da0a4" />
+    <rect x="58" y="71" width="36" height="2.500" rx="1.250" fill="#9da0a4" />
+    <path d="M40 76h71.500v23.500a3 3 0 0 1-3 3H43a3 3 0 0 1-3-3V76Z" fill="#9da0a4" />
+    <path d="M60 76h31.400c-.3 3.500-1.800 7-4 7H64c-2.200 0-3.700-3.500-4-7Z" fill="#a7a7aa" />
+    <path d="M121.500 9.500c8.300 0 15 5.400 15 12s-6.700 12-15 12c-3 0-5.800-.7-8.100-1.900L108 34l1.400-6.200c-1.800-1.800-2.900-3.900-2.900-6.300 0-6.600 6.700-12 15-12Z" fill="#9da0a4" />
+    <path d="m115.500 19.700 1.900 3.300h-3.800l1.900-3.300Z" fill="#aeaeb0" />
+    <rect x="119.800" y="19.800" width="3.200" height="3.200" fill="#aeaeb0" />
+    <circle cx="127.700" cy="21.400" r="1.700" fill="#aeaeb0" />
   </svg>
 );
 
@@ -52,22 +68,15 @@ const planTypeLabel = (durationDays: number) => {
 };
 
 const TagIcon = () => (
-  <svg className="w-4 h-4 text-default-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20.59 13.41L11 3.83A2 2 0 009.59 3.2L4 3a1 1 0 00-1 1l.2 5.59a2 2 0 00.58 1.41l9.59 9.59a2 2 0 002.83 0l4.41-4.41a2 2 0 000-2.83z" />
-    <circle cx="7.5" cy="7.5" r="1.25" fill="currentColor" stroke="none" />
-  </svg>
+  <TagsOutlined className="w-4 h-4 text-default-600 flex-shrink-0" />
 );
 
 const WarningIcon = () => (
-  <svg className="w-4 h-4 text-warning" fill="currentColor" viewBox="0 0 20 20">
-    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l6.28 11.184c.75 1.334-.213 2.98-1.742 2.98H3.72c-1.53 0-2.492-1.646-1.743-2.98L8.257 3.1zM11 14a1 1 0 11-2 0 1 1 0 012 0zm-.25-7.25a.75.75 0 00-1.5 0v3.5a.75.75 0 001.5 0v-3.5z" clipRule="evenodd" />
-  </svg>
+  <ExclamationCircleFilled className="w-4 h-4 text-warning" />
 );
 
 const InfoIcon = () => (
-  <svg className="w-5 h-5 text-primary" fill="currentColor" viewBox="0 0 20 20">
-    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-  </svg>
+  <InfoCircleFilled className="w-5 h-5 text-primary" />
 );
 
 export default function ShopPage() {
@@ -227,27 +236,27 @@ export default function ShopPage() {
 
   return (
     <div className="management-page px-4 lg:px-6 py-5 lg:py-6">
-      <div className="mb-6">
-        <h1 className="text-base font-semibold text-foreground">我的钱包</h1>
-        <p className="mt-1 text-sm text-default-600">钱包余额：<span className="font-semibold text-foreground">{walletBalance.toFixed(0)} 元</span></p>
-      </div>
+      <Card className="management-table-card mb-4">
+        <CardHeader className="px-6 py-4 border-b border-default-100"><h1 className="text-base font-semibold text-foreground">我的钱包</h1></CardHeader>
+        <CardBody className="p-6 gap-6">
+          <p className="pt-2 text-xl font-semibold text-foreground">钱包余额: {Number(walletBalance)} 元</p>
 
-      <Card className="management-table-card mb-6">
-        <CardHeader className="p-4 border-b border-default-100"><h2 className="text-base font-semibold text-foreground">钱包充值</h2></CardHeader>
-        <CardBody className="p-4 lg:p-5">
-          <div className="flex items-end gap-2 max-w-sm">
-            <Input
-              size="sm"
-              autoComplete="off"
-              label="充值金额"
+          <div className="rounded-medium border-1 border-default-200">
+            <div className="px-6 py-4 border-b border-default-200"><h2 className="text-base font-semibold text-foreground">钱包充值</h2></div>
+            <div className="p-6">
+          <div className="inline-flex h-8 max-w-full items-stretch rounded-small border-1 border-default-300 text-sm">
+            <label htmlFor="recharge-amount" className="flex items-center whitespace-nowrap rounded-l-small border-r-1 border-default-300 bg-default-100 px-3 text-foreground">充值金额</label>
+            <input
+              id="recharge-amount"
               type="number"
+              autoComplete="off"
               value={rechargeAmount}
               onChange={(e) => setRechargeAmount(e.target.value)}
-              variant="bordered"
-              endContent={<span className="text-sm text-default-500">CNY</span>}
+              className="w-44 min-w-0 bg-transparent px-3 text-foreground outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-primary"
             />
+            <span className="flex items-center rounded-r-small border-l-1 border-default-300 bg-default-100 px-3 text-foreground">CNY</span>
           </div>
-          <p className="mt-3 text-sm font-medium text-default-600">最小充值金额: {minRechargeAmount} 元</p>
+          <p className="mt-4 text-base font-semibold text-foreground">最小充值金额: {minRechargeAmount} 元</p>
 
           {paymentChannels.length > 0 ? (
             <div className="mt-6 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
@@ -258,17 +267,19 @@ export default function ShopPage() {
               ))}
             </div>
           ) : (
-            <div className="flex flex-col items-center justify-center gap-3 py-12">
+            <div className="flex flex-col items-center justify-center gap-2 pt-4">
               <NoPaymentIcon />
-              <p className="text-sm text-default-500">站点未配置任何支付方式!</p>
+              <p className="text-sm text-foreground">站点未配置任何支付方式!</p>
             </div>
           )}
+            </div>
+          </div>
         </CardBody>
       </Card>
 
-      <Card className="management-table-card mb-6">
-        <CardHeader className="p-4 border-b border-default-100"><h2 className="text-base font-semibold text-foreground">购买套餐</h2></CardHeader>
-        <CardBody className="p-4 lg:p-5">
+      <Card className="management-table-card mb-4">
+        <CardHeader className="px-6 py-4 border-b border-default-100"><h2 className="text-base font-semibold text-foreground">购买套餐</h2></CardHeader>
+        <CardBody className="p-6">
           {plans.length > 0 ? (
             <div className="flex flex-wrap gap-4">
               {plans.map((plan) => (
@@ -317,16 +328,16 @@ export default function ShopPage() {
               ))}
             </div>
           ) : (
-            <EmptyState className="py-12" />
+            <EmptyState />
           )}
         </CardBody>
       </Card>
 
       <Card className="management-table-card">
-        <CardHeader className="p-4 border-b border-default-100"><h2 className="text-base font-semibold text-foreground">兑换套餐</h2></CardHeader>
-        <CardBody className="p-4 lg:p-5">
-          <p className="text-sm text-default-500 mb-3">如果您有兑换码，则可以免费或低价购买对应的套餐。</p>
-          <div className="flex gap-2 max-w-lg">
+        <CardHeader className="px-6 py-4 border-b border-default-100"><h2 className="text-base font-semibold text-foreground">兑换套餐</h2></CardHeader>
+        <CardBody className="p-6">
+          <p className="mt-3 mb-7 py-0.5 pl-2.5 border-l-[3px] border-default-100 text-sm text-default-600">如果您有兑换码，则可以免费或低价购买对应的套餐。</p>
+          <div className="flex items-center gap-3.5">
             <Input
               size="sm"
               autoComplete="off"
@@ -335,14 +346,15 @@ export default function ShopPage() {
               onChange={(e) => setRedeemInput(e.target.value)}
               variant="bordered"
               startContent={<TagIcon />}
-              className="flex-1"
+              className="w-[196px]"
+              classNames={{ inputWrapper: "h-8 min-h-8 border-small border-default-300 rounded-small" }}
             />
-            <Button color="default" onPress={handleRedeem} isLoading={redeemLoading}>兑换</Button>
+            <Button size="sm" color="primary" radius="sm" className="h-8 min-w-16 text-sm tracking-[0.2em]" onPress={handleRedeem} isLoading={redeemLoading}>兑换</Button>
           </div>
         </CardBody>
       </Card>
 
-      <Modal isOpen={successModalOpen} onOpenChange={setSuccessModalOpen} size="sm" placement="center" backdrop="blur">
+      <Modal isOpen={successModalOpen} onOpenChange={setSuccessModalOpen} size="sm" placement="center" backdrop="opaque">
         <ModalContent>
           {(onClose) => (
             <>

@@ -1,4 +1,6 @@
-import { Route, Routes, useNavigate } from "react-router-dom";
+import { Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import toast from "react-hot-toast";
+import { canAccessPath, useMenuPermissions } from "@/utils/menu-permissions";
 import { useEffect, useState } from "react";
 
 import IndexPage from "@/pages/index";
@@ -8,6 +10,7 @@ import HomePage from "@/pages/home";
 import ForwardPage from "@/pages/forward";
 import TunnelPage from "@/pages/tunnel";
 import NodeProbePage from "@/pages/node-probe";
+import NodeConfigPage from "@/pages/node-config";
 import UserPage from "@/pages/user";
 import ShopPage from "@/pages/shop";
 import OrdersPage from "@/pages/orders";
@@ -74,6 +77,9 @@ const useH5Mode = () => {
 // 简化的路由保护组件 - 使用 React Router 导航避免循环
 const ProtectedRoute = ({ children, skipLayout = false }: { children: React.ReactNode, skipLayout?: boolean }) => {
   const authenticated = isLoggedIn();
+  const { pathname } = useLocation();
+  const { loaded: permissionsLoaded, permissions } = useMenuPermissions();
+  const pageAllowed = canAccessPath(pathname, permissions);
   const isH5 = useH5Mode();
   const navigate = useNavigate();
   
@@ -84,7 +90,15 @@ const ProtectedRoute = ({ children, skipLayout = false }: { children: React.Reac
     }
   }, [authenticated, navigate]);
 
-  if (!authenticated) {
+  useEffect(() => {
+    if (authenticated && permissionsLoaded && !pageAllowed) {
+      toast.error('没有访问权限');
+      navigate('/dashboard', { replace: true });
+    }
+  }, [authenticated, permissionsLoaded, pageAllowed, navigate]);
+
+  // 权限还没拿到时先不渲染页面，否则没有权限的页面会闪一下并发出一批被拒绝的请求
+  if (!authenticated || !permissionsLoaded || !pageAllowed) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-white dark:bg-black">
         <div className="text-lg text-gray-700 dark:text-gray-200"></div>
@@ -205,6 +219,7 @@ function App() {
         } 
       />
       <Route path="/node" element={<ProtectedRoute skipLayout={true}><NodeProbePage /></ProtectedRoute>} />
+      <Route path="/nodeConfig" element={<ProtectedRoute skipLayout={true}><NodeConfigPage /></ProtectedRoute>} />
       <Route
         path="/user"
         element={

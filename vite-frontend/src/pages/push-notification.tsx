@@ -1,3 +1,4 @@
+import { InfoCircleFilled } from "@/components/ant-icons";
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from "@heroui/button";
@@ -11,8 +12,10 @@ import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from 
 import toast from 'react-hot-toast';
 import { getConfigs, updateConfigs, testTelegramNotify, getDeviceGroupList, updateDeviceGroupOfflineConfig, getTelegramSendLogs } from '@/api';
 import { isAdmin } from '@/utils/auth';
+import { showApiFailure } from '@/components/error-dialog';
 import { HelpTooltip } from '@/components/help-tooltip';
 import RefreshButton from "@/components/refresh-button";
+import { EmptyState } from "@/components/empty-state";
 
 interface TemplateMeta {
   key: string;
@@ -55,9 +58,7 @@ interface TelegramLogRow {
 }
 
 const InfoIcon = () => (
-  <svg className="w-5 h-5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-  </svg>
+  <InfoCircleFilled className="w-5 h-5 flex-shrink-0" />
 );
 
 interface GroupOverrideForm {
@@ -71,6 +72,25 @@ interface DeviceGroupRow {
   id: number;
   name: string;
 }
+
+// 各配置块「实际会提交的内容」的快照，用来判断有没有未保存的修改。
+// 空值按保存时的回退值计算：清空输入框只有在回退后的值和已保存的值不同时才算修改
+const telegramSnapshot = (enabled: boolean, token: string, webhookUrl: string) =>
+  JSON.stringify([enabled, token, webhookUrl]);
+
+const offlineGlobalSnapshot = (graceEnabled: boolean, graceSeconds: string, retainEnabled: boolean, retainSeconds: string) =>
+  JSON.stringify([graceEnabled, graceSeconds || '20', retainEnabled, retainSeconds || '86400']);
+
+const offlineGroupsSnapshot = (overrides: Record<number, GroupOverrideForm>) =>
+  JSON.stringify(Object.keys(overrides).map(id => {
+    const o = overrides[Number(id)];
+    return [id, o.graceEnabled, o.graceSeconds, o.retainEnabled, o.retainSeconds];
+  }));
+
+const templatesSnapshot = (templates: Record<string, string>, expiryDays: string, flowPercent: string, hour: string) =>
+  JSON.stringify([TEMPLATE_META.map(t => templates[t.key]), expiryDays || '7', flowPercent || '90', hour || '9']);
+
+type SnapshotKey = 'telegram' | 'offlineGlobal' | 'offlineGroups' | 'templates';
 
 export default function PushNotificationPage() {
   const navigate = useNavigate();
@@ -110,6 +130,9 @@ export default function PushNotificationPage() {
   const [logTypeFilter, setLogTypeFilter] = useState<string>('');
   const [logStatusFilter, setLogStatusFilter] = useState<string>('');
 
+  // 已保存内容的快照；加载失败时没有快照，不算有修改，避免把页面默认值当成修改保存上去
+  const [savedSnapshots, setSavedSnapshots] = useState<Partial<Record<SnapshotKey, string>>>({});
+
   useEffect(() => {
     if (!isAdmin()) {
       toast.error('权限不足，只有管理员可以访问此页面');
@@ -128,6 +151,13 @@ export default function PushNotificationPage() {
 
       if (configRes.code === 0) {
         const c = configRes.data || {};
+        const loadedTemplates = Object.fromEntries(TEMPLATE_META.map(t => [t.key, c[t.key] || t.defaultValue]));
+        setSavedSnapshots(prev => ({
+          ...prev,
+          telegram: telegramSnapshot(c.telegram_enabled === 'true', c.telegram_bot_token || '', c.telegram_webhook_url || ''),
+          offlineGlobal: offlineGlobalSnapshot(c.device_offline_grace_enabled === 'true', c.device_offline_grace_seconds || '20', c.device_offline_retain_enabled === 'true', c.device_offline_retain_seconds || '86400'),
+          templates: templatesSnapshot(loadedTemplates, c.telegram_expiry_reminder_days || '7', c.telegram_flow_reminder_percent || '90', c.telegram_reminder_hour || '9'),
+        }));
         setTelegramEnabled(c.telegram_enabled === 'true');
         setTelegramToken(c.telegram_bot_token || '');
         setTelegramUsername(c.telegram_bot_username || '');
@@ -136,7 +166,7 @@ export default function PushNotificationPage() {
         setGraceSeconds(c.device_offline_grace_seconds || '20');
         setRetainEnabled(c.device_offline_retain_enabled === 'true');
         setRetainSeconds(c.device_offline_retain_seconds || '86400');
-        setTemplates(Object.fromEntries(TEMPLATE_META.map(t => [t.key, c[t.key] || t.defaultValue])));
+        setTemplates(loadedTemplates);
         setExpiryReminderDays(c.telegram_expiry_reminder_days || '7');
         setFlowReminderPercent(c.telegram_flow_reminder_percent || '90');
         setReminderHour(c.telegram_reminder_hour || '9');
@@ -158,6 +188,7 @@ export default function PushNotificationPage() {
           };
         });
         setGroupOverrides(overrides);
+        setSavedSnapshots(prev => ({ ...prev, offlineGroups: offlineGroupsSnapshot(overrides) }));
       }
     } catch (error) {
       toast.error('加载配置失败');
@@ -178,10 +209,10 @@ export default function PushNotificationPage() {
         toast.success('通道配置已保存');
         loadAll();
       } else {
-        toast.error(res.msg || '保存失败');
+        showApiFailure('保存', res);
       }
     } catch (error) {
-      toast.error('保存失败');
+      showApiFailure('保存', { msg: '请求出错，请重试' });
     } finally {
       setTelegramSaving(false);
     }
@@ -211,6 +242,8 @@ export default function PushNotificationPage() {
     setTemplates(prev => ({ ...prev, [key]: defaultValue }));
   };
 
+  const currentTemplatesSnapshot = templatesSnapshot(templates, expiryReminderDays, flowReminderPercent, reminderHour);
+
   const saveTemplates = async () => {
     setTemplatesSaving(true);
     try {
@@ -222,11 +255,12 @@ export default function PushNotificationPage() {
       });
       if (res.code === 0) {
         toast.success('消息模板与提醒设置已保存');
+        setSavedSnapshots(prev => ({ ...prev, templates: currentTemplatesSnapshot }));
       } else {
-        toast.error(res.msg || '保存失败');
+        showApiFailure('保存', res);
       }
     } catch (error) {
-      toast.error('保存失败');
+      showApiFailure('保存', { msg: '请求出错，请重试' });
     } finally {
       setTemplatesSaving(false);
     }
@@ -258,7 +292,7 @@ export default function PushNotificationPage() {
         device_offline_retain_seconds: retainSeconds || '86400'
       });
       if (globalRes.code !== 0) {
-        toast.error(globalRes.msg || '保存失败');
+        showApiFailure('保存', globalRes);
         return;
       }
 
@@ -277,14 +311,21 @@ export default function PushNotificationPage() {
         toast.success('离线通知配置已保存');
         loadAll();
       } else {
-        toast.error(groupRes.msg || '保存失败');
+        showApiFailure('保存', groupRes);
       }
     } catch (error) {
-      toast.error('保存失败');
+      showApiFailure('保存', { msg: '请求出错，请重试' });
     } finally {
       setOfflineSaving(false);
     }
   };
+
+  const isChanged = (key: SnapshotKey, current: string) =>
+    savedSnapshots[key] !== undefined && savedSnapshots[key] !== current;
+  const telegramChanged = isChanged('telegram', telegramSnapshot(telegramEnabled, telegramToken, telegramWebhookUrl));
+  const offlineChanged = isChanged('offlineGlobal', offlineGlobalSnapshot(graceEnabled, graceSeconds, retainEnabled, retainSeconds))
+    || isChanged('offlineGroups', offlineGroupsSnapshot(groupOverrides));
+  const templatesChanged = isChanged('templates', currentTemplatesSnapshot);
 
   if (loading) {
     return (
@@ -304,7 +345,7 @@ export default function PushNotificationPage() {
               <HelpTooltip content="用于向用户 / 管理员发送充值到账、设备上下线等推送通知，采用长轮询方式接收 Telegram 消息，无需公网 HTTPS 入口">Telegram Bot 推送通道</HelpTooltip>
             </h1>
           </div>
-          <Button size="sm" color="default" onPress={saveTelegramChannel} isLoading={telegramSaving}>保存通道配置</Button>
+          <Button size="sm" color={telegramChanged ? 'primary' : 'default'} isDisabled={!telegramChanged} onPress={saveTelegramChannel} isLoading={telegramSaving}>保存通道配置</Button>
         </CardHeader>
         <CardBody className="p-4 lg:p-5 space-y-4">
           <div className="grid grid-cols-1 lg:grid-cols-[minmax(260px,0.75fr)_minmax(360px,1.25fr)] gap-3 lg:gap-8 items-center">
@@ -407,7 +448,7 @@ export default function PushNotificationPage() {
                   <TableColumn>自定义设备离线宽限期</TableColumn>
                   <TableColumn>自定义设备离线保留期</TableColumn>
                 </TableHeader>
-                <TableBody emptyContent="暂无设备组">
+                <TableBody emptyContent={<EmptyState text="暂无设备组" />}>
                   {groups.map(group => {
                     const o = groupOverrides[group.id] || { graceEnabled: false, graceSeconds: '', retainEnabled: false, retainSeconds: '' };
                     return (
@@ -434,7 +475,7 @@ export default function PushNotificationPage() {
           </div>
 
           <div className="flex justify-end pt-2">
-            <Button color="default" onPress={saveOfflineConfig} isLoading={offlineSaving}>保存离线通知配置</Button>
+            <Button color={offlineChanged ? 'primary' : 'default'} isDisabled={!offlineChanged} onPress={saveOfflineConfig} isLoading={offlineSaving}>保存离线通知配置</Button>
           </div>
         </CardBody>
       </Card>
@@ -444,10 +485,10 @@ export default function PushNotificationPage() {
         <CardHeader className="flex flex-row items-center justify-between gap-4 p-4 border-b border-default-100">
           <div className="flex items-center gap-1.5">
             <h1 className="text-base font-semibold text-foreground">
-              <HelpTooltip content="自定义各类 Telegram 通知的正文内容，以及到期/流量提醒的阈值与每日推送时间；标题由系统固定生成">消息模板与提醒设置</HelpTooltip>
+              <HelpTooltip content="自定义各类 Telegram 通知的正文内容，以及到期/流量提醒的阈值与每日推送时间；标题由系统固定生成，Telegram 关联多个账号时还会自动加上账号名">消息模板与提醒设置</HelpTooltip>
             </h1>
           </div>
-          <Button size="sm" color="default" onPress={saveTemplates} isLoading={templatesSaving}>保存模板与设置</Button>
+          <Button size="sm" color={templatesChanged ? 'primary' : 'default'} isDisabled={!templatesChanged} onPress={saveTemplates} isLoading={templatesSaving}>保存模板与设置</Button>
         </CardHeader>
         <CardBody className="p-4 lg:p-5 space-y-5">
           <div className="grid grid-cols-3 gap-3">
@@ -548,11 +589,11 @@ export default function PushNotificationPage() {
                 <TableColumn>状态</TableColumn>
                 <TableColumn>内容/错误</TableColumn>
               </TableHeader>
-              <TableBody emptyContent={logsLoading ? '加载中...' : '暂无发送记录'}>
+              <TableBody emptyContent={logsLoading ? '加载中...' : <EmptyState text="暂无发送记录" />}>
                 {logs.map((item) => (
                   <TableRow key={item.id}>
                     <TableCell className="whitespace-nowrap text-xs text-default-500">{new Date(item.createdTime).toLocaleString()}</TableCell>
-                    <TableCell>{item.userName || (item.userId != null ? `用户#${item.userId}` : '-')}</TableCell>
+                    <TableCell>{item.userName || (item.userId != null ? `用户${item.userId}` : '-')}</TableCell>
                     <TableCell><Chip size="sm" variant="light">{LOG_TYPE_LABELS[item.type] || item.type}</Chip></TableCell>
                     <TableCell>
                       {item.status === 'SUCCESS'

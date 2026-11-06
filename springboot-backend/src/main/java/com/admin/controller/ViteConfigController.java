@@ -8,6 +8,8 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
+import javax.servlet.http.HttpServletRequest;
 
 /**
  * <p>
@@ -65,8 +67,9 @@ public class ViteConfigController extends BaseController {
     @LogAnnotation
     @RequireRole
     @PostMapping("/update")
-    public R updateConfigs(@RequestBody Map<String, String> configMap) {
-        return viteConfigService.updateConfigs(configMap);
+    public R updateConfigs(@RequestBody Map<String, String> configMap, HttpServletRequest request) {
+        Set<String> demoAreas = demoAreas(request);
+        return demoAreas != null ? viteConfigService.updateConfigsAsDemo(configMap, demoAreas) : viteConfigService.updateConfigs(configMap);
     }
 
     /**
@@ -76,10 +79,18 @@ public class ViteConfigController extends BaseController {
     @LogAnnotation
     @RequireRole
     @PostMapping("/updateSingle")
-    public R updateConfig(@RequestBody Map<String, Object> params) {
+    public R updateConfig(@RequestBody Map<String, Object> params, HttpServletRequest request) {
         String name = params.get("name").toString();
         String value = params.get("value").toString();
-        return viteConfigService.updateConfig(name, value);
+        Set<String> demoAreas = demoAreas(request);
+        return demoAreas != null
+                ? viteConfigService.updateConfigsAsDemo(java.util.Collections.singletonMap(name, value), demoAreas)
+                : viteConfigService.updateConfig(name, value);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Set<String> demoAreas(HttpServletRequest request) {
+        return (Set<String>) request.getAttribute(com.admin.common.interceptor.ReadOnlyInterceptor.DEMO_AREAS_ATTRIBUTE);
     }
 
 }

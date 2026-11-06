@@ -10,6 +10,7 @@ import com.admin.common.utils.JwtUtil;
 import com.admin.common.utils.WebSocketServer;
 import com.admin.entity.DeviceGroup;
 import com.admin.entity.DeviceGroupUserGroupRelation;
+import com.admin.entity.Forward;
 import com.admin.entity.Node;
 import com.admin.entity.NodeGroupRelation;
 import com.admin.entity.Tunnel;
@@ -17,6 +18,7 @@ import com.admin.entity.User;
 import com.admin.entity.ViteConfig;
 import com.admin.mapper.DeviceGroupMapper;
 import com.admin.mapper.DeviceGroupUserGroupRelationMapper;
+import com.admin.mapper.ForwardMapper;
 import com.admin.mapper.NodeGroupRelationMapper;
 import com.admin.mapper.NodeMapper;
 import com.admin.mapper.TunnelMapper;
@@ -34,6 +36,7 @@ import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -93,6 +96,9 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
 
     @Resource
     private DeviceGroupUserGroupRelationMapper deviceGroupUserGroupRelationMapper;
+
+    @Resource
+    private ForwardMapper forwardMapper;
 
     @Resource
     private UserMapper userMapper;
@@ -214,12 +220,26 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
         boolean httpChanged = newHttp != null && !newHttp.equals(node.getHttp());
         boolean tlsChanged = newTls != null && !newTls.equals(node.getTls());
         boolean socksChanged = newSocks != null && !newSocks.equals(node.getSocks());
+        Integer newSs = nodeUpdateDto.getSs();
+        boolean ssChanged = newSs != null && !newSs.equals(node.getSs());
 
-        if (online && (httpChanged || tlsChanged || socksChanged)) {
+        // 旧版节点不认识 ss，会直接返回成功但实际没有屏蔽；节点离线时也无法确认版本，所以开启前必须确认
+        if (ssChanged && newSs == 1) {
+            if (!online) {
+                return R.err("节点离线，无法开启屏蔽 Shadowsocks");
+            }
+            if (!supportsSsBlock(node.getVersion())) {
+                return R.err("节点版本过低，请先更新节点后再开启屏蔽 Shadowsocks");
+            }
+        }
+
+        if (online && (httpChanged || tlsChanged || socksChanged || ssChanged)) {
             JSONObject req = new JSONObject();
             req.put("http", newHttp);
             req.put("tls", newTls);
             req.put("socks", newSocks);
+            // 节点按全量设置，没传时沿用现有值，否则会被关掉
+            req.put("ss", newSs != null ? newSs : node.getSs());
 
             GostDto gostResult = WebSocketServer.send_msg(node.getId(), req, "SetProtocol");
             if (!Objects.equals(gostResult.getMsg(), "OK")){
@@ -347,11 +367,81 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
         node.setHttp(nodeUpdateDto.getHttp());
         node.setTls(nodeUpdateDto.getTls());
         node.setSocks(nodeUpdateDto.getSocks());
+        node.setSs(nodeUpdateDto.getSs());
         // 验证端口范围
         validatePortRange(node.getPortSta(), node.getPortEnd());
         
         node.setUpdatedTime(System.currentTimeMillis());
         return node;
+    }
+
+    @Override
+    public R getNodeConfig(Long id) {
+        Node node = this.getById(id);
+        if (node == null) {
+            return R.err(ERROR_NODE_NOT_FOUND);
+        }
+        attachNodeGroupIds(Collections.singletonList(node));
+
+        List<DeviceGroup> groups = deviceGroupMapper.selectList(new QueryWrapper<DeviceGroup>().eq("node_id", id).orderByAsc("sort"));
+        List<Long> groupIds = groups.stream().map(DeviceGroup::getId).collect(Collectors.toList());
+        Map<Long, List<Long>> userGroupIds = Collections.emptyMap();
+        List<Forward> forwards = Collections.emptyList();
+        if (!groupIds.isEmpty()) {
+            userGroupIds = deviceGroupUserGroupRelationMapper.selectList(
+                            new QueryWrapper<DeviceGroupUserGroupRelation>().in("device_group_id", groupIds)).stream()
+                    .collect(Collectors.groupingBy(DeviceGroupUserGroupRelation::getDeviceGroupId,
+                            Collectors.mapping(DeviceGroupUserGroupRelation::getUserGroupId, Collectors.toList())));
+            forwards = forwardMapper.selectList(new QueryWrapper<Forward>()
+                    .in("in_device_group_id", groupIds).or().in("out_device_group_id", groupIds));
+        }
+        return R.ok(buildNodeConfig(node, groups, userGroupIds, forwards));
+    }
+
+    /** 组装节点配置；只挑选要展示的字段，节点密钥不会出现在结果里 */
+    static Map<String, Object> buildNodeConfig(Node node, List<DeviceGroup> groups, Map<Long, List<Long>> userGroupIds, List<Forward> forwards) {
+        Map<String, Object> config = new LinkedHashMap<>();
+        config.put("id", node.getId());
+        config.put("name", node.getName());
+        config.put("status", node.getStatus());
+        config.put("version", node.getVersion());
+        config.put("serverIp", node.getServerIp());
+        config.put("ip", node.getIp());
+        config.put("portSta", node.getPortSta());
+        config.put("portEnd", node.getPortEnd());
+        config.put("http", node.getHttp());
+        config.put("tls", node.getTls());
+        config.put("socks", node.getSocks());
+        config.put("ss", node.getSs());
+        config.put("nodeGroupIds", node.getNodeGroupIds());
+        config.put("deviceGroups", groups.stream().map(group -> {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("id", group.getId());
+            item.put("name", group.getName());
+            item.put("direction", group.getDirection());
+            // 协议只对出口生效，入口和仅监控存的默认值没有意义，返回 null 避免误解
+            boolean hasOutbound = "outbound".equals(group.getDirection()) || "both".equals(group.getDirection());
+            item.put("protocol", hasOutbound ? group.getProtocol() : null);
+            item.put("ratio", group.getRatio());
+            item.put("hideInProbe", group.getHideInProbe());
+            item.put("remark", group.getRemark());
+            item.put("config", group.getConfig() == null ? "{}" : group.getConfig());
+            item.put("userGroupIds", userGroupIds.getOrDefault(group.getId(), Collections.emptyList()));
+            return item;
+        }).collect(Collectors.toList()));
+        config.put("rules", forwards.stream().map(forward -> {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("id", forward.getId());
+            item.put("name", forward.getName());
+            item.put("userId", forward.getUserId());
+            item.put("status", forward.getStatus());
+            item.put("inPort", forward.getInPort());
+            item.put("remoteAddr", forward.getRemoteAddr());
+            item.put("inDeviceGroupId", forward.getInDeviceGroupId());
+            item.put("outDeviceGroupId", forward.getOutDeviceGroupId());
+            return item;
+        }).collect(Collectors.toList()));
+        return config;
     }
 
     /**
@@ -671,4 +761,24 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
         }
     }
 
+
+    /** 节点程序从 1.2.5 开始支持屏蔽 Shadowsocks */
+    static boolean supportsSsBlock(String version) {
+        if (version == null) {
+            return false;
+        }
+        int[] minimum = {1, 2, 5};
+        String[] parts = version.trim().split("\\.");
+        try {
+            for (int i = 0; i < minimum.length; i++) {
+                int part = i < parts.length ? Integer.parseInt(parts[i]) : 0;
+                if (part != minimum[i]) {
+                    return part > minimum[i];
+                }
+            }
+            return true;
+        } catch (NumberFormatException e) {
+            return false;
+        }
+    }
 }

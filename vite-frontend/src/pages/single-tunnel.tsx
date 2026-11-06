@@ -1,4 +1,7 @@
+import { TipButton } from "@/components/tip-button";
+import { ApiOutlined, CopyOutlined, KeyOutlined } from "@/components/ant-icons";
 import { useState, useEffect } from "react";
+import { ToolbarAddIcon } from "@/components/toolbar-icons";
 import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Button } from "@heroui/button";
 import { Input } from "@heroui/input";
@@ -83,7 +86,6 @@ const DEFAULT_FORM: GroupForm = {
   shared: false
 };
 
-const MAX_ENTRY_IPS = 5;
 
 // 入口 IP/域名 存进后端时是逗号拼接的单个字符串，这里负责跟表单里"一行一个输入框"的字符串数组互相转换
 const parseEntryIps = (value?: string | null): string[] => {
@@ -93,22 +95,15 @@ const parseEntryIps = (value?: string | null): string[] => {
 const joinEntryIps = (values: string[]): string => values.map(v => v.trim()).filter(Boolean).join(',');
 
 const DockIcon = ({ className }: { className?: string }) => (
-  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 010 5.656l-2.828 2.828a4 4 0 11-5.656-5.656l1.414-1.414M10.172 13.828a4 4 0 010-5.656l2.828-2.828a4 4 0 115.656 5.656l-1.414 1.414" />
-  </svg>
+  <ApiOutlined className={className} />
 );
 
 const KeyIcon = ({ className }: { className?: string }) => (
-  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17l-1 1-1 1H6v2H2v-4l4.257-4.257A6 6 0 1121 9z" />
-  </svg>
+  <KeyOutlined className={className} />
 );
 
 const IconCopy = () => (
-  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-    <rect x="9" y="9" width="12" height="12" rx="2" />
-    <path strokeLinecap="round" strokeLinejoin="round" d="M5 15H4a1 1 0 01-1-1V4a1 1 0 011-1h10a1 1 0 011 1v1" />
-  </svg>
+  <CopyOutlined />
 );
 
 export default function SingleTunnelPage() {
@@ -402,18 +397,15 @@ export default function SingleTunnelPage() {
     <div className="management-page px-4 lg:px-6 py-5 lg:py-6">
       <Card className="management-table-card max-w-[1600px] mx-auto">
         <CardHeader className="flex-row items-center justify-between gap-4 p-4 border-b border-default-100">
-          <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="text-base font-semibold text-foreground">单端隧道</h1>
-            <RefreshButton onRefresh={() => loadData(false)} />
-          </div>
+          <h1 className="text-base font-semibold text-foreground"><HelpTooltip content="添加自己的设备作为转发规则的入口或出口，添加完成后在此获取对接命令，在你的设备上安装即可连接到面板。">单端隧道</HelpTooltip></h1>
         </CardHeader>
         <CardBody className="p-4 space-y-3">
-          <p className="text-xs text-default-500">添加自己的设备作为转发规则的入口或出口，添加完成后在此获取对接命令，在你的设备上安装即可连接到面板。</p>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-3.5">
             <Button size="sm" variant="bordered" onPress={() => setGroupManageModalOpen(true)}>管理分组</Button>
-            <Button size="sm" variant="bordered" onPress={handleAdd}>添加设备</Button>
+            <Button size="sm" variant="bordered" startContent={<ToolbarAddIcon />} onPress={handleAdd}>添加设备</Button>
+            <RefreshButton onRefresh={() => loadData(false)} />
           </div>
-          <div className="-mx-4 -mb-4">
+          <div>
           <div className="settings-table-scroll">
             <Table
               removeWrapper
@@ -458,15 +450,15 @@ export default function SingleTunnelPage() {
                             </DropdownSection>
                           </DropdownMenu>
                         </Dropdown>
-                        <Button isIconOnly size="sm" variant="flat" onPress={() => handleEdit(group)} title="编辑">
-                          <EditIcon className="w-4 h-4" />
-                        </Button>
-                        <Button isIconOnly size="sm" variant="flat" onPress={() => handleResetSecret(group)} title="重置 Token">
-                          <KeyIcon className="w-4 h-4" />
-                        </Button>
-                        <Button isIconOnly size="sm" variant="flat" color="danger" onPress={() => handleDelete(group)} title="删除">
-                          <DeleteIcon className="w-4 h-4" />
-                        </Button>
+                        <TipButton isIconOnly size="sm" variant="flat" onPress={() => handleEdit(group)} title="编辑">
+                          <EditIcon />
+                        </TipButton>
+                        <TipButton isIconOnly size="sm" variant="flat" onPress={() => handleResetSecret(group)} title="重置 Token">
+                          <KeyIcon />
+                        </TipButton>
+                        <TipButton isIconOnly size="sm" variant="flat" color="danger" onPress={() => handleDelete(group)} title="删除">
+                          <DeleteIcon />
+                        </TipButton>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -478,7 +470,7 @@ export default function SingleTunnelPage() {
           </CardBody>
       </Card>
 
-      <Modal isOpen={modalOpen} onOpenChange={setModalOpen} size="lg" scrollBehavior="outside" backdrop="blur" placement="center">
+      <Modal isOpen={modalOpen} onOpenChange={setModalOpen} size="lg" scrollBehavior="outside" backdrop="opaque" placement="center">
         <ModalContent>
           {(onClose) => (
             <>
@@ -516,7 +508,7 @@ export default function SingleTunnelPage() {
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="text-sm font-medium text-foreground">入口 IP / 域名</span>
-                      <span className="text-xs text-default-400">{form.entryIps.length} / {MAX_ENTRY_IPS}</span>
+                      <span className="text-xs text-default-400">{form.entryIps.length} 个</span>
                     </div>
                     {errors.entryIp && <p className="text-xs text-danger">{errors.entryIp}</p>}
                     <div className="space-y-2">
@@ -530,23 +522,22 @@ export default function SingleTunnelPage() {
                             variant="bordered"
                             className="flex-1"
                           />
-                          <Button
+                          <TipButton
                             isIconOnly size="sm" variant="light" color="danger"
                             isDisabled={form.entryIps.length <= 1}
                             onPress={() => setForm(prev => ({ ...prev, entryIps: prev.entryIps.filter((_, i) => i !== index) }))}
                             title="删除这一行"
                           >
-                            <DeleteIcon className="w-4 h-4" />
-                          </Button>
+                            <DeleteIcon />
+                          </TipButton>
                         </div>
                       ))}
                     </div>
                     <Button
                       size="sm" variant="flat" className="w-full"
-                      isDisabled={form.entryIps.length >= MAX_ENTRY_IPS}
                       onPress={() => setForm(prev => ({ ...prev, entryIps: [...prev.entryIps, ''] }))}
                     >
-                      + 添加一行（{form.entryIps.length} / {MAX_ENTRY_IPS}）
+                      + 添加一行
                     </Button>
                   </div>
 
@@ -614,7 +605,7 @@ export default function SingleTunnelPage() {
         </ModalContent>
       </Modal>
 
-      <Modal isOpen={offlineModalOpen} onOpenChange={setOfflineModalOpen} size="lg" scrollBehavior="outside" backdrop="blur" placement="center">
+      <Modal isOpen={offlineModalOpen} onOpenChange={setOfflineModalOpen} size="lg" scrollBehavior="outside" backdrop="opaque" placement="center">
         <ModalContent>
           {(onClose) => (
             <>
@@ -698,7 +689,7 @@ export default function SingleTunnelPage() {
         }}
         size="lg"
         scrollBehavior="outside"
-        backdrop="blur"
+        backdrop="opaque"
         placement="center"
       >
         <ModalContent>
@@ -729,7 +720,7 @@ export default function SingleTunnelPage() {
                 </div>
                 <div className="space-y-2 mt-2 max-h-64 overflow-y-auto">
                   {singleTunnelGroups.length === 0 && (
-                    <p className="text-small text-default-500">暂无分组</p>
+                    <EmptyState compact text="暂无分组" />
                   )}
                   {singleTunnelGroups.map(group => (
                     <div key={group.id} className="flex items-center justify-between p-2 rounded-lg bg-default-100">

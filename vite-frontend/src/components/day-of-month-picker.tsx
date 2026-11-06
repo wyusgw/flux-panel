@@ -100,10 +100,6 @@ export function DayOfMonthPicker({
                     </button>
                   ))}
                 </div>
-                <p className="mt-2 px-1 text-xs text-default-400">
-                  {now.getMonth() + 1} 月共 {daysInMonth} 天，也可直接在输入框中输入 1-31
-                  {selected > daysInMonth ? `；本月没有 ${selected} 日，将在月末重置` : ''}
-                </p>
               </div>
             </PopoverContent>
           </Popover>

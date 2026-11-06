@@ -1433,3 +1433,172 @@ SET @sql = (
 PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
+
+-- user 表新增 demo_mode：演示模式（0 关闭，1 开启），开启后是演示管理员：能看完整后台，但不能修改，敏感数据打码；已有用户默认关闭
+SET @sql = (
+  SELECT IF(
+    NOT EXISTS (
+      SELECT 1 FROM information_schema.COLUMNS
+      WHERE table_schema = DATABASE() AND table_name = 'user' AND column_name = 'demo_mode'
+    ),
+    'ALTER TABLE `user` ADD COLUMN `demo_mode` tinyint(4) NOT NULL DEFAULT 0 COMMENT "演示模式：0关闭，1开启";',
+    'SELECT "Column `demo_mode` already exists in `user`";'
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- 演示账号的权限分配：可编辑区域与恢复时间；demo_change_log 记录演示账号的改动，到时间只撤销这些改动
+
+SET @sql = (
+  SELECT IF(
+    NOT EXISTS (
+      SELECT 1 FROM information_schema.COLUMNS
+      WHERE table_schema = DATABASE() AND table_name = 'user' AND column_name = 'demo_areas'
+    ),
+    'ALTER TABLE `user` ADD COLUMN `demo_areas` varchar(255) DEFAULT NULL COMMENT "演示账号可编辑区域（逗号分隔）";',
+    'SELECT "Column `demo_areas` already exists in `user`";'
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @sql = (
+  SELECT IF(
+    NOT EXISTS (
+      SELECT 1 FROM information_schema.COLUMNS
+      WHERE table_schema = DATABASE() AND table_name = 'user' AND column_name = 'demo_restore_time'
+    ),
+    'ALTER TABLE `user` ADD COLUMN `demo_restore_time` varchar(5) DEFAULT NULL COMMENT "每天恢复的时刻（HH:mm），NULL不自动恢复";',
+    'SELECT "Column `demo_restore_time` already exists in `user`";'
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- demo_areas 曾是 varchar(100)，放不下全部区域；重复执行不会有影响
+ALTER TABLE `user` MODIFY COLUMN `demo_areas` varchar(255) DEFAULT NULL COMMENT "演示账号可编辑区域（逗号分隔）";
+
+-- 恢复时间曾按时长存储，含义不同无法换算，直接删除旧列
+SET @sql = (
+  SELECT IF(
+    EXISTS (
+      SELECT 1 FROM information_schema.COLUMNS
+      WHERE table_schema = DATABASE() AND table_name = 'user' AND column_name = 'demo_restore_minutes'
+    ),
+    'ALTER TABLE `user` DROP COLUMN `demo_restore_minutes`;',
+    'SELECT "Column `demo_restore_minutes` does not exist in `user`";'
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @sql = (
+  SELECT IF(
+    EXISTS (
+      SELECT 1 FROM information_schema.COLUMNS
+      WHERE table_schema = DATABASE() AND table_name = 'user' AND column_name = 'demo_restore_seconds'
+    ),
+    'ALTER TABLE `user` DROP COLUMN `demo_restore_seconds`;',
+    'SELECT "Column `demo_restore_seconds` does not exist in `user`";'
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+CREATE TABLE IF NOT EXISTS `demo_change_log` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `user_id` bigint(20) NOT NULL,
+  `table_name` varchar(64) NOT NULL,
+  `row_id` varchar(64) NOT NULL,
+  `before_json` longtext,
+  `after_json` longtext,
+  `created_time` bigint(20) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_user_row` (`user_id`,`table_name`,`row_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- node 表新增 ss：是否屏蔽 Shadowsocks 等全加密协议（0 否，1 是），按统计特征判断，可能误伤，默认关闭
+SET @sql = (
+  SELECT IF(
+    NOT EXISTS (
+      SELECT 1 FROM information_schema.COLUMNS
+      WHERE table_schema = DATABASE() AND table_name = 'node' AND column_name = 'ss'
+    ),
+    'ALTER TABLE `node` ADD COLUMN `ss` int(10) NOT NULL DEFAULT 0 COMMENT "是否屏蔽 Shadowsocks 等全加密协议";',
+    'SELECT "Column `ss` already exists in `node`";'
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- user 表新增 menu_permissions：账号能使用的页面（逗号分隔），NULL 表示该角色的全部页面；已有账号不受影响
+SET @sql = (
+  SELECT IF(
+    NOT EXISTS (
+      SELECT 1 FROM information_schema.COLUMNS
+      WHERE table_schema = DATABASE() AND table_name = 'user' AND column_name = 'menu_permissions'
+    ),
+    'ALTER TABLE `user` ADD COLUMN `menu_permissions` varchar(500) DEFAULT NULL COMMENT "账号能使用的页面，NULL表示全部";',
+    'SELECT "Column `menu_permissions` already exists in `user`";'
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- user 表新增 remark：管理员给用户写的备注
+SET @sql = (
+  SELECT IF(
+    NOT EXISTS (
+      SELECT 1 FROM information_schema.COLUMNS
+      WHERE table_schema = DATABASE() AND table_name = 'user' AND column_name = 'remark'
+    ),
+    'ALTER TABLE `user` ADD COLUMN `remark` varchar(500) DEFAULT NULL COMMENT "备注";',
+    'SELECT "Column `remark` already exists in `user`";'
+  )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- 连接地址不再限制个数：隧道的入口地址会复制节点的连接地址，放宽为 longtext（重复执行无影响）
+SET @sql = (
+    SELECT IF(
+        EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = DATABASE()
+              AND table_name = 'tunnel'
+              AND column_name = 'in_ip'
+              AND data_type <> 'longtext'
+        ),
+        'ALTER TABLE `tunnel` MODIFY COLUMN `in_ip` LONGTEXT NOT NULL;',
+        'SELECT "Column `in_ip` not exists or already modified in `tunnel`";'
+    )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- device_group 表：添加 config 字段（高级编辑保存的 JSON 配置，重复执行无影响）
+SET @sql = (
+    SELECT IF(
+        NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = DATABASE()
+              AND table_name = 'device_group'
+              AND column_name = 'config'
+        ),
+        'ALTER TABLE `device_group` ADD COLUMN `config` LONGTEXT COMMENT "高级编辑保存的 JSON 配置";',
+        'SELECT "Column `config` already exists in `device_group`";'
+    )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;

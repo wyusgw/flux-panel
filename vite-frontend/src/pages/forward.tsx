@@ -1,3 +1,6 @@
+import { TipButton } from "@/components/tip-button";
+import { RuleSearchModal, EMPTY_RULE_SEARCH, countRuleSearch, matchRuleSearch } from "@/components/rule-search-modal";
+import { AimOutlined, BarChartOutlined, CheckSquareOutlined, CloseOutlined, CopyOutlined, DeleteOutlined, DownloadOutlined, EditOutlined, FileAddOutlined, FilterFilled, FireOutlined, FolderAddOutlined, InfoCircleOutlined, PauseCircleOutlined, PlayCircleOutlined, SearchOutlined, SettingOutlined } from "@/components/ant-icons";
 import { useState, useEffect, useRef } from "react";
 import { useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import { Card, CardBody, CardHeader } from "@heroui/card";
@@ -20,6 +23,7 @@ import { copyText } from '@/utils/clipboard';
 import { EmptyState } from "@/components/empty-state";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { showApiFailure } from "@/components/error-dialog";
+import { nextSort, SortableHeader } from "@/components/table-sort";
 import { ToastWarningIcon } from "@/components/toast-icons";
 import { HelpTooltip } from "@/components/help-tooltip";
 import { DiagnosisResultItem, DispatchStats, DiagnosisLeg, DiagnosisPanelFeedback } from "@/components/tcp-ping-diagnosis";
@@ -48,21 +52,21 @@ import { isAdmin } from "@/utils/auth";
 import RefreshButton from "@/components/refresh-button";
 
 // ========== 图标（转发规则页专用的一批简单线性小图标） ==========
-const IconSearch = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" /><path strokeLinecap="round" d="M21 21l-4.3-4.3" /></svg>;
-const IconStats = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 20V10M12 20V4M20 20v-7" /></svg>;
-const IconFilter = () => <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M3 4h18l-7 8.5V19l-4 2v-8.5L3 4z" /></svg>;
-const IconGroup = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" /></svg>;
-const IconAddSingle = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>;
-const IconImport = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 4h10l6 6v10a1 1 0 01-1 1H4a1 1 0 01-1-1V5a1 1 0 011-1z" /><path strokeLinecap="round" strokeLinejoin="round" d="M12 12v6m0-6l-3 3m3-3l3 3" /></svg>;
-const IconExport = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 4h10l6 6v10a1 1 0 01-1 1H4a1 1 0 01-1-1V5a1 1 0 011-1z" /><path strokeLinecap="round" strokeLinejoin="round" d="M12 18v-6m0 0l-3 3m3-3l3 3" /></svg>;
-const IconToggle = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="8" rx="4" /><circle cx="8" cy="12" r="2.4" fill="currentColor" stroke="none" /></svg>;
-const IconFlow = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M13 3L4 14h6l-1 7 9-11h-6l1-7z" /></svg>;
-const IconPause = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><rect x="6" y="5" width="4" height="14" rx="1" /><rect x="14" y="5" width="4" height="14" rx="1" /></svg>;
-const IconPlay = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 4l14 8-14 8V4z" /></svg>;
-const IconDelete = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 7h16M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m-8 0l1 13a1 1 0 001 1h6a1 1 0 001-1l1-13" /></svg>;
-const IconEdit = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>;
-const IconHelp = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path strokeLinecap="round" strokeLinejoin="round" d="M9.5 9a2.5 2.5 0 114.1 1.9c-.6.5-1.1 1-1.1 1.8V13" /><circle cx="12" cy="16.5" r="0.9" fill="currentColor" stroke="none" /></svg>;
-const IconCopy = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2" /><path strokeLinecap="round" strokeLinejoin="round" d="M5 15H4a1 1 0 01-1-1V4a1 1 0 011-1h10a1 1 0 011 1v1" /></svg>;
+const IconSearch = () => <SearchOutlined />;
+const IconStats = () => <BarChartOutlined />;
+const IconFilter = () => <FilterFilled />;
+const IconGroup = () => <FolderAddOutlined />;
+const IconAddSingle = () => <FileAddOutlined />;
+const IconImport = () => <FileAddOutlined />;
+const IconExport = () => <CopyOutlined />;
+const IconToggle = () => <CheckSquareOutlined />;
+const IconFlow = () => <FireOutlined />;
+const IconPause = () => <PauseCircleOutlined />;
+const IconPlay = () => <PlayCircleOutlined />;
+const IconDelete = () => <DeleteOutlined />;
+const IconEdit = () => <EditOutlined />;
+const IconHelp = () => <AimOutlined />;
+const IconCopy = () => <CopyOutlined />;
 const IconDragHandle = () => <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><circle cx="7" cy="5" r="1.3" /><circle cx="13" cy="5" r="1.3" /><circle cx="7" cy="10" r="1.3" /><circle cx="13" cy="10" r="1.3" /><circle cx="7" cy="15" r="1.3" /><circle cx="13" cy="15" r="1.3" /></svg>;
 
 // 右侧浮动工具列上的一个图示按钮：图示 + 文字标签
@@ -298,7 +302,8 @@ export default function ForwardPage() {
 
   // 搜索规则
   const [searchModalOpen, setSearchModalOpen] = useState(false);
-  const [searchKeyword, setSearchKeyword] = useState('');
+  const [searchFilters, setSearchFilters] = useState(EMPTY_RULE_SEARCH);
+  const activeSearchCount = countRuleSearch(searchFilters);
 
   // 统计数据
   const [statsModalOpen, setStatsModalOpen] = useState(false);
@@ -1296,14 +1301,7 @@ export default function ForwardPage() {
       filteredForwards = filteredForwards.filter(forward => forward.groupId === activeGroupFilter);
     }
 
-    // 搜索规则：按名称或 #id 过滤
-    const keyword = searchKeyword.trim().toLowerCase();
-    if (keyword) {
-      filteredForwards = filteredForwards.filter(forward =>
-        forward.name.toLowerCase().includes(keyword) ||
-        String(forward.id).includes(keyword)
-      );
-    }
+    filteredForwards = filteredForwards.filter(forward => matchRuleSearch(forward, searchFilters));
 
     // 状态筛选：表头「状态」列的漏斗图标，可多选
     if (statusFilter.length > 0) {
@@ -1465,7 +1463,7 @@ export default function ForwardPage() {
             <h1 className="text-base font-semibold text-foreground">
               {isImpersonating ? `用户转发规则${impersonateUserName ? ` ${impersonateUserName}` : ''} (UID=${impersonateUserId})` : '我的转发规则'}
             </h1>
-            <Button size="sm" variant="bordered" startContent={<IconSearch />} onPress={() => setSearchModalOpen(true)}>搜索规则</Button>
+            <Button size="sm" variant="bordered" startContent={<IconSearch />} onPress={() => setSearchModalOpen(true)}>{activeSearchCount > 0 ? `搜索规则（${activeSearchCount}）` : '搜索规则'}</Button>
             <RefreshButton refreshing={refreshing} isDisabled={loading} onRefresh={handleRefresh} />
             <Button size="sm" variant="bordered" startContent={<IconStats />} onPress={openStats}>统计数据</Button>
           </div>
@@ -1487,15 +1485,15 @@ export default function ForwardPage() {
           {!isImpersonating && (
             <>
               <span className="rounded-small border border-default-200 px-2 py-0.5 text-xs text-foreground">
-                流量: <span className={(packageInfo?.flow ?? 0) <= 0 || usedGiB >= (packageInfo?.flow ?? 0) ? 'text-warning-600' : ''}>{usedGiB.toFixed(2)} GiB / {(packageInfo?.flow ?? 0).toFixed(2)} GiB</span>
+                流量: <span className={(packageInfo?.flow ?? 0) <= 0 || usedGiB >= (packageInfo?.flow ?? 0) ? 'text-orange-500' : ''}>{usedGiB.toFixed(2)} GiB / {(packageInfo?.flow ?? 0).toFixed(2)} GiB</span>
               </span>
               {packageInfo?.expTime && (
-                <span className="rounded-small border border-default-200 px-2 py-0.5 text-xs text-foreground">到期: {new Date(packageInfo.expTime).toLocaleString('zh-CN')}</span>
+                <span className="rounded-small border border-default-200 px-2 py-0.5 text-xs text-foreground">到期: {new Date(packageInfo.expTime).toLocaleString('zh-CN', { hour12: true })}</span>
               )}
               <span className="rounded-small border border-default-200 px-2 py-0.5 text-xs text-foreground">规则数: {myForwardsAll.length} / {packageInfo?.num ?? '-'}</span>
             </>
           )}
-          <Button size="sm" variant="bordered" className="border-dashed" startContent={<IconGroup />} onPress={() => setGroupManageModalOpen(true)}>管理分组</Button>
+          <Button size="sm" variant="bordered" className="border-dashed" startContent={<SettingOutlined />} onPress={() => setGroupManageModalOpen(true)}>管理分组</Button>
           <Chip
             size="sm"
             variant={activeGroupFilter === null ? 'solid' : 'light'}
@@ -1532,17 +1530,17 @@ export default function ForwardPage() {
 
         {/* 工具列 */}
         <div className="flex flex-wrap items-center gap-2">
-          <Button size="sm" color="primary" startContent={<IconAddSingle />} onPress={handleAdd}>添加规则</Button>
+          <Button size="sm" variant="bordered" startContent={<IconAddSingle />} onPress={handleAdd}>添加规则</Button>
           <Button size="sm" variant="bordered" startContent={<IconImport />} onPress={handleImport}>批量导入</Button>
           <Button size="sm" variant="bordered" startContent={<IconExport />} isLoading={exportLoading} onPress={handleExport}>批量导出</Button>
           <Button size="sm" variant="bordered" startContent={<IconToggle />} isDisabled={selectedIds.length === 0} isLoading={batchLoading} onPress={handleBatchToggle}>批量切换</Button>
           <Button size="sm" variant="bordered" startContent={<IconFlow />} isDisabled={selectedIds.length === 0} onPress={handleBatchClearFlow}>清空流量</Button>
-          <Button size="sm" variant="bordered" color="danger" startContent={<IconDelete />} isDisabled={selectedIds.length === 0} isLoading={batchLoading} onPress={handleBatchDelete}>删除选中</Button>
+          <Button size="sm" variant="bordered" startContent={<IconDelete />} isDisabled={selectedIds.length === 0} isLoading={batchLoading} onPress={handleBatchDelete}>删除选中</Button>
         </div>
 
         {/* 规则列表 */}
         {/* 没有规则或筛选后没有匹配时也保留表格：表头（含状态筛选图标）始终可见，表体显示「暂无数据」 */}
-        <div className="-mx-4 -mb-4">
+        <div>
               <div className="settings-table-scroll">
                 <Table
                   removeWrapper
@@ -1551,14 +1549,14 @@ export default function ForwardPage() {
                   selectedKeys={selectedKeys}
                   onSelectionChange={setSelectedKeys}
                   sortDescriptor={sortDescriptor}
-                  onSortChange={(d) => { setSortDescriptor(d); setPage(1); }}
-                  classNames={{ base: "w-full", table: "w-full management-table-selectable forward-table", th: "management-table-heading", td: "management-table-cell" }}
+                  onSortChange={(d) => { setSortDescriptor(nextSort(sortDescriptor, d)); setPage(1); }}
+                  classNames={{ base: "w-full", table: "w-full management-table-selectable forward-table", th: "management-table-heading", td: "management-table-cell", sortIcon: "hidden" }}
                 >
                   <TableHeader>
-                    <TableColumn key="name" allowsSorting>规则名</TableColumn>
-                    <TableColumn key="in" allowsSorting>入口</TableColumn>
-                    <TableColumn key="out" allowsSorting>出口</TableColumn>
-                    <TableColumn key="flow" allowsSorting>已用流量</TableColumn>
+                    <TableColumn key="name" allowsSorting><SortableHeader label="规则名" columnKey="name" sort={sortDescriptor} /></TableColumn>
+                    <TableColumn key="in" allowsSorting><SortableHeader label="入口" columnKey="in" sort={sortDescriptor} /></TableColumn>
+                    <TableColumn key="out" allowsSorting><SortableHeader label="出口" columnKey="out" sort={sortDescriptor} /></TableColumn>
+                    <TableColumn key="flow" allowsSorting><SortableHeader label="已用流量" columnKey="flow" sort={sortDescriptor} /></TableColumn>
                     <TableColumn key="status">
                       <div className="flex items-center gap-1.5">
                         状态
@@ -1648,13 +1646,13 @@ export default function ForwardPage() {
                           </TableCell>
                           <TableCell>
                             <div className="flex justify-end items-center gap-1">
-                              <Button isIconOnly size="sm" variant="flat" title={forward.serviceRunning ? '暂停' : '启动'} isDisabled={forward.status !== 1 && forward.status !== 0} onPress={() => handleServiceToggle(forward)}>
+                              <TipButton isIconOnly size="sm" variant="flat" title={forward.serviceRunning ? '暂停' : '启动'} isDisabled={forward.status !== 1 && forward.status !== 0} onPress={() => handleServiceToggle(forward)}>
                                 {forward.serviceRunning ? <IconPause /> : <IconPlay />}
-                              </Button>
-                              <Button isIconOnly size="sm" variant="flat" title={forward.status === 1 ? '诊断' : '仅正常状态下可诊断'} isDisabled={forward.status !== 1} onPress={() => handleDiagnose(forward)}><IconHelp /></Button>
-                              <Button isIconOnly size="sm" variant="flat" title="复制" onPress={() => handleCopyRule(forward)}><IconCopy /></Button>
-                              <Button isIconOnly size="sm" variant="flat" title="编辑" onPress={() => handleEdit(forward)}><IconEdit /></Button>
-                              <Button isIconOnly size="sm" variant="flat" color="danger" title="删除" onPress={() => handleDelete(forward)}><IconDelete /></Button>
+                              </TipButton>
+                              <TipButton isIconOnly size="sm" variant="flat" title={forward.status === 1 ? '诊断' : '仅正常状态下可诊断'} isDisabled={forward.status !== 1} onPress={() => handleDiagnose(forward)}><IconHelp /></TipButton>
+                              <TipButton isIconOnly size="sm" variant="flat" title="复制" onPress={() => handleCopyRule(forward)}><IconCopy /></TipButton>
+                              <TipButton isIconOnly size="sm" variant="flat" title="编辑" onPress={() => handleEdit(forward)}><IconEdit /></TipButton>
+                              <TipButton isIconOnly size="sm" variant="flat" color="danger" title="删除" onPress={() => handleDelete(forward)}><IconDelete /></TipButton>
                             </div>
                           </TableCell>
                         </TableRow>
@@ -1714,7 +1712,7 @@ export default function ForwardPage() {
           onOpenChange={setModalOpen}
           size="md"
           scrollBehavior="outside"
-          backdrop="blur"
+          backdrop="opaque"
           placement="center"
         >
           <ModalContent>
@@ -1925,11 +1923,7 @@ export default function ForwardPage() {
                             isDisabled={getAddressCount(form.remoteAddr) <= 1}
                             description={getAddressCount(form.remoteAddr) <= 1 ? (
                               <span className="inline-flex items-center gap-1">
-                                <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" viewBox="0 0 24 24" aria-hidden="true">
-                                  <circle cx="12" cy="12" r="9" />
-                                  <path d="M12 7.5v5.5" />
-                                  <circle cx="12" cy="16.5" r="0.9" fill="currentColor" stroke="none" />
-                                </svg>
+                                <InfoCircleOutlined />
                                 目标地址填写两个或以上时才可选择
                               </span>
                             ) : undefined}
@@ -2077,7 +2071,7 @@ export default function ForwardPage() {
         />
 
         {/* 地址列表弹窗 */}
-        <Modal isOpen={addressModalOpen} onClose={() => setAddressModalOpen(false)} size="lg" scrollBehavior="outside" backdrop="blur" placement="center">
+        <Modal isOpen={addressModalOpen} onClose={() => setAddressModalOpen(false)} size="lg" scrollBehavior="outside" backdrop="opaque" placement="center">
           <ModalContent>
             <ModalHeader>{addressModalTitle}</ModalHeader>
             <ModalBody className="pb-6">
@@ -2117,7 +2111,7 @@ export default function ForwardPage() {
           
           size="2xl"
         scrollBehavior="outside"
-        backdrop="blur"
+        backdrop="opaque"
         placement="center"
         >
           <ModalContent>
@@ -2161,9 +2155,7 @@ export default function ForwardPage() {
                       isLoading={exportLoading}
                       isDisabled={!selectedTunnelForExport}
                       startContent={
-                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM6.293 6.707a1 1 0 010-1.414l3-3a1 1 0 011.414 0l3 3a1 1 0 01-1.414 1.414L11 5.414V13a1 1 0 11-2 0V5.414L7.707 6.707a1 1 0 01-1.414 0z" clipRule="evenodd" />
-                        </svg>
+                        <DownloadOutlined />
                       }
                     >
                       重新生成
@@ -2173,10 +2165,7 @@ export default function ForwardPage() {
                       size="sm"
                       onPress={copyExportData}
                       startContent={
-                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                          <path d="M8 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z" />
-                          <path d="M6 3a2 2 0 00-2 2v11a2 2 0 002 2h8a2 2 0 002-2V5a2 2 0 00-2-2 3 3 0 01-3 3H9a3 3 0 01-3-3z" />
-                        </svg>
+                        <CopyOutlined />
                       }
                     >
                       复制
@@ -2194,9 +2183,7 @@ export default function ForwardPage() {
                       isLoading={exportLoading}
                       isDisabled={!selectedTunnelForExport}
                       startContent={
-                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM6.293 6.707a1 1 0 010-1.414l3-3a1 1 0 011.414 0l3 3a1 1 0 01-1.414 1.414L11 5.414V13a1 1 0 11-2 0V5.414L7.707 6.707a1 1 0 01-1.414 0z" clipRule="evenodd" />
-                        </svg>
+                        <DownloadOutlined />
                       }
                     >
                       生成导出数据
@@ -2242,7 +2229,7 @@ export default function ForwardPage() {
           
           size="2xl"
         scrollBehavior="outside"
-        backdrop="blur"
+        backdrop="opaque"
         placement="center"
         >
           <ModalContent>
@@ -2384,7 +2371,7 @@ export default function ForwardPage() {
           
           size="2xl"
         scrollBehavior="outside"
-        backdrop="blur"
+        backdrop="opaque"
         placement="center"
         >
           <ModalContent>
@@ -2438,29 +2425,17 @@ export default function ForwardPage() {
         </Modal>
 
         {/* 搜索规则模态框 */}
-        <Modal isOpen={searchModalOpen} onOpenChange={setSearchModalOpen} size="sm" placement="center" backdrop="blur">
-          <ModalContent>
-            <ModalHeader>搜索规则</ModalHeader>
-            <ModalBody className="pb-6">
-              <Input
-                size="sm"
-                autoComplete="off"
-                autoFocus
-                placeholder="按规则名称或 #ID 搜索"
-                value={searchKeyword}
-                onChange={(e) => setSearchKeyword(e.target.value)}
-                variant="bordered"
-                startContent={<IconSearch />}
-                isClearable
-                onClear={() => setSearchKeyword('')}
-              />
-              <p className="text-xs text-default-400 mt-2">共匹配 {myForwards.length} 条规则</p>
-            </ModalBody>
-          </ModalContent>
-        </Modal>
+        <RuleSearchModal
+          isOpen={searchModalOpen}
+          onOpenChange={setSearchModalOpen}
+          title="搜索规则"
+          filters={searchFilters}
+          deviceGroups={deviceGroups}
+          onConfirm={(filters) => { setSearchFilters(filters); setPage(1); setSearchModalOpen(false); }}
+        />
 
         {/* 统计数据模态框 */}
-        <Modal isOpen={statsModalOpen} onOpenChange={setStatsModalOpen} size="sm" placement="center" backdrop="blur">
+        <Modal isOpen={statsModalOpen} onOpenChange={setStatsModalOpen} size="sm" placement="center" backdrop="opaque">
           <ModalContent>
             {(onClose) => (
               <>
@@ -2502,7 +2477,7 @@ export default function ForwardPage() {
           }}
           hideCloseButton
           scrollBehavior="inside"
-          backdrop="blur"
+          backdrop="opaque"
           radius="none"
           classNames={{
             wrapper: 'justify-end items-stretch',
@@ -2521,7 +2496,7 @@ export default function ForwardPage() {
               <>
                 <ModalHeader className="flex items-center gap-3 px-5 py-4 border-b border-default-100">
                   <button type="button" aria-label="关闭" onClick={onClose} className="inline-flex items-center justify-center text-default-500 hover:text-foreground transition-colors">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" /></svg>
+                    <CloseOutlined className="w-4 h-4" />
                   </button>
                   <h2 className="text-base font-semibold">分组管理</h2>
                 </ModalHeader>

@@ -1,7 +1,11 @@
+import { TipButton } from "@/components/tip-button";
+import { RuleSearchModal, EMPTY_RULE_SEARCH, countRuleSearch, matchRuleSearch, RuleSearchFilters } from "@/components/rule-search-modal";
+import { getDeviceGroupList, getForwardList } from "@/api";
+import { ControlOutlined, DeleteOutlined, DisconnectOutlined, FireOutlined, PaperClipOutlined, SafetyCertificateOutlined, SettingOutlined, ShoppingOutlined, UserAddOutlined } from "@/components/ant-icons";
 import React, { useState, useEffect, useMemo } from 'react';
 import { Button } from "@heroui/button";
 import { Card, CardBody, CardHeader } from "@heroui/card";
-import { Input } from "@heroui/input";
+import { Input, Textarea } from "@heroui/input";
 import { 
   Table, 
   TableHeader, 
@@ -24,6 +28,11 @@ import { Switch } from "@heroui/switch";
 import { Checkbox } from "@heroui/checkbox";
 import { Popover, PopoverTrigger, PopoverContent } from "@heroui/popover";
 import { TablePagination } from "@/components/table-pagination";
+import { TimeWheelPicker } from "@/components/time-wheel-picker";
+import { useMenuPermissions } from "@/utils/menu-permissions";
+import { showErrorDialog } from "@/components/error-dialog";
+import { HEADER_COLUMN_CLASS, HEADER_TABLE_CLASS_NAMES, TableHeaderFilter } from "@/components/table-header-filter";
+import { nextSort, SortCarets } from "@/components/table-sort";
 import { DatePicker } from "@heroui/date-picker";
 import { Spinner } from "@heroui/spinner";
 
@@ -36,6 +45,16 @@ import {
   Tunnel
 } from '@/types';
 import {
+  getInvalidUsers,
+  cleanInvalidUsers,
+  getInvalidForwards,
+  cleanInvalidForwards,
+  getUserMenuPermissions,
+  updateUserMenuPermissions,
+  getDemoPermission,
+  updateDemoPermission,
+  restoreDemoChanges,
+  commitDemoChanges,
   getAllUsers,
   createUser,
   updateUser,
@@ -49,7 +68,7 @@ import {
   getUserGroupList,
   getPackagePlanList
 } from '@/api';
-import { SearchIcon, EditIcon, DeleteIcon, UserIcon, SettingsIcon } from '@/components/icons';
+import { SearchIcon, EditIcon, DeleteIcon } from '@/components/icons';
 import { EmptyState } from '@/components/empty-state';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { FieldLabel, UnitField } from '@/components/form-field';
@@ -71,10 +90,6 @@ const formatFlow = (value: number, unit: string = 'bytes'): string => {
   }
 };
 
-const formatDate = (timestamp: number): string => {
-  return new Date(timestamp).toLocaleString();
-};
-
 const getExpireStatus = (expTime: number) => {
   const now = Date.now();
   if (expTime < now) {
@@ -87,20 +102,25 @@ const getExpireStatus = (expTime: number) => {
   return { color: 'success' as const, text: '正常' };
 };
 
-// 用户列表的列定义：UID、用户名等可点击表头排序；「显示列」里可以勾选要显示哪些列（操作列固定显示）
-const USER_COLUMNS = [
-  { key: 'id', label: 'UID', sortable: true },
-  { key: 'user', label: '用户名', sortable: true },
-  { key: 'status', label: '状态', sortable: true },
+// 用户列表的列定义：sortable 表头可点击排序；filter 表头带漏斗筛选（text 输入搜索，options 勾选）；
+// 「显示列」里可以勾选要显示哪些列（操作列固定显示），状态默认隐藏，需要时再打开
+type UserColumn = { key: string; label: string; sortable: boolean; filter?: 'text' | 'options'; defaultHidden?: boolean };
+const USER_COLUMNS: UserColumn[] = [
+  { key: 'id', label: 'UID', sortable: true, filter: 'text' },
+  { key: 'user', label: '用户名', sortable: true, filter: 'text' },
+  { key: 'status', label: '状态', sortable: true, defaultHidden: true },
   { key: 'expTime', label: '过期时间', sortable: true },
   { key: 'flow', label: '流量', sortable: true },
-  { key: 'package', label: '套餐', sortable: true },
-  { key: 'group', label: '用户组', sortable: true },
+  { key: 'package', label: '套餐', sortable: false, filter: 'options' },
+  { key: 'group', label: '用户组', sortable: false, filter: 'options' },
   { key: 'num', label: '最大规则数', sortable: true },
   { key: 'wallet', label: '钱包余额', sortable: true },
+  { key: 'remark', label: '备注', sortable: false },
   { key: 'actions', label: '操作', sortable: false },
 ];
-const USER_COLUMNS_STORAGE_KEY = 'user_table_visible_columns';
+const USER_COLUMNS_STORAGE_KEY = 'user_table_visible_columns_v2';
+// 筛选里表示「没有套餐 / 没有用户组」的选项值
+const FILTER_NONE = 'none';
 
 // 状态圆点颜色：与队列监控一致，用「圆点 + 文字」展示状态，不再用带底色的标签
 const STATUS_DOT_CLASS: Record<string, string> = {
@@ -159,17 +179,25 @@ export default function UserPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(false);
   // 搜索词只在前端按用户名/昵称/UID 过滤，输入时实时生效，不再每次输入都重新请求后端
-  const [searchKeyword, setSearchKeyword] = useState('');
+  // 搜索规则：表格只显示拥有匹配规则的用户；null 表示没有在搜索
+  const [ruleFilters, setRuleFilters] = useState(EMPTY_RULE_SEARCH);
+  const [ruleMatchedUserIds, setRuleMatchedUserIds] = useState<Set<number> | null>(null);
+  const [ruleSearchLoading, setRuleSearchLoading] = useState(false);
+  const [ruleSearchGroups, setRuleSearchGroups] = useState<Array<{ id: number; name: string; direction?: string }>>([]);
   const [searchModalOpen, setSearchModalOpen] = useState(false);
-  const [sortDescriptor, setSortDescriptor] = useState<SortDescriptor>({ column: 'id', direction: 'ascending' });
+  // 排序三态：升序 → 降序 → 取消（恢复默认的 UID 升序，表头不高亮）
+  const [sortDescriptor, setSortDescriptor] = useState<SortDescriptor | undefined>(undefined);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+  // 表头筛选：UID、用户名输入搜索，套餐、用户组勾选
+  const [textFilters, setTextFilters] = useState<Record<string, string>>({ id: '', user: '' });
+  const [optionFilters, setOptionFilters] = useState<Record<string, string[]>>({ package: [], group: [] });
   const [visibleColumnKeys, setVisibleColumnKeys] = useState<string[]>(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(USER_COLUMNS_STORAGE_KEY) || 'null');
       if (Array.isArray(saved)) return saved.filter((k: string) => USER_COLUMNS.some(c => c.key === k));
-    } catch { /* 读取失败时使用默认全部显示 */ }
-    return USER_COLUMNS.map(c => c.key);
+    } catch { /* 读取失败时使用默认列 */ }
+    return USER_COLUMNS.filter(c => !c.defaultHidden).map(c => c.key);
   });
 
   // 用户表单相关状态
@@ -188,9 +216,37 @@ export default function UserPage() {
     flowResetClock: '00:00',
     groupId: null,
     packageId: null,
-    walletBalance: 0
+    walletBalance: 0,
+    demoMode: 0,
+    admin: false,
+    remark: ''
   });
   const [userFormLoading, setUserFormLoading] = useState(false);
+
+  // 清理无效用户 / 无效规则：打开时先查出会被清理的内容，没有内容时确定按钮不可点
+  const [cleanupTarget, setCleanupTarget] = useState<'users' | 'forwards' | null>(null);
+  const [cleanupItems, setCleanupItems] = useState<string[]>([]);
+  const [cleanupLoading, setCleanupLoading] = useState(false);
+
+  // 账号的页面权限分配：普通用户和管理员显示不同的选项；只有全权限管理员能看到入口
+  const { permissions: myMenuPermissions } = useMenuPermissions();
+  const { isOpen: isMenuPermissionOpen, onOpen: onMenuPermissionOpen, onClose: onMenuPermissionClose } = useDisclosure();
+  const [menuPermissionUser, setMenuPermissionUser] = useState<User | null>(null);
+  const [menuPermissionOptions, setMenuPermissionOptions] = useState<{ code: string; label: string }[]>([]);
+  const [menuPermissionSelected, setMenuPermissionSelected] = useState<string[]>([]);
+  const [menuPermissionSaving, setMenuPermissionSaving] = useState(false);
+
+  // 演示账号的权限分配（只有开启演示模式的账号才显示入口）
+  const { isOpen: isPermissionOpen, onOpen: onPermissionOpen, onClose: onPermissionClose } = useDisclosure();
+  const [permissionUser, setPermissionUser] = useState<User | null>(null);
+  const [permissionOptions, setPermissionOptions] = useState<{ code: string; label: string }[]>([]);
+  const [permissionAreas, setPermissionAreas] = useState<string[]>([]);
+  const [permissionRestoreTime, setPermissionRestoreTime] = useState<string | null>(null);
+  const [permissionPending, setPermissionPending] = useState(0);
+  const [permissionNextTime, setPermissionNextTime] = useState<number | null>(null);
+  const [permissionBusy, setPermissionBusy] = useState(false);
+  // 功能未开启的区域不显示，但已勾选的仍随保存提交，功能重新开启后恢复
+  const visiblePermissionAreas = permissionAreas.filter(code => permissionOptions.some(option => option.code === code));
 
   // 用户组 / 套餐
   const [userGroups, setUserGroups] = useState<{ id: number; name: string }[]>([]);
@@ -328,7 +384,10 @@ export default function UserPage() {
       flowResetClock: '00:00',
       groupId: null,
       packageId: null,
-      walletBalance: 0
+      walletBalance: 0,
+      demoMode: 0,
+      admin: false,
+      remark: ''
     });
     setCustomReset(false);
     onUserModalOpen();
@@ -401,12 +460,113 @@ export default function UserPage() {
       flowResetClock: user.flowResetClock || '00:00',
       groupId: user.groupId ?? null,
       packageId: user.packageId ?? null,
-      walletBalance: user.walletBalance ?? 0
+      walletBalance: user.walletBalance ?? 0,
+      remark: user.remark ?? '',
+      demoMode: user.roleId === 0 ? (user.demoMode ?? 0) : 0,
+      admin: user.roleId === 0
     });
     // 重置日超出预设范围（9 号及以后），或重置时刻不是默认 00:00，都只能通过「自定义」表达，编辑时直接展示自定义状态
     const savedDay = user.flowResetTime ?? 0;
     setCustomReset(savedDay > 0 && (savedDay > PRESET_RESET_DAYS || (!!user.flowResetClock && user.flowResetClock !== '00:00')));
     onUserModalOpen();
+  };
+
+  const handleOpenCleanup = async (target: 'users' | 'forwards') => {
+    const res = target === 'users' ? await getInvalidUsers() : await getInvalidForwards();
+    if (res.code !== 0) {
+      toast.error(res.msg || '获取清理内容失败');
+      return;
+    }
+    setCleanupItems((res.data || []).map((item: { user?: string; name?: string; id: number }) => item.user ?? item.name ?? `#${item.id}`));
+    setCleanupTarget(target);
+  };
+
+  const handleConfirmCleanup = async () => {
+    setCleanupLoading(true);
+    const res = cleanupTarget === 'users' ? await cleanInvalidUsers() : await cleanInvalidForwards();
+    setCleanupLoading(false);
+    if (res.code !== 0) {
+      toast.error(res.msg || '清理失败');
+      return;
+    }
+    const failures: string[] = res.data?.failures || [];
+    if (failures.length > 0) {
+      showErrorDialog({ title: `已清理 ${res.data?.deleted ?? 0} 项，${failures.length} 项失败`, message: failures.join('\n') });
+    } else {
+      toast.success(`已清理 ${res.data?.deleted ?? 0} 项`);
+    }
+    setCleanupTarget(null);
+    loadUsers(false);
+  };
+
+  const handleOpenMenuPermission = async (target: User) => {
+    const res = await getUserMenuPermissions(target.id);
+    if (res.code !== 0) {
+      toast.error(res.msg || '获取权限分配失败');
+      return;
+    }
+    setMenuPermissionUser(target);
+    setMenuPermissionOptions(res.data.options || []);
+    setMenuPermissionSelected(res.data.selected || []);
+    onMenuPermissionOpen();
+  };
+
+  const handleSaveMenuPermission = async () => {
+    if (!menuPermissionUser) return;
+    setMenuPermissionSaving(true);
+    const res = await updateUserMenuPermissions(menuPermissionUser.id, menuPermissionSelected);
+    setMenuPermissionSaving(false);
+    if (res.code === 0) {
+      toast.success('权限分配已保存');
+      onMenuPermissionClose();
+    } else {
+      toast.error(res.msg || '保存失败');
+    }
+  };
+
+  const loadPermission = async (target: User) => {
+    const res = await getDemoPermission(target.id);
+    if (res.code !== 0) {
+      toast.error(res.msg || '获取演示权限分配失败');
+      return false;
+    }
+    setPermissionOptions(res.data.options || []);
+    setPermissionAreas(res.data.areas || []);
+    setPermissionRestoreTime(res.data.restoreTime ?? null);
+    setPermissionPending(res.data.pendingCount ?? 0);
+    setPermissionNextTime(res.data.nextRestoreTime ?? null);
+    return true;
+  };
+
+  const handleOpenPermission = async (target: User) => {
+    setPermissionUser(target);
+    if (await loadPermission(target)) onPermissionOpen();
+  };
+
+  const handleSavePermission = async () => {
+    if (!permissionUser) return;
+    setPermissionBusy(true);
+    const res = await updateDemoPermission({ id: permissionUser.id, areas: permissionAreas, restoreTime: permissionRestoreTime });
+    setPermissionBusy(false);
+    if (res.code === 0) {
+      toast.success('演示权限分配已保存');
+      onPermissionClose();
+    } else {
+      toast.error(res.msg || '保存失败');
+    }
+  };
+
+  const handlePermissionAction = async (action: 'restore' | 'commit') => {
+    if (!permissionUser) return;
+    setPermissionBusy(true);
+    const res = action === 'restore' ? await restoreDemoChanges(permissionUser.id) : await commitDemoChanges(permissionUser.id);
+    if (res.code === 0) {
+      toast.success(action === 'restore' ? '已恢复' : '已设为初始配置');
+      await loadPermission(permissionUser);
+    } else {
+      toast.error(res.msg || '操作失败');
+    }
+    setPermissionBusy(false);
   };
 
   const handleDelete = (user: User) => {
@@ -467,6 +627,41 @@ export default function UserPage() {
 
   // 跳转到独立的"管理转发规则"页（/user-forward，与普通用户自己使用的 /forward 是两个页面），
   // 代该用户查看/新增/编辑/删除转发规则；在新窗口打开，管理员可同时保留用户管理列表
+  const openRuleSearch = async () => {
+    setSearchModalOpen(true);
+    // 入口、出口的选项；取不到时下拉框为空，其他条件仍可用
+    try {
+      const res = await getDeviceGroupList();
+      if (res.code === 0) setRuleSearchGroups(res.data || []);
+    } catch (error) {
+      console.warn('获取设备组失败', error);
+    }
+  };
+
+  const applyRuleSearch = async (filters: RuleSearchFilters) => {
+    if (countRuleSearch(filters) === 0) {
+      setRuleFilters(EMPTY_RULE_SEARCH);
+      setRuleMatchedUserIds(null);
+      setPage(1);
+      setSearchModalOpen(false);
+      return;
+    }
+    setRuleSearchLoading(true);
+    try {
+      const res = await getForwardList();
+      if (res.code !== 0) { toast.error(res.msg || '搜索规则失败'); return; }
+      const rules: Array<Parameters<typeof matchRuleSearch>[0] & { userId?: number }> = res.data || [];
+      setRuleFilters(filters);
+      setRuleMatchedUserIds(new Set(rules.filter(rule => matchRuleSearch(rule, filters)).map(rule => Number(rule.userId))));
+      setPage(1);
+      setSearchModalOpen(false);
+    } catch (error) {
+      toast.error('搜索规则失败');
+    } finally {
+      setRuleSearchLoading(false);
+    }
+  };
+
   const handleManageForwards = (user: User) => {
     window.open(`/user-forward?userId=${user.id}&userName=${encodeURIComponent(user.user)}`, '_blank');
   };
@@ -632,12 +827,17 @@ export default function UserPage() {
 
   // 搜索过滤 + 排序 + 分页都在前端完成
   const sortedUsers = useMemo(() => {
-    const keyword = searchKeyword.trim().toLowerCase();
-    const filtered = keyword
-      ? users.filter(u => `${u.id} #${u.id} ${u.user} ${u.name || ''}`.toLowerCase().includes(keyword))
-      : users;
+    const filtered = ruleMatchedUserIds ? users.filter(u => ruleMatchedUserIds.has(u.id)) : users;
+    const idKeyword = textFilters.id.trim();
+    const nameKeyword = textFilters.user.trim().toLowerCase();
+    const headerFiltered = filtered.filter(u =>
+      (!idKeyword || String(u.id).includes(idKeyword)) &&
+      (!nameKeyword || `${u.user} ${u.name || ''}`.toLowerCase().includes(nameKeyword)) &&
+      (optionFilters.package.length === 0 || optionFilters.package.includes(u.packageId ? String(u.packageId) : FILTER_NONE)) &&
+      (optionFilters.group.length === 0 || optionFilters.group.includes(u.groupId ? String(u.groupId) : FILTER_NONE))
+    );
     const valueOf = (u: User): string | number => {
-      switch (sortDescriptor.column) {
+      switch (sortDescriptor?.column) {
         case 'user': return (u.name || u.user || '').toLowerCase();
         case 'status': return u.status;
         case 'expTime': return u.expTime || Number.MAX_SAFE_INTEGER; // 永久排在最后
@@ -649,22 +849,58 @@ export default function UserPage() {
         default: return u.id;
       }
     };
-    const dir = sortDescriptor.direction === 'descending' ? -1 : 1;
-    return [...filtered].sort((x, y) => {
+    const dir = sortDescriptor?.direction === 'descending' ? -1 : 1;
+    return [...headerFiltered].sort((x, y) => {
       const vx = valueOf(x), vy = valueOf(y);
       if (typeof vx === 'string' && typeof vy === 'string') return vx.localeCompare(vy, 'zh') * dir;
       return ((vx as number) - (vy as number)) * dir;
     });
-  }, [users, searchKeyword, sortDescriptor, userGroups, packagePlans]);
+  }, [users, ruleMatchedUserIds, textFilters, optionFilters, sortDescriptor, userGroups, packagePlans]);
 
-  const pagedUsers = useMemo(() => sortedUsers.slice((page - 1) * pageSize, page * pageSize), [sortedUsers, page, pageSize]);
+  // 表格按行对象缓存单元格，对象不变就不会重新渲染：排序变化时要生成新的行对象，当前排序列的高亮才会更新
+  const pagedUsers = useMemo(
+    () => sortedUsers.slice((page - 1) * pageSize, page * pageSize).map(user => ({ ...user })),
+    [sortedUsers, page, pageSize, sortDescriptor]
+  );
 
-  const visibleColumns = USER_COLUMNS.filter(c => c.key === 'actions' || visibleColumnKeys.includes(c.key));
+  // 表格按列对象缓存表头内容，对象不变就不会重新渲染：筛选、排序或选项变化时要生成新的列对象，否则漏斗高亮和筛选值不会更新
+  const visibleColumns = useMemo(
+    () => USER_COLUMNS.filter(c => c.key === 'actions' || visibleColumnKeys.includes(c.key)).map(c => ({ ...c })),
+    [visibleColumnKeys, textFilters, optionFilters, sortDescriptor, packagePlans, userGroups]
+  );
 
   const toggleColumn = (key: string, checked: boolean) => {
     const next = checked ? [...visibleColumnKeys, key] : visibleColumnKeys.filter(k => k !== key);
     setVisibleColumnKeys(next);
     try { localStorage.setItem(USER_COLUMNS_STORAGE_KEY, JSON.stringify(next)); } catch { /* 存储不可用时仅本次生效 */ }
+  };
+
+  // 表头：标题 + 排序图标 + 筛选漏斗
+  const renderHeaderFilter = (column: UserColumn) => {
+    if (column.filter === 'text') {
+      return (
+        <TableHeaderFilter
+          type="text"
+          label={column.label}
+          text={textFilters[column.key] ?? ''}
+          onTextChange={(value) => { setTextFilters(prev => ({ ...prev, [column.key]: value })); setPage(1); }}
+          onClear={() => { setTextFilters(prev => ({ ...prev, [column.key]: '' })); setPage(1); }}
+        />
+      );
+    }
+    const options = column.key === 'package'
+      ? [{ value: FILTER_NONE, label: '无套餐' }, ...packagePlans.map(plan => ({ value: String(plan.id), label: plan.name }))]
+      : [{ value: FILTER_NONE, label: '未分组' }, ...userGroups.map(group => ({ value: String(group.id), label: group.name }))];
+    return (
+      <TableHeaderFilter
+        type="options"
+        label={column.label}
+        options={options}
+        selected={optionFilters[column.key] ?? []}
+        onSelectedChange={(values) => { setOptionFilters(prev => ({ ...prev, [column.key]: values })); setPage(1); }}
+        onClear={() => { setOptionFilters(prev => ({ ...prev, [column.key]: [] })); setPage(1); }}
+      />
+    );
   };
 
   // 单元格渲染：按列 key 输出对应内容
@@ -676,11 +912,16 @@ export default function UserPage() {
     const flowWarning = user.flow <= 0 || usedFlow >= user.flow * 1024 * 1024 * 1024;
     switch (key) {
       case 'id':
-        return `#${user.id}`;
+        return String(user.id);
       case 'user':
         return (
           <div className="min-w-24">
-            <p className="font-medium text-foreground">{user.name || user.user}</p>
+            <p className="text-foreground">
+              {user.name || user.user}
+              {user.demoMode === 1 && <span className="ml-1.5 text-xs font-normal text-warning-600">演示</span>}
+              {user.roleId === 0 && user.demoMode !== 1 && <span className="ml-1.5 text-xs font-normal text-primary">管理员</span>}
+              {user.status === 0 && <span className="ml-1.5 text-xs font-normal text-danger">封禁</span>}
+            </p>
             {user.name && <p className="mt-0.5 text-xs text-default-500">@{user.user}</p>}
           </div>
         );
@@ -693,15 +934,19 @@ export default function UserPage() {
       case 'expTime':
         return user.expTime ? (
           <div className="min-w-30">
-            <p className={`text-sm whitespace-nowrap ${expStatus && expStatus.color !== 'success' ? 'text-warning-600' : ''}`}>{formatDate(user.expTime)}</p>
+            <p className={`text-sm whitespace-nowrap ${expStatus && expStatus.color !== 'success' ? 'text-warning-600' : ''}`}>{new Date(user.expTime).toLocaleString('zh-CN', { hour12: true })}</p>
             {expStatus && expStatus.color !== 'success' && <p className="mt-0.5 text-xs text-warning-600">{expStatus.text}</p>}
           </div>
         ) : <span className="text-default-500">永久</span>;
       case 'flow':
         return (
           <div className="min-w-32">
-            <p className={`whitespace-nowrap ${flowWarning ? 'text-warning-600' : ''}`}>{formatFlow(usedFlow)} / {formatFlow(user.flow, 'gb')}</p>
-            <p className="mt-0.5 text-xs text-default-500">{user.flowResetTime ? `每月 ${user.flowResetTime} 日${user.flowResetClock && user.flowResetClock !== '00:00' ? ` ${user.flowResetClock}` : ''}重置` : '不重置'}</p>
+            <p
+              className={`whitespace-nowrap ${flowWarning ? 'text-orange-500' : ''}`}
+              title={user.flowResetTime ? `每月 ${user.flowResetTime} 日${user.flowResetClock && user.flowResetClock !== '00:00' ? ` ${user.flowResetClock}` : ''}重置` : '不重置'}
+            >
+              {(usedFlow / (1024 * 1024 * 1024)).toFixed(2)} GiB / {Number(user.flow).toFixed(2)} GiB
+            </p>
           </div>
         );
       case 'package':
@@ -711,30 +956,42 @@ export default function UserPage() {
       case 'num':
         return user.num;
       case 'wallet':
-        return <span className="whitespace-nowrap">{(user.walletBalance ?? 0).toFixed(2)} 元</span>;
+        return <span className="whitespace-nowrap">{Number(user.walletBalance ?? 0)} 元</span>;
+      case 'remark':
+        return user.remark
+          ? <span className="block max-w-48 truncate" title={user.remark}>{user.remark}</span>
+          : <span className="text-default-500">—</span>;
       default:
         return (
-          <div className="flex items-center gap-1.5">
-            <Button isIconOnly size="sm" variant="bordered" onPress={() => handleManageForwards(user)} isDisabled={user.roleId === 0} title="管理转发规则">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 7h13M17 7l-3-3M17 7l-3 3M20 17H7M7 17l3-3M7 17l3 3" />
-              </svg>
-            </Button>
-            <Button isIconOnly size="sm" variant="bordered" onPress={() => handleManageTunnels(user)} title="隧道权限">
-              <SettingsIcon className="w-4 h-4" />
-            </Button>
-            <Button isIconOnly size="sm" variant="bordered" onPress={() => handleEdit(user)} isDisabled={user.roleId === 0} title="编辑">
-              <EditIcon className="w-4 h-4" />
-            </Button>
-            <Button isIconOnly size="sm" variant="bordered" onPress={() => handleEditPackage(user)} isDisabled={user.roleId === 0} title="编辑用户套餐">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M6 8h12l1 12H5L6 8zM9 8V7a3 3 0 016 0v1" /></svg>
-            </Button>
-            <Button isIconOnly size="sm" variant="bordered" onPress={() => handleResetFlow(user)} title="重置流量">
-              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1z" clipRule="evenodd" /></svg>
-            </Button>
-            <Button isIconOnly size="sm" variant="bordered" color="danger" onPress={() => handleDelete(user)} isDisabled={user.roleId === 0} title="删除">
-              <DeleteIcon className="w-4 h-4" />
-            </Button>
+          <div className="flex items-center gap-1.5 [&>button]:!border-1 [&>button]:!border-default-300">
+            <TipButton isIconOnly size="sm" variant="bordered" onPress={() => handleManageForwards(user)} isDisabled={user.roleId === 0} title="管理转发规则">
+              <PaperClipOutlined />
+            </TipButton>
+            <TipButton isIconOnly size="sm" variant="bordered" onPress={() => handleManageTunnels(user)} title="隧道权限" aria-label="隧道权限">
+              <DisconnectOutlined />
+            </TipButton>
+            <TipButton isIconOnly size="sm" variant="bordered" onPress={() => handleEdit(user)} title="编辑">
+              <EditIcon />
+            </TipButton>
+            {myMenuPermissions === null && (
+              <TipButton isIconOnly size="sm" variant="bordered" onPress={() => handleOpenMenuPermission(user)} title="权限分配" aria-label="权限分配">
+                <ControlOutlined />
+              </TipButton>
+            )}
+            {user.demoMode === 1 && user.roleId === 0 && (
+              <TipButton isIconOnly size="sm" variant="bordered" onPress={() => handleOpenPermission(user)} title="演示权限分配" aria-label="演示权限分配">
+                <SafetyCertificateOutlined />
+              </TipButton>
+            )}
+            <TipButton isIconOnly size="sm" variant="bordered" onPress={() => handleEditPackage(user)} isDisabled={user.roleId === 0} title="编辑用户套餐">
+              <ShoppingOutlined />
+            </TipButton>
+            <TipButton isIconOnly size="sm" variant="bordered" onPress={() => handleResetFlow(user)} title="重置流量">
+              <FireOutlined />
+            </TipButton>
+            <TipButton isIconOnly size="sm" variant="bordered" onPress={() => handleDelete(user)} isDisabled={user.roleId === 0 && user.demoMode !== 1} title="删除">
+              <DeleteIcon />
+            </TipButton>
           </div>
         );
     }
@@ -748,7 +1005,7 @@ export default function UserPage() {
             <h1 className="text-base font-semibold text-foreground">用户管理</h1>
             <Popover placement="bottom-end">
               <PopoverTrigger>
-                <Button size="sm" variant="bordered" className="border-dashed" startContent={<SettingsIcon className="w-4 h-4" />}>显示列</Button>
+                <Button size="sm" variant="bordered" className="border-1 border-dashed border-default-300 h-7 font-normal text-sm" startContent={<SettingOutlined />}>显示列</Button>
               </PopoverTrigger>
               <PopoverContent>
                 <div className="p-2 flex flex-col gap-2">
@@ -767,24 +1024,43 @@ export default function UserPage() {
             </Popover>
           </CardHeader>
           <CardBody className="p-4 space-y-4">
-            <div className="flex flex-nowrap items-center gap-2 overflow-x-auto [&>*]:shrink-0">
-              <Button size="sm" variant="bordered" onPress={handleAdd} startContent={<UserIcon className="w-4 h-4" />}>添加用户</Button>
-              <Button size="sm" variant="bordered" onPress={() => setSearchModalOpen(true)} startContent={<SearchIcon className="w-4 h-4" />}>
-                {searchKeyword.trim() ? `搜索：${searchKeyword.trim()}` : '搜索用户'}
+            <div className="flex flex-nowrap items-center gap-3.5 overflow-x-auto [&>*]:shrink-0 [&>button]:!border-1 [&>button]:!border-default-300 [&>button]:!font-normal [&>button]:!text-sm">
+              <Button size="sm" variant="bordered" onPress={handleAdd} startContent={<UserAddOutlined />}>添加用户</Button>
+              <Button size="sm" variant="bordered" onPress={openRuleSearch} startContent={<SearchIcon />}>
+                {countRuleSearch(ruleFilters) > 0 ? `搜索规则（${countRuleSearch(ruleFilters)}）` : '搜索规则'}
               </Button>
-              <RefreshButton onRefresh={() => loadUsers(false)} />
+              <Button size="sm" variant="bordered" onPress={() => handleOpenCleanup('users')} startContent={<DeleteOutlined />}>清理无效用户</Button>
+              <Button size="sm" variant="bordered" onPress={() => handleOpenCleanup('forwards')} startContent={<DeleteOutlined />}>清理无效规则</Button>
+              <RefreshButton onRefresh={async () => { await loadUsers(false); if (countRuleSearch(ruleFilters) > 0) await applyRuleSearch(ruleFilters); }} />
             </div>
             <div className="settings-table-scroll">
             <Table
               aria-label="用户列表"
               removeWrapper
               sortDescriptor={sortDescriptor}
-              onSortChange={(d) => { setSortDescriptor(d); setPage(1); }}
-              classNames={{ th: "management-table-heading", td: "management-table-cell" }}
+              onSortChange={(d) => {
+                setSortDescriptor(nextSort(sortDescriptor, d));
+                setPage(1);
+              }}
+              classNames={HEADER_TABLE_CLASS_NAMES}
             >
               <TableHeader columns={visibleColumns}>
                 {(column) => (
-                  <TableColumn key={column.key} allowsSorting={column.sortable}>{column.label}</TableColumn>
+                  <TableColumn
+                    key={column.key}
+                    allowsSorting={column.sortable}
+                    className={`${HEADER_COLUMN_CLASS} ${sortDescriptor?.column === column.key ? '!bg-default-200 dark:!bg-[#2a2a2a]' : ''}`}
+                  >
+                    <div className="flex items-center justify-between gap-2.5">
+                      <span>{column.label}</span>
+                      {(column.sortable || column.filter) && (
+                        <span className="inline-flex items-center gap-1.5">
+                          {column.sortable && <SortCarets direction={sortDescriptor?.column === column.key ? sortDescriptor.direction : undefined} />}
+                          {column.filter && renderHeaderFilter(column)}
+                        </span>
+                      )}
+                    </div>
+                  </TableColumn>
                 )}
               </TableHeader>
               <TableBody
@@ -795,13 +1071,13 @@ export default function UserPage() {
               >
                 {(user) => (
                   <TableRow key={user.id}>
-                    {(columnKey) => <TableCell>{renderUserCell(user, String(columnKey))}</TableCell>}
+                    {(columnKey) => <TableCell className={sortDescriptor?.column === columnKey ? 'bg-default-100 dark:bg-[#212121]' : undefined}>{renderUserCell(user, String(columnKey))}</TableCell>}
                   </TableRow>
                 )}
               </TableBody>
             </Table>
             </div>
-            <div className="-mx-4 -mb-4 border-t border-default-100">
+            <div>
               <TablePagination
                 total={sortedUsers.length}
                 page={page}
@@ -814,26 +1090,15 @@ export default function UserPage() {
         </Card>
 
         {/* 搜索用户模态框：输入时实时按用户名/昵称/UID 过滤列表 */}
-        <Modal isOpen={searchModalOpen} onOpenChange={setSearchModalOpen} size="sm" placement="center" backdrop="blur">
-          <ModalContent>
-            <ModalHeader>搜索用户</ModalHeader>
-            <ModalBody className="pb-6">
-              <Input
-                size="sm"
-                autoComplete="off"
-                autoFocus
-                placeholder="按用户名、昵称或 UID 搜索"
-                value={searchKeyword}
-                onChange={(e) => { setSearchKeyword(e.target.value); setPage(1); }}
-                variant="bordered"
-                startContent={<SearchIcon className="w-4 h-4 text-default-400" />}
-                isClearable
-                onClear={() => { setSearchKeyword(''); setPage(1); }}
-              />
-              <p className="text-xs text-default-400 mt-2">共匹配 {sortedUsers.length} 位用户</p>
-            </ModalBody>
-          </ModalContent>
-        </Modal>
+        <RuleSearchModal
+          isOpen={searchModalOpen}
+          onOpenChange={setSearchModalOpen}
+          title="搜索用户规则"
+          filters={ruleFilters}
+          deviceGroups={ruleSearchGroups}
+          loading={ruleSearchLoading}
+          onConfirm={applyRuleSearch}
+        />
 
 
       {/* 用户表单模态框 */}
@@ -842,7 +1107,7 @@ export default function UserPage() {
         onClose={onUserModalClose}
         size="md"
       scrollBehavior="outside"
-      backdrop="blur"
+      backdrop="opaque"
       placement="center"
       >
         <ModalContent>
@@ -855,6 +1120,16 @@ export default function UserPage() {
             {/* 单列表单：标题在输入框上方，带单位的字段（GB、元）把单位贴在输入框右侧 */}
             <div className="flex flex-col gap-4">
               <div className="flex items-center justify-between">
+                <FieldLabel tip="开启后该账号可以进入后台，拥有和其他管理员相同的全部权限，包括查看密钥、修改配置、编辑其他管理员。开启后可以再打开演示模式，成为只读的演示管理员。开启后需要重新登录；取消后旧登录立即失效，演示模式也一起关闭。不能取消自己的管理员权限，至少要保留一名可用的管理员">管理员</FieldLabel>
+                <Switch
+                  size="sm"
+                  aria-label="管理员"
+                  isSelected={userForm.admin === true}
+                  onValueChange={(checked) => setUserForm(prev => ({ ...prev, admin: checked, demoMode: checked ? prev.demoMode : 0 }))}
+                />
+              </div>
+
+              <div className="flex items-center justify-between">
                 <FieldLabel tip="封禁后该用户无法登录与使用转发功能">封禁</FieldLabel>
                 <Switch
                   size="sm"
@@ -863,6 +1138,18 @@ export default function UserPage() {
                   onValueChange={(checked) => setUserForm(prev => ({ ...prev, status: checked ? 0 : 1 }))}
                 />
               </div>
+
+              {userForm.admin === true && (
+                <div className="flex items-center justify-between">
+                  <FieldLabel tip="开启后该账号是演示管理员：能看到完整后台，但只读，修改时提示禁止编辑，密钥、IP、用户名等敏感信息会被隐藏，可在演示权限分配里开放部分配置。需要重新登录才生效。注意：关闭演示模式时如果管理员开关开着，该账号会成为拥有全部权限的真管理员">演示模式</FieldLabel>
+                  <Switch
+                    size="sm"
+                    aria-label="演示模式"
+                    isSelected={userForm.demoMode === 1}
+                    onValueChange={(checked) => setUserForm(prev => ({ ...prev, demoMode: checked ? 1 : 0 }))}
+                  />
+                </div>
+              )}
 
               <div>
                 <FieldLabel required>用户名</FieldLabel>
@@ -1035,6 +1322,15 @@ export default function UserPage() {
                   />
                 </UnitField>
               </div>
+
+              <div>
+                <FieldLabel>备注</FieldLabel>
+                <Textarea
+                  aria-label="备注" autoComplete="off" variant="bordered" minRows={2} maxLength={500}
+                  value={userForm.remark ?? ''}
+                  onChange={(e) => setUserForm(prev => ({ ...prev, remark: e.target.value }))}
+                />
+              </div>
             </div>
           </ModalBody>
           <ModalFooter>
@@ -1058,7 +1354,7 @@ export default function UserPage() {
         onClose={onTunnelModalClose}
         size="2xl"
       scrollBehavior="outside"
-      backdrop="blur"
+      backdrop="opaque"
       placement="center"
         isDismissable={false}
         classNames={{
@@ -1146,7 +1442,7 @@ export default function UserPage() {
                             >
                               {userTunnel.status === 1 ? '禁用' : '启用'}
                             </Button>
-                            <Button
+                            <TipButton
                               size="sm"
                               variant="flat"
                               color="default"
@@ -1154,10 +1450,8 @@ export default function UserPage() {
                               onClick={() => handleResetTunnelFlow(userTunnel)}
                               title="重置流量"
                             >
-                              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                                <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
-                              </svg>
-                            </Button>
+                              <FireOutlined />
+                            </TipButton>
                             <Button
                               size="sm"
                               variant="flat"
@@ -1165,7 +1459,7 @@ export default function UserPage() {
                               isIconOnly
                               onClick={() => handleRemoveTunnel(userTunnel)}
                             >
-                              <DeleteIcon className="w-4 h-4" />
+                              <DeleteIcon />
                             </Button>
                           </div>
                         </TableCell>
@@ -1186,7 +1480,130 @@ export default function UserPage() {
 
       {/* 删除确认对话框 */}
       {/* 编辑用户套餐：选择套餐，并勾选要把套餐里的哪些内容更新到该用户 */}
-      <Modal isOpen={isPackageModalOpen} onClose={onPackageModalClose} size="sm" backdrop="blur" placement="center">
+      <Modal isOpen={cleanupTarget !== null} onClose={() => setCleanupTarget(null)} size="sm" backdrop="opaque" placement="center" hideCloseButton classNames={{ base: "max-w-[416px]" }}>
+        <ModalContent>
+          <ModalHeader>
+            <h2 className="text-base font-semibold">{cleanupTarget === 'users' ? '清理无效用户' : '清理无效规则'}</h2>
+          </ModalHeader>
+          <ModalBody>
+            <div className="space-y-4 text-sm text-foreground">
+              <p>
+                {cleanupTarget === 'users'
+                  ? '用户组与余额均为 0 的用户，即从未付费的用户，将被删除，且不可恢复。同时这些用户的规则、单端设备等将被删除。绑定了套餐或有已支付订单的用户，以及管理员，不会被清理。'
+                  : '清理用户或入口或出口已被删除的规则。'}
+              </p>
+              {cleanupItems.length === 0 ? (
+                <p className="font-semibold">{cleanupTarget === 'users' ? '没有发现需要清理的用户。' : '没有发现需要清理的规则。'}</p>
+              ) : (
+                <div>
+                  <p className="font-semibold">{`将清理 ${cleanupItems.length} ${cleanupTarget === 'users' ? '个用户' : '条规则'}：`}</p>
+                  <p className="mt-1 max-h-32 overflow-y-auto break-words text-default-600">{cleanupItems.join('、')}</p>
+                </div>
+              )}
+            </div>
+          </ModalBody>
+          <ModalFooter>
+            <Button size="sm" variant="bordered" className="border-1 border-default-300 text-sm font-normal" onPress={() => setCleanupTarget(null)}>取 消</Button>
+            <Button size="sm" color={cleanupItems.length === 0 ? 'default' : 'danger'} className="text-sm font-normal" isDisabled={cleanupItems.length === 0} isLoading={cleanupLoading} onPress={handleConfirmCleanup}>确 定</Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+
+      <Modal isOpen={isMenuPermissionOpen} onClose={onMenuPermissionClose} size="md" backdrop="opaque" placement="center">
+        <ModalContent>
+          <ModalHeader>
+            <h2 className="text-base font-semibold">权限分配 {menuPermissionUser?.user}</h2>
+          </ModalHeader>
+          <ModalBody>
+            <div>
+              <FieldLabel tip="取消勾选后，该账号看不到对应页面，也不能调用相关接口；主页和个人中心所有账号都能用。受限管理员不能操作管理员账号，也不能分配权限。修改立即生效，页面刷新后菜单更新">可使用的页面</FieldLabel>
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                {menuPermissionOptions.map(option => (
+                  <Checkbox
+                    key={option.code}
+                    size="sm"
+                    isSelected={menuPermissionSelected.includes(option.code)}
+                    onValueChange={(checked) => setMenuPermissionSelected(prev => checked ? [...prev, option.code] : prev.filter(code => code !== option.code))}
+                  >
+                    {option.label}
+                  </Checkbox>
+                ))}
+              </div>
+            </div>
+          </ModalBody>
+          <ModalFooter>
+            <Button size="sm" variant="light" onPress={onMenuPermissionClose}>取消</Button>
+            <Button size="sm" color="primary" isLoading={menuPermissionSaving} onPress={handleSaveMenuPermission}>保存</Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+
+      <Modal isOpen={isPermissionOpen} onClose={onPermissionClose} size="md" backdrop="opaque" placement="center">
+        <ModalContent>
+          <ModalHeader>
+            <h2 className="text-base font-semibold">演示权限分配 {permissionUser?.user}</h2>
+          </ModalHeader>
+          <ModalBody>
+            <div className="flex flex-col gap-4">
+              <div>
+                <FieldLabel tip="勾选后该演示账号可以修改对应区域。默认都不勾选，对应功能未开启的区域不显示。无论勾选哪些：密钥和影响注册、登录的设置不能改，不能提权、不能碰管理员账号、不能改密码和余额，打码内容不会写回">可编辑区域</FieldLabel>
+                <div className="flex flex-wrap gap-4 pt-1">
+                  {permissionOptions.map(option => (
+                    <Checkbox
+                      key={option.code}
+                      size="sm"
+                      isSelected={permissionAreas.includes(option.code)}
+                      onValueChange={(checked) => setPermissionAreas(prev => checked ? [...prev, option.code] : prev.filter(code => code !== option.code))}
+                    >
+                      {option.label}
+                    </Checkbox>
+                  ))}
+                </div>
+                {visiblePermissionAreas.some(code => ['package', 'redeemCode', 'inviteCode', 'order'].includes(code)) && (
+                  <p className="pt-2 text-xs text-warning-600">
+                    套餐内容、兑换码、邀请码、订单的改动会影响真实用户和资金，定时恢复只能还原数据，已经发生的后果撤销不了：恢复前可能有用户按演示账号改的价格下单，访客也可以自定义兑换码和邀请码，再用普通账号兑换余额或注册。公开给访客的账号不建议勾选。
+                  </p>
+                )}
+                {visiblePermissionAreas.some(code => ['node', 'tunnel', 'forward', 'forwardGroup', 'deviceGroup', 'speedLimit', 'user'].includes(code)) && (
+                  <p className="pt-2 text-xs text-danger">
+                    节点、隧道、转发规则、转发分组、设备、限速规则、用户的改动会立即影响线上流量：访客可以把真实用户的流量转到任意地址，也可以删除规则或节点造成断线。恢复时会重新下发配置，但节点离线或下发失败时可能和面板不一致。只适合没有真实业务的演示环境，公开给访客的账号不要勾选。
+                  </p>
+                )}
+              </div>
+              <div>
+                <div className="flex items-center justify-between">
+                  <FieldLabel tip="开启后每天到这个时刻（按面板服务器时间）撤销该账号的改动，时刻之后才发生的改动等到第二天；期间被真管理员改过的内容不会被覆盖">每日自动恢复</FieldLabel>
+                  <Switch
+                    size="sm"
+                    aria-label="每日自动恢复"
+                    isSelected={permissionRestoreTime !== null}
+                    onValueChange={(checked) => setPermissionRestoreTime(checked ? '00:00' : null)}
+                  />
+                </div>
+                {permissionRestoreTime !== null && (
+                  <div className="pt-2">
+                    <TimeWheelPicker ariaLabel="恢复时刻" value={permissionRestoreTime} onChange={setPermissionRestoreTime} />
+                  </div>
+                )}
+              </div>
+              <div className="text-sm text-default-600">
+                <p>待恢复的改动：{permissionPending} 项</p>
+                {permissionPending > 0 && <p>下次恢复时间：{permissionNextTime ? new Date(permissionNextTime).toLocaleString() : '不自动恢复'}</p>}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" variant="bordered" isDisabled={permissionPending === 0 || permissionBusy} onPress={() => handlePermissionAction('restore')}>立即恢复</Button>
+                <Button size="sm" variant="bordered" isDisabled={permissionPending === 0 || permissionBusy} onPress={() => handlePermissionAction('commit')} title="保留现在的内容作为初始配置，已有改动不再恢复">设为初始配置</Button>
+              </div>
+            </div>
+          </ModalBody>
+          <ModalFooter>
+            <Button size="sm" variant="light" onPress={onPermissionClose}>取消</Button>
+            <Button size="sm" color="primary" isLoading={permissionBusy} onPress={handleSavePermission}>保存</Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+
+      <Modal isOpen={isPackageModalOpen} onClose={onPackageModalClose} size="sm" backdrop="opaque" placement="center">
         <ModalContent>
           <ModalHeader>
             <h2 className="text-base font-semibold">编辑用户套餐{packageTarget ? ` ${packageTarget.name || packageTarget.user} (UID=${packageTarget.id})` : ''}</h2>
@@ -1254,15 +1671,8 @@ export default function UserPage() {
         loading={resetFlowLoading}
         message={
           <>
-            <p>你确定要重置用户 {userToReset?.user} 的流量吗？该操作只会重置账号流量不会重置隧道权限流量，重置后该用户的上下行流量将归零，此操作不可撤销。</p>
-            <div className="mt-2 p-2 bg-warning-50 dark:bg-warning-100/10 rounded text-xs">
-              <div className="text-warning-700 dark:text-warning-300">当前流量使用情况：</div>
-              <div className="mt-1 space-y-1">
-                <div className="flex justify-between"><span>上行流量：</span><span className="font-mono">{userToReset ? formatFlow(userToReset.inFlow || 0) : '-'}</span></div>
-                <div className="flex justify-between"><span>下行流量：</span><span className="font-mono">{userToReset ? formatFlow(userToReset.outFlow || 0) : '-'}</span></div>
-                <div className="flex justify-between font-medium"><span>总计：</span><span className="font-mono text-warning-700 dark:text-warning-300">{userToReset ? formatFlow(calculateUserTotalUsedFlow(userToReset)) : '-'}</span></div>
-              </div>
-            </div>
+            <p>你确定要重置用户 {userToReset?.user} 的流量吗？重置后上下行流量将归零，只重置账号流量，不重置隧道权限流量，此操作不可撤销。</p>
+            <p>当前已用：上行 {userToReset ? formatFlow(userToReset.inFlow || 0) : '-'}，下行 {userToReset ? formatFlow(userToReset.outFlow || 0) : '-'}，总计 {userToReset ? formatFlow(calculateUserTotalUsedFlow(userToReset)) : '-'}。</p>
           </>
         }
       />
@@ -1278,15 +1688,8 @@ export default function UserPage() {
         loading={resetTunnelFlowLoading}
         message={
           <>
-            <p>你确定要重置用户 {currentUser?.user} 对隧道 {tunnelToReset?.tunnelName} 的流量吗？该操作只会重置隧道权限流量不会重置账号流量，重置后该隧道权限的上下行流量将归零，此操作不可撤销。</p>
-            <div className="mt-2 p-2 bg-warning-50 dark:bg-warning-100/10 rounded text-xs">
-              <div className="text-warning-700 dark:text-warning-300">当前流量使用情况：</div>
-              <div className="mt-1 space-y-1">
-                <div className="flex justify-between"><span>上行流量：</span><span className="font-mono">{tunnelToReset ? formatFlow(tunnelToReset.inFlow || 0) : '-'}</span></div>
-                <div className="flex justify-between"><span>下行流量：</span><span className="font-mono">{tunnelToReset ? formatFlow(tunnelToReset.outFlow || 0) : '-'}</span></div>
-                <div className="flex justify-between font-medium"><span>总计：</span><span className="font-mono text-warning-700 dark:text-warning-300">{tunnelToReset ? formatFlow(calculateTunnelUsedFlow(tunnelToReset)) : '-'}</span></div>
-              </div>
-            </div>
+            <p>你确定要重置用户 {currentUser?.user} 对隧道 {tunnelToReset?.tunnelName} 的流量吗？重置后上下行流量将归零，只重置隧道权限流量，不重置账号流量，此操作不可撤销。</p>
+            <p>当前已用：上行 {tunnelToReset ? formatFlow(tunnelToReset.inFlow || 0) : '-'}，下行 {tunnelToReset ? formatFlow(tunnelToReset.outFlow || 0) : '-'}，总计 {tunnelToReset ? formatFlow(calculateTunnelUsedFlow(tunnelToReset)) : '-'}。</p>
           </>
         }
       />

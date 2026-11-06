@@ -435,10 +435,10 @@ html.dark:not(.theme-transparent) .app-topbar {
 td.probe-clickable:hover { text-decoration: underline; text-underline-offset: 2px; }
 .probe-node-detail-wrap { position: relative; display: inline-flex; }.probe-node-popover { display: none; position: absolute; top: calc(100% + 8px); left: 0; z-index: 30; min-width: 220px; background: #fff; border: 1px solid #d8cfdf; border-radius: 10px; padding: 10px 12px; box-shadow: 0 8px 22px rgb(53 32 78 / 14%); text-align: left; white-space: nowrap; }.probe-node-detail-wrap:hover .probe-node-popover, .probe-node-popover.open { display: block; }.probe-node-popover-row { font-size: 12px; line-height: 1.7; color: #5e5566; }.probe-node-popover-row b { color: #332b3b; font-size: 13px; }
 .probe-loading { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; padding: 120px 0; }.probe-loading-ring { width: 52px; height: 52px; border-radius: 50%; background: conic-gradient(from 0deg, transparent, #7650b9); -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 5px)); mask: radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 5px)); animation: probe-spin 0.85s linear infinite; }.probe-loading p { font-size: 13px; color: #8b8292; letter-spacing: .02em; animation: probe-pulse 1.6s ease-in-out infinite; }
-.probe-empty { max-width: 640px; margin: 60px auto; padding: 28px 32px; text-align: center; }.probe-empty h2 { font-size: 22px; font-weight: 750; color: #332b3b; margin: 0 0 10px; }.probe-empty p { font-size: 13px; color: #8b8292; line-height: 1.6; margin: 0; }
+.probe-empty { max-width: 640px; margin: 60px auto; padding: 28px 32px; text-align: center; }.probe-empty h2 { font-size: 22px; font-weight: 750; color: #332b3b; margin: 0 0 10px; }.probe-empty > p { font-size: 13px; color: #8b8292; line-height: 1.6; margin: 0; }
 @keyframes probe-spin { to { transform: rotate(360deg); } }
 @keyframes probe-pulse { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
-.dark .probe-page { background: #000; color: #e4e2e6; }.dark .probe-topbar { background: rgb(17 18 20 / 90%); border-bottom-color: #2a2b2f; }.dark .probe-mark { color: #a78bfa; }.dark .probe-topbar p { color: #9a94a3; }.dark .probe-title { background: #16171a; border-color: #3a3a3d; color: #e4e2e6; }.dark .probe-title em { color: #9a94a3; }.dark .probe-total { background: #211a33; color: #c9b8ee; }.dark .probe-scroll { background: rgb(17 18 20 / 65%); }.dark .probe-table th { color: #b7b2bd; border-bottom-color: #3a3a3d; }.dark .probe-table td { border-bottom-color: #26272b; }.dark .probe-meter { background: #2a2b2f; }.dark .probe-node-popover { background: #16171a; border-color: #3a3a3d; }.dark .probe-node-popover-row { color: #b7b2bd; }.dark .probe-node-popover-row b { color: #e4e2e6; }.dark .probe-loading-ring { background: conic-gradient(from 0deg, transparent, #a78bfa); }.dark .probe-loading p { color: #9a94a3; }.dark .probe-table th:first-child, .dark .probe-table td:first-child { background: #000; }.dark .probe-empty h2 { color: #e4e2e6; }.dark .probe-empty p { color: #9a94a3; }
+.dark .probe-page { background: #000; color: #e4e2e6; }.dark .probe-topbar { background: rgb(17 18 20 / 90%); border-bottom-color: #2a2b2f; }.dark .probe-mark { color: #a78bfa; }.dark .probe-topbar p { color: #9a94a3; }.dark .probe-title { background: #16171a; border-color: #3a3a3d; color: #e4e2e6; }.dark .probe-title em { color: #9a94a3; }.dark .probe-total { background: #211a33; color: #c9b8ee; }.dark .probe-scroll { background: rgb(17 18 20 / 65%); }.dark .probe-table th { color: #b7b2bd; border-bottom-color: #3a3a3d; }.dark .probe-table td { border-bottom-color: #26272b; }.dark .probe-meter { background: #2a2b2f; }.dark .probe-node-popover { background: #16171a; border-color: #3a3a3d; }.dark .probe-node-popover-row { color: #b7b2bd; }.dark .probe-node-popover-row b { color: #e4e2e6; }.dark .probe-loading-ring { background: conic-gradient(from 0deg, transparent, #a78bfa); }.dark .probe-loading p { color: #9a94a3; }.dark .probe-table th:first-child, .dark .probe-table td:first-child { background: #000; }.dark .probe-empty h2 { color: #e4e2e6; }.dark .probe-empty > p { color: #9a94a3; }
 /* 节点状态页分组标题栏：移动端保持「名称 + 上行/下行合计」横向一排，不换行不截断，宽度不够时整排可左右滑动 */
 .probe-group-head { overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none; }
 .probe-group-head::-webkit-scrollbar { display: none; }
@@ -473,7 +473,7 @@ td.probe-clickable:hover { text-decoration: underline; text-underline-offset: 2p
 .rail-drag-handle:active { cursor: grabbing; background: #f4f4f5; }
 .dark .rail-drag-handle:active { background: #27272a; }
 .rail-btn { display: flex; flex-direction: column; align-items: center; gap: 1px; width: 42px; padding: 5px 2px; border-radius: 8px; border: none; background: transparent; color: #52525b; font-size: 10px; line-height: 1; cursor: pointer; transition: background .15s, color .15s; }
-.rail-btn svg { width: 15px; height: 15px; }
+.rail-btn svg { width: 16px; height: 16px; }
 .rail-btn:hover:not(:disabled) { background: #f4f4f5; color: #18181b; }
 .rail-btn:disabled { opacity: .35; cursor: not-allowed; }
 .rail-btn-danger:hover:not(:disabled) { background: rgb(239 68 68 / 12%); color: #ef4444; }
@@ -547,3 +547,82 @@ html.theme-transparent [role="dialog"] {
   -webkit-backdrop-filter: blur(18px);
   backdrop-filter: blur(18px);
 }
+
+/* 管理页统一样式：卡片内边距、细边框按钮，表头 14px 粗体带竖线，单元格 14px，表格底部一条分隔线 */
+.management-page .management-table-card > [data-slot="header"] {
+  padding: 16px 24px !important;
+}
+.management-page .management-table-card > .flex-auto {
+  padding: 24px !important;
+}
+.management-page button.border-medium {
+  border-width: 1px !important;
+  font-size: 14px;
+  font-weight: 400;
+}
+.management-page button.border-medium:not([class*="danger"]) {
+  border-color: hsl(var(--heroui-default-300)) !important;
+}
+.management-page .settings-table-scroll {
+  border-bottom: 1px solid hsl(var(--heroui-default-100));
+}
+.management-page table thead::after {
+  display: none !important;
+}
+.management-page th.management-table-heading {
+  position: relative;
+  height: 54px;
+  white-space: nowrap;
+  color: hsl(var(--heroui-foreground)) !important;
+  font-size: 14px !important;
+  font-weight: 600 !important;
+}
+.management-page th.management-table-heading:not(:last-child):not(:has(input[type="checkbox"]))::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: 0;
+  width: 1px;
+  height: 16px;
+  transform: translateY(-50%);
+  background: hsl(var(--heroui-default-300));
+}
+.management-page td.management-table-cell {
+  height: 64px;
+  font-size: 14px !important;
+}
+/* 操作列的图标按钮：细边框、无底色 */
+.management-page td.management-table-cell button.px-0 {
+  background: transparent !important;
+  border: 1px solid hsl(var(--heroui-default-300)) !important;
+  color: hsl(var(--heroui-foreground));
+}
+.management-page td.management-table-cell button.px-0[disabled],
+.management-page td.management-table-cell button.px-0[data-disabled="true"] {
+  opacity: 0.45;
+}
+
+/* 弹窗统一：圆角 8px、24px 内边距，取消与确定两字按钮带字距 */
+section[role="dialog"] { border-radius: 8px; }
+html.dark:not(.theme-transparent) section[role="dialog"] { background-color: #1f1f1f; }
+section[role="dialog"] > header { padding: 20px 24px 12px; font-size: 16px; font-weight: 600; }
+section[role="dialog"] > footer { padding: 12px 24px 20px; gap: 8px; }
+.dialog-btn { height: 32px; min-width: 64px; font-size: 14px; font-weight: 400; letter-spacing: 0.2em; }
+.dialog-btn.border-medium { border-width: 1px; border-color: hsl(var(--heroui-default-300)); }
+/* 弹窗表单：标签加粗在上，控件 32px 高、细边框 */
+.dialog-form [data-slot="label"] { font-size: 14px; font-weight: 600; color: hsl(var(--heroui-foreground)); }
+.dialog-form [data-slot="input-wrapper"], .dialog-form button[data-slot="trigger"]:has([data-slot="selectorIcon"]) { border-width: 1px !important; border-color: hsl(var(--heroui-default-300)); border-radius: 6px; }
+.dialog-form [data-slot="input-wrapper"]:not(:has(textarea)), .dialog-form button[data-slot="trigger"]:has([data-slot="selectorIcon"]) { height: 32px; min-height: 32px; }
+.dialog-form [data-slot="input-wrapper"]:has(textarea) { height: auto; }
+
+/* 悬停下拉菜单：与弹窗同色，圆角 8px；打开时触发按钮变蓝 */
+.hover-dropdown-content { border-radius: 8px; padding: 4px; min-width: 0; }
+html.dark:not(.theme-transparent) .hover-dropdown-content { background-color: #1f1f1f; }
+.management-page button.dock-btn[aria-expanded="true"] { border-color: hsl(var(--heroui-primary)) !important; color: hsl(var(--heroui-primary)); }
+
+/* 操作列图标按钮悬停：边框和图标变蓝 */
+.management-page td.management-table-cell button.px-0[data-hover="true"]:not([data-disabled="true"]) { border-color: hsl(var(--heroui-primary)) !important; color: hsl(var(--heroui-primary)) !important; opacity: 1; }
+
+/* 节点状态页：隐藏表格和整页的滚动条，内容放不下时仍可用滚轮、触控板或手指滑动 */
+.probe-scroll, html:has(.probe-page), body:has(.probe-page) { scrollbar-width: none; }
+.probe-scroll::-webkit-scrollbar, html:has(.probe-page)::-webkit-scrollbar, body:has(.probe-page)::-webkit-scrollbar { display: none; }

@@ -23,17 +23,17 @@ export const ConfirmDialog = ({
   onConfirm,
   loading
 }: ConfirmDialogProps) => (
-  <Modal isOpen={isOpen} onOpenChange={onOpenChange} size="sm" placement="center" backdrop="blur">
+  <Modal isOpen={isOpen} onOpenChange={onOpenChange} size="sm" placement="center" backdrop="opaque" hideCloseButton classNames={{ base: "max-w-[416px]" }}>
     <ModalContent>
       {(onClose) => (
         <>
           <ModalHeader>{title}</ModalHeader>
           <ModalBody className="py-0">
-            <div className="text-sm text-default-600 space-y-1">{message}</div>
+            <div className="text-sm text-foreground space-y-3">{message}</div>
           </ModalBody>
           <ModalFooter>
-            <Button variant="light" onPress={onClose}>取消</Button>
-            <Button color={confirmColor} onPress={onConfirm} isLoading={loading}>{confirmText}</Button>
+            <Button size="sm" variant="bordered" className="dialog-btn" onPress={onClose}>取消</Button>
+            <Button size="sm" color={confirmColor} className="dialog-btn" onPress={onConfirm} isLoading={loading}>{confirmText}</Button>
           </ModalFooter>
         </>
       )}

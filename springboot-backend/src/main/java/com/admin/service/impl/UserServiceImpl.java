@@ -55,7 +55,12 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     // ========== 常量定义 ==========
     
     /** 用户角色常量 */
+    @javax.annotation.Resource
+    private com.admin.service.DemoChangeService demoChangeService;
+
     private static final int ADMIN_ROLE_ID = 0;        // 管理员角色ID
+    private static final int DEMO_MODE_ON = 1;         // 演示模式开启：管理员角色，但只读且数据打码
+    private static final int DEMO_MODE_OFF = 0;
     private static final int USER_ROLE_ID = 1;         // 普通用户角色ID
     
     /** 用户状态常量 */
@@ -80,7 +85,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     private static final String ERROR_USERNAME_EXISTS = "用户名已存在";
     private static final String ERROR_USERNAME_TAKEN = "用户名已被其他用户使用";
     private static final String ERROR_CANNOT_DELETE_ADMIN = "不能删除管理员用户";
-    private static final String ERROR_CANNOT_UPDATE_ADMIN = "不能修改管理员用户信息";
+    private static final String ERROR_CHANGE_SELF_ADMIN = "不能取消自己的管理员权限或封禁自己";
+    private static final String ERROR_LAST_ADMIN = "至少要保留一名可用的全权限管理员";
+    private static final String ERROR_NEED_FULL_ADMIN = "只有全权限管理员可以操作管理员账号";
     private static final String ERROR_USER_NOT_LOGGED_IN = "用户未登录或token无效";
     private static final String ERROR_GET_PACKAGE_INFO_FAILED = "获取套餐信息失败";
     private static final String ERROR_CURRENT_PASSWORD_WRONG = "当前密码错误";
@@ -300,6 +307,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         if (usernameValidationResult.getCode() != 0) {
             return usernameValidationResult;
         }
+        if (Boolean.TRUE.equals(userDto.getAdmin()) && !isCurrentFullAdmin()) {
+            return R.err(403, ERROR_NEED_FULL_ADMIN);
+        }
 
         // 2. 构建用户实体并保存
         User user = buildNewUserEntity(userDto);
@@ -346,17 +356,40 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
             return usernameValidationResult;
         }
 
-        // 3. 验证更新条件
-        R updateValidationResult = validateUserUpdate(userUpdateDto.getId());
-        if (updateValidationResult.getCode() != 0) {
-            return updateValidationResult;
+        // 3. 验证角色变更
+        User beforeUpdate = this.getById(userUpdateDto.getId());
+        if (beforeUpdate == null) {
+            return R.err(ERROR_USER_NOT_FOUND);
+        }
+        int newRoleId = resolveRoleId(beforeUpdate, userUpdateDto.getAdmin());
+        int newDemoMode = resolveDemoMode(beforeUpdate, userUpdateDto.getDemoMode(), newRoleId);
+        int newStatus = userUpdateDto.getStatus() != null ? userUpdateDto.getStatus() : beforeUpdate.getStatus();
+        // 受限管理员只能管理普通用户，否则可以通过新建或修改管理员绕过自己的权限
+        if ((newRoleId == ADMIN_ROLE_ID || Integer.valueOf(ADMIN_ROLE_ID).equals(beforeUpdate.getRoleId())) && !isCurrentFullAdmin()) {
+            return R.err(403, ERROR_NEED_FULL_ADMIN);
+        }
+        R roleChangeResult = validateAdminKept(beforeUpdate, newRoleId, newDemoMode, newStatus);
+        if (roleChangeResult.getCode() != 0) {
+            return roleChangeResult;
         }
 
         // 4. 构建更新实体并保存
-        User beforeUpdate = this.getById(userUpdateDto.getId());
-        Long oldPackageId = beforeUpdate != null ? beforeUpdate.getPackageId() : null;
+        Long oldPackageId = beforeUpdate.getPackageId();
         User updateUser = buildUpdateUserEntity(userUpdateDto);
+        updateUser.setRoleId(newRoleId);
+        updateUser.setDemoMode(newDemoMode);
         boolean result = this.updateById(updateUser);
+
+        // 角色变了：两种角色能分配的页面不同，旧设置不再有意义，恢复为新角色的全部页面
+        if (result && !Objects.equals(beforeUpdate.getRoleId(), newRoleId)) {
+            this.update(new UpdateWrapper<User>().eq("id", userUpdateDto.getId()).set("menu_permissions", null));
+        }
+
+        // 关闭演示模式：撤销它还没恢复的改动并清掉权限，下次开启要重新分配
+        if (result && isDemoRequested(beforeUpdate.getDemoMode()) && newDemoMode == DEMO_MODE_OFF) {
+            demoChangeService.restore(userUpdateDto.getId());
+            this.update(new UpdateWrapper<User>().eq("id", userUpdateDto.getId()).set("demo_areas", null).set("demo_restore_time", null));
+        }
 
         // MyBatis-Plus 默认按 NOT_NULL 策略更新，updateById 遇到 null 字段会直接跳过、不会清空数据库里原有的值。
         // 到期时间允许留空表示"永不过期"，如果这次提交就是要把它清空，必须用条件更新显式把该列写成 NULL
@@ -386,12 +419,18 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     @Override
     public R deleteUser(Long id) {
         // 1. 验证删除条件
+        User deleteTarget = this.getById(id);
+        if (deleteTarget != null && Integer.valueOf(ADMIN_ROLE_ID).equals(deleteTarget.getRoleId()) && !isCurrentFullAdmin()) {
+            return R.err(403, ERROR_NEED_FULL_ADMIN);
+        }
         R deleteValidationResult = validateUserDeletion(id);
         if (deleteValidationResult.getCode() != 0) {
             return deleteValidationResult;
         }
 
         try {
+            // 删除演示账号前先撤销它还没恢复的改动
+            demoChangeService.restore(id);
             // 2. 级联删除用户相关数据
             deleteUserRelatedData(id);
             statisticsFlowService.remove(new QueryWrapper<StatisticsFlow>().eq("user_id", id));
@@ -764,7 +803,8 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         
         // 设置默认属性
         user.setStatus(userDto.getStatus() != null ? userDto.getStatus() : USER_STATUS_ACTIVE);
-        user.setRoleId(USER_ROLE_ID);
+        user.setDemoMode(Boolean.TRUE.equals(userDto.getAdmin()) && isDemoRequested(userDto.getDemoMode()) ? DEMO_MODE_ON : DEMO_MODE_OFF);
+        user.setRoleId(Boolean.TRUE.equals(userDto.getAdmin()) ? ADMIN_ROLE_ID : USER_ROLE_ID);
         
         // 设置时间戳
         long currentTime = System.currentTimeMillis();
@@ -774,7 +814,54 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         return user;
     }
 
+    private static boolean isDemoRequested(Integer demoMode) {
+        return Integer.valueOf(DEMO_MODE_ON).equals(demoMode);
+    }
 
+    /** 编辑后的演示模式：只有管理员才能开启，不是管理员时一定关闭。只改部分字段的调用（如更换套餐）不传，保持原样 */
+    static int resolveDemoMode(User target, Integer demoMode, int newRoleId) {
+        if (newRoleId != ADMIN_ROLE_ID) {
+            return DEMO_MODE_OFF;
+        }
+        Integer effective = demoMode != null ? demoMode : target.getDemoMode();
+        return isDemoRequested(effective) ? DEMO_MODE_ON : DEMO_MODE_OFF;
+    }
+
+    /** 编辑后的角色，只由管理员开关决定，和演示模式无关；不传时保持原样 */
+    static int resolveRoleId(User target, Boolean admin) {
+        if (admin == null) {
+            return target.getRoleId();
+        }
+        return admin ? ADMIN_ROLE_ID : USER_ROLE_ID;
+    }
+
+    private boolean isCurrentFullAdmin() {
+        User me = this.getById(JwtUtil.getUserIdFromToken());
+        return me != null && Integer.valueOf(ADMIN_ROLE_ID).equals(me.getRoleId()) && me.getMenuPermissions() == null;
+    }
+
+    /** 不能让自己失去管理员权限，也不能让系统里没有可用的管理员，否则再也进不了后台 */
+    private R validateAdminKept(User target, int newRoleId, int newDemoMode, int newStatus) {
+        boolean wasActiveAdmin = isRealAdmin(target) && target.getMenuPermissions() == null
+                && !Integer.valueOf(USER_STATUS_DISABLED).equals(target.getStatus());
+        boolean willBeActiveAdmin = newRoleId == ADMIN_ROLE_ID && newDemoMode == DEMO_MODE_OFF && newStatus != USER_STATUS_DISABLED;
+        if (!wasActiveAdmin || willBeActiveAdmin) {
+            return R.ok();
+        }
+        if (target.getId().intValue() == JwtUtil.getUserIdFromToken()) {
+            return R.err(ERROR_CHANGE_SELF_ADMIN);
+        }
+        long otherAdmins = this.count(new QueryWrapper<User>()
+                .eq("role_id", ADMIN_ROLE_ID).eq("demo_mode", DEMO_MODE_OFF)
+                .ne("status", USER_STATUS_DISABLED).ne("id", target.getId()).isNull("menu_permissions"));
+        return otherAdmins > 0 ? R.ok() : R.err(ERROR_LAST_ADMIN);
+    }
+
+    /** 真管理员：管理员角色且不是演示账号。不能被删除，要先取消管理员 */
+    private static boolean isRealAdmin(User user) {
+        return user.getRoleId() != null && user.getRoleId() == ADMIN_ROLE_ID
+                && !Integer.valueOf(DEMO_MODE_ON).equals(user.getDemoMode());
+    }
 
     /**
      * 检查用户是否存在
@@ -828,27 +915,8 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
             return R.err(ERROR_USER_NOT_FOUND);
         }
 
-        if (user.getRoleId() == ADMIN_ROLE_ID) {
+        if (isRealAdmin(user)) {
             return R.err(ERROR_CANNOT_DELETE_ADMIN);
-        }
-
-        return R.ok();
-    }
-
-    /**
-     * 验证用户更新条件
-     * 
-     * @param userId 用户ID
-     * @return 验证结果响应
-     */
-    private R validateUserUpdate(Long userId) {
-        User user = this.getById(userId);
-        if (user == null) {
-            return R.err(ERROR_USER_NOT_FOUND);
-        }
-
-        if (user.getRoleId() == ADMIN_ROLE_ID) {
-            return R.err(ERROR_CANNOT_UPDATE_ADMIN);
         }
 
         return R.ok();
@@ -1042,6 +1110,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         userInfo.setWalletBalance(user.getWalletBalance());
         userInfo.setAutoRenew(user.getAutoRenew());
         userInfo.setTelegramBound(StringUtils.isNotBlank(user.getTelegramChatId()));
+        userInfo.setTelegramChatId(user.getTelegramChatId());
         userInfo.setNotifyPaymentMode(user.getNotifyPaymentMode() != null ? user.getNotifyPaymentMode() : 0);
         userInfo.setNotifyDeviceMode(user.getNotifyDeviceMode() != null ? user.getNotifyDeviceMode() : 0);
         userInfo.setNotifyDeviceGroupIds(parseDeviceGroupIds(user.getNotifyDeviceGroups()));

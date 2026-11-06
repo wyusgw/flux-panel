@@ -1,3 +1,4 @@
+import { SyncOutlined } from "@/components/ant-icons";
 import { useState } from "react";
 import { Button } from "@heroui/button";
 
@@ -35,10 +36,7 @@ export default function RefreshButton({ onRefresh, refreshing, isDisabled }: Ref
       variant="bordered"
       isDisabled={isDisabled || spinning}
       startContent={
-        <svg className={`w-4 h-4 ${spinning ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h5M20 20v-5h-5" />
-          <path strokeLinecap="round" strokeLinejoin="round" d="M4.6 15a8 8 0 0014.4 2.6M19.4 9A8 8 0 005 6.4" />
-        </svg>
+        <SyncOutlined className={`w-3.5 h-3.5 flex-shrink-0 ${spinning ? 'animate-spin' : ''}`} />
       }
       onPress={handlePress}
     >

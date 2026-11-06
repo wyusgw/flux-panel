@@ -15,7 +15,8 @@ import toast from 'react-hot-toast';
 import { EmptyState } from "@/components/empty-state";
 import { TablePagination } from "@/components/table-pagination";
 import { getOrderList } from "@/api";
-import RefreshButton from "@/components/refresh-button";
+import { useOrderTableFilters } from "@/components/order-table-filters";
+import { HEADER_COLUMN_CLASS, HEADER_TABLE_CLASS_NAMES } from "@/components/table-header-filter";
 
 interface OrderItem {
   id: number;
@@ -47,6 +48,8 @@ const getTypeText = (type: string): string => {
       return type;
   }
 };
+
+const STATUS_FILTER_OPTIONS = [{ status: 0, text: '待支付' }, { status: 1, text: '交易完成' }, { status: 2, text: '已取消' }];
 
 const getStatusDisplay = (status: number) => {
   switch (status) {
@@ -86,10 +89,12 @@ export default function OrdersPage() {
     }
   };
 
+  const { filtered: filteredOrders, headers } = useOrderTableFilters(orders, getTypeText, STATUS_FILTER_OPTIONS, () => setPage(1));
+
   const pagedOrders = useMemo(() => {
     const start = (page - 1) * pageSize;
-    return orders.slice(start, start + pageSize);
-  }, [orders, page, pageSize]);
+    return filteredOrders.slice(start, start + pageSize);
+  }, [filteredOrders, page, pageSize]);
 
   if (loading) {
     return (
@@ -105,27 +110,27 @@ export default function OrdersPage() {
   return (
     <div className="management-page px-4 lg:px-6 py-5 lg:py-6">
       <Card className="management-table-card max-w-[1600px] mx-auto">
-        <CardHeader className="flex-row items-center justify-between gap-4 p-4 border-b border-default-100">
-          <div><h1 className="text-base font-semibold text-foreground">我的订单</h1><p className="mt-1 text-xs text-default-500">查看您的订单记录</p></div>
-          <RefreshButton onRefresh={() => loadData(false)} />
+        <CardHeader className="px-6 py-4 border-b border-default-100">
+          <h1 className="text-base font-semibold text-foreground">我的订单</h1>
         </CardHeader>
-        <CardBody className="p-0">
-          <div className="settings-table-scroll">
+        <CardBody className="p-6">
+          <div className="settings-table-scroll border-b border-default-100">
             <Table
               removeWrapper
               aria-label="我的订单列表"
-              classNames={{ base: "w-full", table: "w-full management-table", th: "management-table-heading", td: "management-table-cell" }}
+              classNames={{ base: "w-full", table: "w-full management-table", ...HEADER_TABLE_CLASS_NAMES }}
             >
               <TableHeader>
-                <TableColumn>订单号</TableColumn>
-                <TableColumn>创建时间</TableColumn>
-                <TableColumn>支付时间</TableColumn>
-                <TableColumn>订单信息</TableColumn>
-                <TableColumn>金额</TableColumn>
-                <TableColumn>类型</TableColumn>
-                <TableColumn>状态</TableColumn>
+                <TableColumn className={HEADER_COLUMN_CLASS}>{headers.orderNo}</TableColumn>
+                <TableColumn className={HEADER_COLUMN_CLASS}>创建时间</TableColumn>
+                <TableColumn className={HEADER_COLUMN_CLASS}>支付时间</TableColumn>
+                <TableColumn className={HEADER_COLUMN_CLASS}>{headers.info}</TableColumn>
+                <TableColumn className={HEADER_COLUMN_CLASS}>{headers.amount}</TableColumn>
+                <TableColumn className={HEADER_COLUMN_CLASS}>{headers.type}</TableColumn>
+                <TableColumn className={HEADER_COLUMN_CLASS}>{headers.status}</TableColumn>
+                <TableColumn className={HEADER_COLUMN_CLASS}>操作</TableColumn>
               </TableHeader>
-              <TableBody items={pagedOrders} emptyContent={<EmptyState text="暂无订单" />}>
+              <TableBody items={pagedOrders} emptyContent={<EmptyState />}>
                 {(order: OrderItem) => {
                   const status = getStatusDisplay(order.orderStatus);
                   return (
@@ -141,6 +146,7 @@ export default function OrdersPage() {
                       <TableCell>
                         <Chip color={status.color} size="sm" variant="light">{status.text}</Chip>
                       </TableCell>
+                      <TableCell><span className="text-default-500">—</span></TableCell>
                     </TableRow>
                   );
                 }}
@@ -148,7 +154,7 @@ export default function OrdersPage() {
             </Table>
           </div>
           <TablePagination
-            total={orders.length}
+            total={filteredOrders.length}
             page={page}
             pageSize={pageSize}
             onPageChange={setPage}

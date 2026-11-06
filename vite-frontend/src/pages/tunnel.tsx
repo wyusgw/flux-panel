@@ -1,4 +1,7 @@
+import { TipButton } from "@/components/tip-button";
+import { AimOutlined, DeleteOutlined, EditOutlined } from "@/components/ant-icons";
 import { useState, useEffect } from "react";
+import { ToolbarAddIcon } from "@/components/toolbar-icons";
 import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Table, TableHeader, TableColumn, TableBody, TableRow, TableCell } from "@heroui/table";
 import { Button } from "@heroui/button";
@@ -459,20 +462,17 @@ export default function TunnelPage() {
         <Card className="management-table-card max-w-[1600px] mx-auto">
         {/* 页面头部：标题 + 刷新，操作按钮在下方工具列（与其他管理页一致） */}
         <CardHeader className="flex-row items-center justify-between gap-4 p-4 border-b border-default-100">
-          <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="text-base font-semibold text-foreground">隧道管理</h1>
-            <RefreshButton refreshing={refreshing} onRefresh={handleRefresh} />
-          </div>
+          <h1 className="text-base font-semibold text-foreground">隧道管理</h1>
         </CardHeader>
         <CardBody className="p-4 space-y-3">
-        <p className="text-xs text-default-500">创建并管理转发使用的入口、出口节点隧道</p>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button size="sm" variant="bordered" onPress={handleAdd}>新增隧道</Button>
+        <div className="flex flex-wrap items-center gap-3.5">
+          <Button size="sm" variant="bordered" startContent={<ToolbarAddIcon />} onPress={handleAdd}>新增隧道</Button>
+          <RefreshButton refreshing={refreshing} onRefresh={handleRefresh} />
         </div>
 
         {/* 隧道列表 */}
         {tunnels.length > 0 ? (
-            <div className="-mx-4 -mb-4">
+            <div>
               <div className="settings-table-scroll">
                 <Table
                   removeWrapper
@@ -520,21 +520,15 @@ export default function TunnelPage() {
                           </TableCell>
                           <TableCell>
                             <div className="flex justify-end items-center gap-1">
-                              <Button isIconOnly size="sm" variant="flat" title={tunnel.status === 1 ? '诊断' : '仅启用状态下可诊断'} isDisabled={tunnel.status !== 1} onPress={() => handleDiagnose(tunnel)}>
-                                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                                </svg>
-                              </Button>
-                              <Button isIconOnly size="sm" variant="flat" title="编辑" onPress={() => handleEdit(tunnel)}>
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
-                                </svg>
-                              </Button>
-                              <Button isIconOnly size="sm" variant="flat" color="danger" title="删除" onPress={() => handleDelete(tunnel)}>
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 7h16M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m-8 0l1 13a1 1 0 001 1h6a1 1 0 001-1l1-13" />
-                                </svg>
-                              </Button>
+                              <TipButton isIconOnly size="sm" variant="flat" title={tunnel.status === 1 ? '诊断' : '仅启用状态下可诊断'} isDisabled={tunnel.status !== 1} onPress={() => handleDiagnose(tunnel)}>
+                                <AimOutlined />
+                              </TipButton>
+                              <TipButton isIconOnly size="sm" variant="flat" title="编辑" onPress={() => handleEdit(tunnel)}>
+                                <EditOutlined />
+                              </TipButton>
+                              <TipButton isIconOnly size="sm" variant="flat" color="danger" title="删除" onPress={() => handleDelete(tunnel)}>
+                                <DeleteOutlined />
+                              </TipButton>
                             </div>
                           </TableCell>
                         </TableRow>
@@ -557,7 +551,7 @@ export default function TunnelPage() {
           onOpenChange={setModalOpen}
           size="2xl"
         scrollBehavior="outside"
-        backdrop="blur"
+        backdrop="opaque"
         placement="center"
         >
           <ModalContent>
@@ -838,7 +832,7 @@ export default function TunnelPage() {
           onOpenChange={setDiagnosisModalOpen}
           size="2xl"
         scrollBehavior="outside"
-        backdrop="blur"
+        backdrop="opaque"
         placement="center"
         >
           <ModalContent>

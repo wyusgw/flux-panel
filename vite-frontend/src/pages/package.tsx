@@ -306,47 +306,47 @@ export default function PackagePlanPage() {
             <Button size="sm" variant="bordered" startContent={<ToolbarAddIcon />} onPress={handleAdd}>添加套餐</Button>
             <RefreshButton onRefresh={() => loadData(false)} />
           </div>
-          <div>
-          <Table removeWrapper aria-label="套餐列表" selectionMode="multiple" selectedKeys={selectedKeys} onSelectionChange={setSelectedKeys} classNames={{ base: "w-full", table: "w-full management-table-selectable", th: "management-table-heading", td: "management-table-cell" }}>
-            <TableHeader>
-              <TableColumn className="w-16">排序</TableColumn>
-              <TableColumn>名称</TableColumn>
-              <TableColumn>类型</TableColumn>
-              <TableColumn>分配用户组</TableColumn>
-              <TableColumn>可用流量</TableColumn>
-              <TableColumn>有效期</TableColumn>
-              <TableColumn>规则数</TableColumn>
-              <TableColumn>用户限速</TableColumn>
-              <TableColumn>流量重置</TableColumn>
-              <TableColumn>价格</TableColumn>
-              <TableColumn>隐藏</TableColumn>
-              <TableColumn align="end">操作</TableColumn>
-            </TableHeader>
-            <TableBody emptyContent={<EmptyState />}>
-              {plans.map(plan => (
-                <TableRow key={plan.id} onDragOver={(e: React.DragEvent) => e.preventDefault()} onDrop={() => handleRowDrop(plan.id)}>
-                  <TableCell><span draggable className="cursor-grab active:cursor-grabbing inline-flex" onDragStart={() => { draggedIdRef.current = plan.id; }}><DragHandleIcon /></span></TableCell>
-                  <TableCell className="font-medium">{plan.name}（#{plan.id}）</TableCell>
-                  <TableCell>{plan.type}</TableCell>
-                  <TableCell>{groupName(plan.groupId)}</TableCell>
-                  <TableCell>{plan.traffic > 0 ? `${plan.traffic} GiB` : '不限流量'}</TableCell>
-                  <TableCell>{plan.durationDays > 0 ? `${plan.durationDays} 天` : '永久'}</TableCell>
-                  <TableCell>{plan.maxRules > 0 ? plan.maxRules : '不限'}</TableCell>
-                  <TableCell>{plan.userSpeedLimit > 0 ? `${plan.userSpeedLimit} Mbps` : '不限速'}</TableCell>
-                  <TableCell>{formatFlowReset(plan.flowResetTime, plan.flowResetClock)}</TableCell>
-                  <TableCell>{plan.price > 0 ? `${plan.price} 元` : '免费'}</TableCell>
-                  <TableCell>{plan.hidden === 1 ? '是' : '否'}</TableCell>
-                  <TableCell>
-                    <div className="flex justify-end items-center gap-1">
-                      <TipButton isIconOnly size="sm" variant="flat" onPress={() => handleEdit(plan)} title="编辑"><EditIcon /></TipButton>
-                      <TipButton isIconOnly size="sm" variant="flat" color="danger" onPress={() => handleDelete(plan)} title="删除"><DeleteIcon /></TipButton>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+          <div className="-mx-4 -mb-4 settings-table-scroll">
+            <Table removeWrapper aria-label="套餐列表" selectionMode="multiple" selectedKeys={selectedKeys} onSelectionChange={setSelectedKeys} classNames={{ base: "w-full", table: "w-full management-table-selectable", th: "management-table-heading", td: "management-table-cell" }}>
+              <TableHeader>
+                <TableColumn className="w-16">排序</TableColumn>
+                <TableColumn>名称</TableColumn>
+                <TableColumn>类型</TableColumn>
+                <TableColumn>分配用户组</TableColumn>
+                <TableColumn>可用流量</TableColumn>
+                <TableColumn>有效期</TableColumn>
+                <TableColumn>规则数</TableColumn>
+                <TableColumn>用户限速</TableColumn>
+                <TableColumn>流量重置</TableColumn>
+                <TableColumn>价格</TableColumn>
+                <TableColumn>隐藏</TableColumn>
+                <TableColumn align="end">操作</TableColumn>
+              </TableHeader>
+              <TableBody emptyContent={<EmptyState />}>
+                {plans.map(plan => (
+                  <TableRow key={plan.id} onDragOver={(e: React.DragEvent) => e.preventDefault()} onDrop={() => handleRowDrop(plan.id)}>
+                    <TableCell><span draggable className="cursor-grab active:cursor-grabbing inline-flex" onDragStart={() => { draggedIdRef.current = plan.id; }}><DragHandleIcon /></span></TableCell>
+                    <TableCell className="font-medium">{plan.name}（#{plan.id}）</TableCell>
+                    <TableCell>{plan.type}</TableCell>
+                    <TableCell>{groupName(plan.groupId)}</TableCell>
+                    <TableCell>{plan.traffic > 0 ? `${plan.traffic} GiB` : '不限流量'}</TableCell>
+                    <TableCell>{plan.durationDays > 0 ? `${plan.durationDays} 天` : '永久'}</TableCell>
+                    <TableCell>{plan.maxRules > 0 ? plan.maxRules : '不限'}</TableCell>
+                    <TableCell>{plan.userSpeedLimit > 0 ? `${plan.userSpeedLimit} Mbps` : '不限速'}</TableCell>
+                    <TableCell>{formatFlowReset(plan.flowResetTime, plan.flowResetClock)}</TableCell>
+                    <TableCell>{plan.price > 0 ? `${plan.price} 元` : '免费'}</TableCell>
+                    <TableCell>{plan.hidden === 1 ? '是' : '否'}</TableCell>
+                    <TableCell>
+                      <div className="flex justify-end items-center gap-1">
+                        <TipButton isIconOnly size="sm" variant="flat" onPress={() => handleEdit(plan)} title="编辑"><EditIcon /></TipButton>
+                        <TipButton isIconOnly size="sm" variant="flat" color="danger" onPress={() => handleDelete(plan)} title="删除"><DeleteIcon /></TipButton>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
           </CardBody>
       </Card>
 

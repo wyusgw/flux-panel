@@ -57,6 +57,16 @@ const OS_DISPLAY_NAMES: Record<string, string> = {
   windows: 'Windows', darwin: 'macOS', freebsd: 'FreeBSD', openbsd: 'OpenBSD', linux: 'Linux'
 };
 const osDisplayName = (name?: string) => name ? (OS_DISPLAY_NAMES[name.toLowerCase()] || name.charAt(0).toUpperCase() + name.slice(1)) : '';
+// 节点上报的虚拟化标识沿用 systemd-detect-virt 的命名，其中一些不直观（如 microsoft 是 Hyper-V、oracle 是 VirtualBox），这里转成常用名称
+const VIRT_DISPLAY_NAMES: Record<string, string> = {
+  kvm: 'KVM', qemu: 'QEMU', vmware: 'VMware', microsoft: 'Hyper-V', oracle: 'VirtualBox', xen: 'Xen', bochs: 'Bochs',
+  parallels: 'Parallels', bhyve: 'bhyve', apple: 'Apple Virtualization', amazon: 'AWS', google: 'Google Cloud', zvm: 'z/VM',
+  acrn: 'ACRN', powervm: 'PowerVM', qnx: 'QNX', sre: 'SRE', uml: 'UML', vm: '虚拟机（未知平台）', 'vm-other': '虚拟机（未知平台）',
+  docker: 'Docker', podman: 'Podman', lxc: 'LXC', 'lxc-libvirt': 'LXC', openvz: 'OpenVZ', 'systemd-nspawn': 'systemd-nspawn',
+  rkt: 'rkt', wsl: 'WSL', proot: 'proot', pouch: 'Pouch', kubernetes: 'Kubernetes', containerd: 'containerd', oci: 'OCI 容器',
+  'container-other': '容器（未知类型）',
+};
+const virtDisplayName = (name?: string) => name ? (VIRT_DISPLAY_NAMES[name.toLowerCase()] || name) : '无';
 const RegionCell = ({ code }: { code?: string }) => code ? <span className={`fi fi-${code} fis probe-flag`} /> : null;
 
 // 可点击/悬停查看详情的一行 popover 内容
@@ -93,7 +103,7 @@ const buildOsContent = (node: Node) => (
     <PopRow>系统：{[osDisplayName(node.systemInfo?.osName), node.systemInfo?.osVersion].filter(Boolean).join(' ') || '—'}</PopRow>
     <PopRow>内核：{node.systemInfo?.kernelVersion || '—'}</PopRow>
     <PopRow>架构：{node.systemInfo?.arch || '—'}</PopRow>
-    <PopRow>虚拟化：{node.systemInfo?.virtualization || '无（物理机或未识别）'}</PopRow>
+    <PopRow>虚拟化：{virtDisplayName(node.systemInfo?.virtualization)}</PopRow>
   </>
 );
 const buildCpuContent = (node: Node) => (

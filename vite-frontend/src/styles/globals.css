@@ -351,14 +351,22 @@ html.dark:not(.theme-transparent) .app-topbar {
   color: #4a7af0;
 }
 
-/* 卡片头部（标题 + 操作按钮）在移动端也保持左右横排：标题区可收缩换行，按钮区不收缩，装不下时头部可左右滑动 */
-.management-table-card [data-slot="header"]:not(.flex-col) {
+/* 卡片头部（标题 + 操作按钮）在移动端也保持一行横排：标题区与按钮区都不收缩、不换行，装不下时头部左右滑动 */
+.management-table-card > .flex-row:first-child {
   flex-direction: row;
   flex-wrap: nowrap;
   overflow-x: auto;
 }
-.management-table-card [data-slot="header"]:not(.flex-col) > :not(:first-child) {
+.management-table-card > .flex-row:first-child > * {
   flex-shrink: 0;
+  flex-wrap: nowrap;
+}
+.management-table-card > .flex-row:first-child > * > * {
+  flex-shrink: 0;
+}
+.management-table-card > .flex-row:first-child h1,
+.management-table-card > .flex-row:first-child h2 {
+  white-space: nowrap;
 }
 
 .dark .management-table-card {
@@ -447,6 +455,14 @@ td.probe-clickable:hover { text-decoration: underline; text-underline-offset: 2p
 /* 移动端表格保持桌面的横向多列布局，宽度不够时在容器内左右滑动，而不是把列挤成窄条换行 */
 .settings-table-scroll table { min-width: 720px; }
 .payment-channel-table { min-width: 560px; }
+/* 移动端表格单元格不换行：否则浏览器会把名称、角色等文字列压到只剩两三个字宽，一个名称竖着排成好几行；
+   不换行时表格按内容变宽，在容器内左右滑动查看。line-clamp 截断的长文本（如任务摘要、错误信息）仍允许在限定宽度内换两行 */
+@media (max-width: 767px) {
+  .management-table-heading,
+  .management-table-cell { white-space: nowrap; }
+  .management-table-cell [class*="line-clamp"] { white-space: normal; }
+  .probe-table td { white-space: nowrap; }
+}
 .forward-rail { position: fixed; right: 14px; top: 50%; transform: translateY(-50%); z-index: 30; display: flex; flex-direction: column; gap: 3px; background: #fff; border: 1px solid #e4e4e7; border-radius: 14px; padding: 6px 4px; box-shadow: 0 8px 24px rgb(0 0 0 / 12%); }
 .dark .forward-rail { background: #18181b; border-color: #2e2f33; box-shadow: 0 8px 24px rgb(0 0 0 / 45%); }
 .forward-rail.forward-rail-collapsed { width: 40px; height: 40px; padding: 0; border-radius: 50%; }

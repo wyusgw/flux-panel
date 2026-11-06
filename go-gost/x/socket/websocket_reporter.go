@@ -1225,6 +1225,7 @@ func getOSInfo() OSInfo {
 		osInfoCache = OSInfo{Name: runtime.GOOS, Arch: runtime.GOARCH}
 		info, err := host.Info()
 		if err != nil || info == nil {
+			osInfoCache.Virtualization = detectVirtualization("", "")
 			return
 		}
 		if info.Platform != "" {
@@ -1235,10 +1236,8 @@ func getOSInfo() OSInfo {
 		if info.KernelArch != "" {
 			osInfoCache.Arch = info.KernelArch
 		}
-		// 虚拟化角色为 guest 时才有意义（host 表示本机是宿主机）
-		if info.VirtualizationSystem != "" && info.VirtualizationRole == "guest" {
-			osInfoCache.Virtualization = info.VirtualizationSystem
-		}
+		// gopsutil 能识别的平台有限，交给 detectVirtualization 按多种方式综合判断
+		osInfoCache.Virtualization = detectVirtualization(info.VirtualizationSystem, info.VirtualizationRole)
 	})
 	return osInfoCache
 }

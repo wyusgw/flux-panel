@@ -232,14 +232,12 @@ const CONFIG_ITEMS: ConfigItem[] = [
     key: 'node_traffic_reset_day',
     section: 'basic',
     label: '节点流量重置日',
-    description: '节点状态页的流量每月在这一天的「重置时间」清零并重新累计，默认每月 1 日；当月没有该日期（如 31 日）时按月末处理',
     type: 'dayOfMonth'
   },
   {
     key: 'node_traffic_reset_time',
     section: 'basic',
     label: '节点流量重置时间',
-    description: '与「节点流量重置日」配合，决定当天几点几分清零，使用服务器所在时区，默认 00:00（0 点整）',
     type: 'time'
   },
   {

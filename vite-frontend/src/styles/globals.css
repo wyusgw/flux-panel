@@ -606,3 +606,7 @@ html.dark:not(.theme-transparent) .hover-dropdown-content { background-color: #1
 
 /* 操作列图标按钮悬停：边框和图标变蓝 */
 .management-page td.management-table-cell button.px-0[data-hover="true"]:not([data-disabled="true"]) { border-color: hsl(var(--heroui-primary)) !important; color: hsl(var(--heroui-primary)) !important; opacity: 1; }
+
+/* 节点状态页：隐藏表格和整页的滚动条，内容放不下时仍可用滚轮、触控板或手指滑动 */
+.probe-scroll, html:has(.probe-page), body:has(.probe-page) { scrollbar-width: none; }
+.probe-scroll::-webkit-scrollbar, html:has(.probe-page)::-webkit-scrollbar, body:has(.probe-page)::-webkit-scrollbar { display: none; }

@@ -319,6 +319,7 @@ export default function AccountCenterPage() {
       const res = await updateAutoRenew(checked);
       if (res.code === 0) {
         setUserInfo((prev) => (prev ? { ...prev, autoRenew: checked ? 1 : 0 } : prev));
+        toast.success('保存成功', { id: 'auto-renew-saved' });
       } else {
         toast.error(res.msg || '设置失败');
       }

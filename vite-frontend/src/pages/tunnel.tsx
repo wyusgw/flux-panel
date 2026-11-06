@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { ToolbarAddIcon } from "@/components/toolbar-icons";
 import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Table, TableHeader, TableColumn, TableBody, TableRow, TableCell } from "@heroui/table";
 import { Button } from "@heroui/button";
@@ -459,20 +460,17 @@ export default function TunnelPage() {
         <Card className="management-table-card max-w-[1600px] mx-auto">
         {/* 页面头部：标题 + 刷新，操作按钮在下方工具列（与其他管理页一致） */}
         <CardHeader className="flex-row items-center justify-between gap-4 p-4 border-b border-default-100">
-          <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="text-base font-semibold text-foreground">隧道管理</h1>
-            <RefreshButton refreshing={refreshing} onRefresh={handleRefresh} />
-          </div>
+          <h1 className="text-base font-semibold text-foreground">隧道管理</h1>
         </CardHeader>
         <CardBody className="p-4 space-y-3">
-        <p className="text-xs text-default-500">创建并管理转发使用的入口、出口节点隧道</p>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button size="sm" variant="bordered" onPress={handleAdd}>新增隧道</Button>
+        <div className="flex flex-wrap items-center gap-3.5">
+          <Button size="sm" variant="bordered" startContent={<ToolbarAddIcon />} onPress={handleAdd}>新增隧道</Button>
+          <RefreshButton refreshing={refreshing} onRefresh={handleRefresh} />
         </div>
 
         {/* 隧道列表 */}
         {tunnels.length > 0 ? (
-            <div className="-mx-4 -mb-4">
+            <div>
               <div className="settings-table-scroll">
                 <Table
                   removeWrapper

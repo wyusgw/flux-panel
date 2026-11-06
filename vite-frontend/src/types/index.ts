@@ -23,6 +23,8 @@ export interface User {
   packageId?: number | null; // 套餐ID
   walletBalance?: number; // 钱包余额(元)
   autoRenew?: number; // 自动续费(0-关闭,1-开启)
+  demoMode?: number; // 演示模式(0-关闭,1-开启)
+  remark?: string | null; // 备注
   roleId?: number; // 角色ID(0-管理员,1-普通用户)
 }
 
@@ -40,6 +42,9 @@ export interface UserForm {
   groupId?: number | null;
   packageId?: number | null;
   walletBalance?: number;
+  demoMode?: number;
+  admin?: boolean;
+  remark?: string;
 }
 
 export interface UserTunnel {

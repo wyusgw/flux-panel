@@ -20,6 +20,9 @@ export const TablePagination = ({
 }: TablePaginationProps) => {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
+  // 没有数据时不显示分页
+  if (total === 0) return null;
+
   return (
     <div className="flex items-center justify-end gap-3 px-4 py-3 text-sm text-default-500 flex-wrap">
       <span>共 {total} 条</span>
@@ -36,7 +39,7 @@ export const TablePagination = ({
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12.5 15l-5-5 5-5" />
           </svg>
         </Button>
-        <span className="min-w-[28px] h-7 px-2 flex items-center justify-center rounded-md bg-primary/10 text-primary font-medium">
+        <span className={`min-w-[32px] h-8 px-2 flex items-center justify-center rounded-md text-primary font-medium border-1 border-primary`}>
           {page}
         </span>
         <Button
@@ -55,6 +58,8 @@ export const TablePagination = ({
       <Select
         size="sm"
         className="w-28"
+        variant="bordered"
+        classNames={{ trigger: 'border-1' }}
         aria-label="每页条数"
         selectedKeys={[String(pageSize)]}
         onSelectionChange={(keys) => {

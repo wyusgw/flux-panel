@@ -1,3 +1,4 @@
+import { EmptyState } from "@/components/empty-state";
 import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Accordion, AccordionItem } from "@heroui/accordion";
 import { useEffect, useState } from "react";
@@ -71,12 +72,12 @@ export default function HomePage() {
   return (
     <div className="dashboard-home px-4 lg:px-6 py-5 lg:py-6">
       <section className="dashboard-panel bg-content1 flex flex-col gap-4 px-4 lg:px-6 pt-8 pb-6">
-        <h1 className="text-xl font-semibold tracking-tight text-foreground">欢迎使用</h1>
-        <p className="mb-2 text-lg font-semibold text-foreground">面板版本: {PANEL_VERSION}</p>
+        <h1 className="text-xl font-semibold text-foreground">欢迎使用</h1>
+        <p className="mb-2 text-xl font-semibold text-foreground">面板版本: {PANEL_VERSION}</p>
 
         <Card className="home-inner-card" shadow="none">
           <CardHeader className="px-6 py-4 border-b border-default-100">
-            <h2 className="text-base font-semibold text-foreground">系统公告</h2>
+            <h2 className="text-base font-semibold text-foreground">站点公告</h2>
           </CardHeader>
           <CardBody className="min-h-24 px-6 py-4">
             {loading ? (
@@ -85,9 +86,9 @@ export default function HomePage() {
                 正在加载公告…
               </div>
             ) : announcement ? (
-              <p className="text-sm leading-7 text-foreground whitespace-pre-wrap">{announcement}</p>
+              <p className="text-base leading-7 text-foreground whitespace-pre-wrap">{announcement}</p>
             ) : (
-              <p className="py-3 text-sm text-default-500">暂无系统公告</p>
+              <EmptyState text="暂无站点公告" />
             )}
           </CardBody>
         </Card>

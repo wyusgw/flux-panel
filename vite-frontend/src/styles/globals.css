@@ -531,3 +531,57 @@ html.theme-transparent [role="dialog"] {
   -webkit-backdrop-filter: blur(18px);
   backdrop-filter: blur(18px);
 }
+
+/* 管理页统一样式：卡片内边距、细边框按钮，表头 14px 粗体带竖线，单元格 14px，表格底部一条分隔线 */
+.management-page .management-table-card > [data-slot="header"] {
+  padding: 16px 24px !important;
+}
+.management-page .management-table-card > .flex-auto {
+  padding: 24px !important;
+}
+.management-page button.border-medium {
+  border-width: 1px !important;
+  font-size: 14px;
+  font-weight: 400;
+}
+.management-page button.border-medium:not([class*="danger"]) {
+  border-color: hsl(var(--heroui-default-300)) !important;
+}
+.management-page .settings-table-scroll {
+  border-bottom: 1px solid hsl(var(--heroui-default-100));
+}
+.management-page table thead::after {
+  display: none !important;
+}
+.management-page th.management-table-heading {
+  position: relative;
+  height: 54px;
+  white-space: nowrap;
+  color: hsl(var(--heroui-foreground)) !important;
+  font-size: 14px !important;
+  font-weight: 600 !important;
+}
+.management-page th.management-table-heading:not(:last-child):not(:has(input[type="checkbox"]))::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: 0;
+  width: 1px;
+  height: 16px;
+  transform: translateY(-50%);
+  background: hsl(var(--heroui-default-300));
+}
+.management-page td.management-table-cell {
+  height: 64px;
+  font-size: 14px !important;
+}
+/* 操作列的图标按钮：细边框、无底色 */
+.management-page td.management-table-cell button.px-0 {
+  background: transparent !important;
+  border: 1px solid hsl(var(--heroui-default-300)) !important;
+  color: hsl(var(--heroui-foreground));
+}
+.management-page td.management-table-cell button.px-0[disabled],
+.management-page td.management-table-cell button.px-0[data-disabled="true"] {
+  opacity: 0.45;
+}

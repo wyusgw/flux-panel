@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { ToolbarAddIcon } from "@/components/toolbar-icons";
 import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Button } from "@heroui/button";
 import { Input } from "@heroui/input";
@@ -167,17 +168,14 @@ export default function InviteCodePage() {
     <div className="management-page px-4 lg:px-6 py-5 lg:py-6">
       <Card className="management-table-card max-w-[1600px] mx-auto">
         <CardHeader className="flex-row items-center justify-between gap-4 p-4 border-b border-default-100">
-          <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="text-base font-semibold text-foreground">邀请码管理</h1>
-            <RefreshButton onRefresh={() => loadData(false)} />
-          </div>
+          <h1 className="text-base font-semibold text-foreground"><HelpTooltip content="配合「站点设置 → 邀请码注册策略」使用：设为「可选填写」或「仅邀请码注册」后，这里生成的代码才会在注册页生效">邀请码管理</HelpTooltip></h1>
         </CardHeader>
         <CardBody className="p-4 space-y-3">
-          <p className="text-xs text-default-500">配合「站点设置 → 邀请码注册策略」使用：设为「可选填写」或「仅邀请码注册」后，这里生成的代码才会在注册页生效</p>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button size="sm" variant="bordered" onPress={handleAdd}>批量添加邀请码</Button>
+          <div className="flex flex-wrap items-center gap-3.5">
+            <Button size="sm" variant="bordered" startContent={<ToolbarAddIcon />} onPress={handleAdd}>批量添加邀请码</Button>
+            <RefreshButton onRefresh={() => loadData(false)} />
           </div>
-          <div className="-mx-4 -mb-4">
+          <div>
           <div className="settings-table-scroll">
             <Table removeWrapper aria-label="邀请码列表" classNames={{ base: "w-full", table: "w-full min-w-[500px] table-fixed", th: "management-table-heading", td: "management-table-cell" }}>
               <TableHeader>

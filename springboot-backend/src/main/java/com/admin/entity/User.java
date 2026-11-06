@@ -87,6 +87,31 @@ public class User extends BaseEntity {
     private Integer autoRenew;
 
     /**
+     * 演示模式（0-关闭，1-开启）：只有管理员才能开启，开启后是演示管理员，只读且敏感数据打码
+     */
+    private Integer demoMode;
+
+    /**
+     * 演示账号可编辑的区域（逗号分隔，见 DemoArea）
+     */
+    private String demoAreas;
+
+    /**
+     * 演示账号每天恢复的时刻（HH:mm，服务器时区），null 表示不自动恢复
+     */
+    private String demoRestoreTime;
+
+    /**
+     * 账号能使用的页面（逗号分隔，见 MenuPermission），null 表示该角色的全部页面
+     */
+    private String menuPermissions;
+
+    /**
+     * 管理员给用户写的备注
+     */
+    private String remark;
+
+    /**
      * 已绑定的 Telegram chat id（未绑定为空）
      */
     private String telegramChatId;

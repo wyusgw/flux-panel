@@ -408,28 +408,10 @@ export const SettingsIcon = ({
   </svg>
 );
 
-export const NoDataIcon = ({
-  size = 64,
-  width,
-  height,
-  ...props
-}: IconSvgProps) => (
-  <svg
-    aria-hidden="true"
-    focusable="false"
-    height={size || height}
-    role="presentation"
-    viewBox="0 0 24 24"
-    width={size || width}
-    fill="none"
-    stroke="currentColor"
-    strokeWidth={1.6}
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    {...props}
-  >
-    <ellipse cx="12" cy="20.2" rx="8" ry="1.2" fill="currentColor" stroke="none" opacity="0.3" />
-    <polyline points="22 12 16 12 14 15 10 15 8 12 2 12" />
-    <path d="M5.45 5.11L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.45-6.89A2 2 0 0016.76 4H7.24a2 2 0 00-1.79 1.11z" />
+export const NoDataIcon = (props: React.SVGProps<SVGSVGElement>) => (
+  <svg aria-hidden="true" focusable="false" role="presentation" viewBox="0 0 64 41" fill="none" {...props}>
+    <ellipse cx="32" cy="34" rx="32" ry="7" className="fill-default-100 dark:fill-[#272727]" />
+    <path d="M55 13.760 44.850 2.260C44.370 1.470 43.660 1 42.910 1H21.090c-.750 0-1.460.470-1.950 1.260L9 13.760V23h46v-9.240Z" className="stroke-default-200 dark:stroke-[#434343]" />
+    <path d="M41.610 16.930c0-1.600 1-2.930 2.230-2.930H55v18.140C55 34.260 53.680 36 52.050 36h-40.100C10.320 36 9 34.260 9 32.140V14h11.160c1.230 0 2.230 1.320 2.230 2.930v.020c0 1.600 1 2.900 2.240 2.900h14.750c1.230 0 2.230-1.310 2.230-2.910v-.010Z" className="fill-default-50 stroke-default-200 dark:fill-[#1d1d1d] dark:stroke-[#434343]" />
   </svg>
 );

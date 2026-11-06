@@ -21,6 +21,17 @@ export const register = (data: { username: string; password: string; confirmPass
 
 // 用户CRUD操作 - 全部使用POST请求
 export const createUser = (data: any) => Network.post("/user/create", data);
+export const getInvalidUsers = () => Network.post("/cleanup/invalidUsers");
+export const cleanInvalidUsers = () => Network.post("/cleanup/cleanInvalidUsers");
+export const getInvalidForwards = () => Network.post("/cleanup/invalidForwards");
+export const cleanInvalidForwards = () => Network.post("/cleanup/cleanInvalidForwards");
+export const getMyMenuPermissions = () => Network.post("/menuPermission/mine");
+export const getUserMenuPermissions = (id: number) => Network.post("/menuPermission/get", { id });
+export const updateUserMenuPermissions = (id: number, selected: string[]) => Network.post("/menuPermission/update", { id, selected });
+export const getDemoPermission = (id: number) => Network.post("/demo/permission", { id });
+export const updateDemoPermission = (data: { id: number; areas: string[]; restoreTime: string | null }) => Network.post("/demo/updatePermission", data);
+export const restoreDemoChanges = (id: number) => Network.post("/demo/restore", { id });
+export const commitDemoChanges = (id: number) => Network.post("/demo/commit", { id });
 export const getAllUsers = (pageData: any = {}) => Network.post("/user/list", pageData);
 export const updateUser = (data: any) => Network.post("/user/update", data);
 export const deleteUser = (id: number) => Network.post("/user/delete", { id });

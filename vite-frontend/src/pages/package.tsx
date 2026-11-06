@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { ToolbarAddIcon, ToolbarDeleteIcon } from "@/components/toolbar-icons";
 import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Button } from "@heroui/button";
 import { Input } from "@heroui/input";
@@ -296,18 +297,15 @@ export default function PackagePlanPage() {
     <div className="management-page px-4 lg:px-6 py-5 lg:py-6">
       <Card className="management-table-card max-w-[1600px] mx-auto">
         <CardHeader className="flex-row items-center justify-between gap-4 p-4 border-b border-default-100">
-          <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="text-base font-semibold text-foreground">套餐管理</h1>
-            <RefreshButton onRefresh={() => loadData(false)} />
-          </div>
+          <h1 className="text-base font-semibold text-foreground">套餐管理</h1>
         </CardHeader>
         <CardBody className="p-4 space-y-3">
-          <p className="text-xs text-default-500">管理可供购买的流量套餐</p>
-          <div className="flex flex-wrap items-center gap-2">
-            {selectedIds.length > 0 && <Button size="sm" color="danger" variant="bordered" onPress={() => setBatchDeleteModalOpen(true)}>批量删除（{selectedIds.length}）</Button>}
-            <Button size="sm" variant="bordered" onPress={handleAdd}>添加套餐</Button>
+          <div className="flex flex-wrap items-center gap-3.5">
+            {selectedIds.length > 0 && <Button size="sm" variant="bordered" startContent={<ToolbarDeleteIcon />} onPress={() => setBatchDeleteModalOpen(true)}>批量删除（{selectedIds.length}）</Button>}
+            <Button size="sm" variant="bordered" startContent={<ToolbarAddIcon />} onPress={handleAdd}>添加套餐</Button>
+            <RefreshButton onRefresh={() => loadData(false)} />
           </div>
-          <div className="-mx-4 -mb-4">
+          <div>
           <Table removeWrapper aria-label="套餐列表" selectionMode="multiple" selectedKeys={selectedKeys} onSelectionChange={setSelectedKeys} classNames={{ base: "w-full", table: "w-full management-table-selectable", th: "management-table-heading", td: "management-table-cell" }}>
             <TableHeader>
               <TableColumn className="w-16">排序</TableColumn>

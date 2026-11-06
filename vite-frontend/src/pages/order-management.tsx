@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
+import { ToolbarAddIcon, ToolbarDeleteIcon } from "@/components/toolbar-icons";
 import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Button } from "@heroui/button";
 import { Input } from "@heroui/input";
@@ -17,6 +18,8 @@ import { Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from "@heroui/d
 import { Chip } from "@heroui/chip";
 import { Spinner } from "@heroui/spinner";
 import toast from 'react-hot-toast';
+import { useOrderTableFilters } from "@/components/order-table-filters";
+import { HEADER_COLUMN_CLASS, HEADER_TABLE_CLASS_NAMES } from "@/components/table-header-filter";
 
 import { EmptyState } from "@/components/empty-state";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -129,14 +132,17 @@ export default function OrderManagementPage() {
     });
   }, [loadOrders]);
 
+  const { filtered: filteredOrders, headers } = useOrderTableFilters(orders, getTypeText, STATUS_OPTIONS, () => setPage(1));
+
   const pagedOrders = useMemo(() => {
     const start = (page - 1) * pageSize;
-    return orders.slice(start, start + pageSize);
-  }, [orders, page, pageSize]);
+    return filteredOrders.slice(start, start + pageSize);
+  }, [filteredOrders, page, pageSize]);
 
   const getSelectedIds = (): number[] => {
-    if (selectedKeys === 'all') return orders.map(o => o.id);
-    return Array.from(selectedKeys as Set<any>).map(k => Number(k)).filter(id => orders.some(o => o.id === id));
+    // 选中范围限定在筛选结果内：被筛选隐藏的订单不能被批量删除
+    if (selectedKeys === 'all') return filteredOrders.map(o => o.id);
+    return Array.from(selectedKeys as Set<any>).map(k => Number(k)).filter(id => filteredOrders.some(o => o.id === id));
   };
   const selectedIds = getSelectedIds();
 
@@ -243,39 +249,36 @@ export default function OrderManagementPage() {
     <div className="management-page px-4 lg:px-6 py-5 lg:py-6">
       <Card className="management-table-card max-w-[1600px] mx-auto">
         <CardHeader className="flex-row items-center justify-between gap-4 p-4 border-b border-default-100">
-          <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="text-base font-semibold text-foreground">订单管理</h1>
+          <h1 className="text-base font-semibold text-foreground">订单管理</h1>
+        </CardHeader>
+        <CardBody className="p-6 space-y-3">
+          <div className="flex flex-wrap items-center gap-3.5">
+            <Button size="sm" variant="bordered" startContent={<ToolbarAddIcon />} onPress={openManualModal}>手动记账</Button>
+            <Button size="sm" variant="bordered" startContent={<ToolbarDeleteIcon />} isDisabled={selectedIds.length === 0} onPress={() => openDeleteModal(selectedIds)}>删除选中{selectedIds.length > 0 ? `（${selectedIds.length}）` : ''}</Button>
             <RefreshButton onRefresh={() => loadOrders(false)} />
           </div>
-        </CardHeader>
-        <CardBody className="p-4 space-y-3">
-          <p className="text-xs text-default-500">查看全部订单，支持手动记账与批量删除</p>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button size="sm" variant="bordered" color="danger" isDisabled={selectedIds.length === 0} onPress={() => openDeleteModal(selectedIds)}>删除选中{selectedIds.length > 0 ? `（${selectedIds.length}）` : ''}</Button>
-            <Button size="sm" variant="bordered" onPress={openManualModal}>手动记账</Button>
-          </div>
-          <div className="-mx-4 -mb-4">
-          <div className="settings-table-scroll">
+          <div>
+          <div className="settings-table-scroll border-b border-default-100">
             <Table
               removeWrapper
               aria-label="订单管理列表"
               selectionMode="multiple"
               selectedKeys={selectedKeys}
               onSelectionChange={setSelectedKeys}
-              classNames={{ base: "w-full", table: "w-full management-table-selectable", th: "management-table-heading", td: "management-table-cell" }}
+              classNames={{ base: "w-full", table: "w-full management-table-selectable", ...HEADER_TABLE_CLASS_NAMES }}
             >
               <TableHeader>
-                <TableColumn>订单号</TableColumn>
-                <TableColumn>用户</TableColumn>
-                <TableColumn>创建时间</TableColumn>
-                <TableColumn>支付时间</TableColumn>
-                <TableColumn>订单信息</TableColumn>
-                <TableColumn>金额</TableColumn>
-                <TableColumn>类型</TableColumn>
-                <TableColumn>状态</TableColumn>
+                <TableColumn className={HEADER_COLUMN_CLASS}>{headers.orderNo}</TableColumn>
+                <TableColumn className={HEADER_COLUMN_CLASS}>{headers.user}</TableColumn>
+                <TableColumn className={HEADER_COLUMN_CLASS}>创建时间</TableColumn>
+                <TableColumn className={HEADER_COLUMN_CLASS}>支付时间</TableColumn>
+                <TableColumn className={HEADER_COLUMN_CLASS}>{headers.info}</TableColumn>
+                <TableColumn className={HEADER_COLUMN_CLASS}>{headers.amount}</TableColumn>
+                <TableColumn className={HEADER_COLUMN_CLASS}>{headers.type}</TableColumn>
+                <TableColumn className={HEADER_COLUMN_CLASS}>{headers.status}</TableColumn>
                 <TableColumn align="end">操作</TableColumn>
               </TableHeader>
-              <TableBody items={pagedOrders} emptyContent={<EmptyState text="暂无订单" />}>
+              <TableBody items={pagedOrders} emptyContent={<EmptyState />}>
                 {(order: OrderItem) => {
                   const status = getStatusDisplay(order.orderStatus);
                   return (
@@ -326,7 +329,7 @@ export default function OrderManagementPage() {
             </Table>
           </div>
           <TablePagination
-            total={orders.length}
+            total={filteredOrders.length}
             page={page}
             pageSize={pageSize}
             onPageChange={setPage}

@@ -173,7 +173,9 @@ public class WebSocketServer extends TextWebSocketHandler {
                     // 异步处理广播消息，避免阻塞当前线程
                     for (WebSocketSession targetSession : activeSessions) {
                         if (targetSession != null && targetSession.isOpen() && !targetSession.equals(session)) {
-                            sendToUser(targetSession, broadcastMessage, null);
+                            // 演示账号的探针页同样不能看到节点 IP
+                            boolean demo = Boolean.TRUE.equals(targetSession.getAttributes().get("demo"));
+                            sendToUser(targetSession, demo ? DemoDataMasker.maskIps(broadcastMessage) : broadcastMessage, null);
                         }
                     }
                 }
@@ -293,6 +295,7 @@ public class WebSocketServer extends TextWebSocketHandler {
                 String http = (String) session.getAttributes().get("http");
                 String tls = (String) session.getAttributes().get("tls");
                 String socks = (String) session.getAttributes().get("socks");
+                String ss = (String) session.getAttributes().get("ss");
                 
                 log.info("节点 {} 尝试连接，开始处理连接逻辑", nodeId);
                 
@@ -334,6 +337,9 @@ public class WebSocketServer extends TextWebSocketHandler {
                     }
                     if (socks != null) {
                         node.setSocks(Integer.parseInt(socks));
+                    }
+                    if (ss != null) {
+                        node.setSs(Integer.parseInt(ss));
                     }
 
                     boolean updateResult = nodeService.updateById(node);

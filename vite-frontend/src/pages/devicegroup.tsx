@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { ToolbarAddIcon, ToolbarDeleteIcon } from "@/components/toolbar-icons";
 import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Button } from "@heroui/button";
 import { Input } from "@heroui/input";
@@ -28,7 +29,7 @@ import {
   getNodeInstallCommand,
   resetNodeSecret
 } from "@/api";
-import { EditIcon, DeleteIcon, SettingsIcon } from "@/components/icons";
+import { EditIcon, DeleteIcon } from "@/components/icons";
 import { HelpTooltip } from "@/components/help-tooltip";
 import { EmptyState } from "@/components/empty-state";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -37,6 +38,12 @@ import RefreshButton from "@/components/refresh-button";
 const DockIcon = ({ className }: { className?: string }) => (
   <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 010 5.656l-2.828 2.828a4 4 0 11-5.656-5.656l1.414-1.414M10.172 13.828a4 4 0 010-5.656l2.828-2.828a4 4 0 115.656 5.656l-1.414 1.414" />
+  </svg>
+);
+
+const AdvancedEditIcon = ({ className }: { className?: string }) => (
+  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h9M17 18h3M15 4v4M9 10v4M15 16v4" />
   </svg>
 );
 
@@ -94,6 +101,7 @@ interface NodeItem {
   http?: number;
   tls?: number;
   socks?: number;
+  ss?: number;
   nodeGroupIds?: number[];
 }
 
@@ -221,7 +229,7 @@ export default function DeviceGroupPage() {
 
   const [advancedModalOpen, setAdvancedModalOpen] = useState(false);
   const [advancedTarget, setAdvancedTarget] = useState<NodeItem | null>(null);
-  const [advancedForm, setAdvancedForm] = useState<{ http: number; tls: number; socks: number; nodeGroupIds: number[] }>({ http: 0, tls: 0, socks: 0, nodeGroupIds: [] });
+  const [advancedForm, setAdvancedForm] = useState<{ http: number; tls: number; socks: number; ss: number; nodeGroupIds: number[] }>({ http: 0, tls: 0, socks: 0, ss: 0, nodeGroupIds: [] });
   const [advancedLoading, setAdvancedLoading] = useState(false);
 
   const [resetModalOpen, setResetModalOpen] = useState(false);
@@ -495,7 +503,7 @@ export default function DeviceGroupPage() {
   const handleAdvancedEdit = (nodeId: number) => {
     const node = nodes.find(n => n.id === nodeId) || orphanNodes.find(n => n.id === nodeId) || null;
     setAdvancedTarget(node);
-    setAdvancedForm({ http: node?.http || 0, tls: node?.tls || 0, socks: node?.socks || 0, nodeGroupIds: node?.nodeGroupIds || [] });
+    setAdvancedForm({ http: node?.http || 0, tls: node?.tls || 0, socks: node?.socks || 0, ss: node?.ss || 0, nodeGroupIds: node?.nodeGroupIds || [] });
     setAdvancedModalOpen(true);
   };
 
@@ -676,22 +684,20 @@ export default function DeviceGroupPage() {
     <div className="management-page px-4 lg:px-6 py-5 lg:py-6">
       <Card className="management-table-card max-w-[1600px] mx-auto">
         <CardHeader className="flex-row items-center justify-between gap-4 p-4 border-b border-default-100">
-          <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="text-base font-semibold text-foreground">设备管理</h1>
-            <RefreshButton onRefresh={() => loadData(false)} />
-          </div>
+          <h1 className="text-base font-semibold text-foreground">设备管理</h1>
         </CardHeader>
         <CardBody className="p-4 space-y-3">
           {/* 工具列：与转发规则页一致，描边按钮 */}
-          <div className="flex flex-wrap items-center gap-2">
-            <Button size="sm" variant="bordered" onPress={handleAdd}>添加设备</Button>
-            <Button size="sm" variant="bordered" color="danger" isDisabled={selectedGroupIds.length === 0} onPress={() => setBatchDeleteModalOpen(true)}>批量删除{selectedGroupIds.length > 0 ? `（${selectedGroupIds.length}）` : ''}</Button>
+          <div className="flex flex-wrap items-center gap-3.5">
+            <Button size="sm" variant="bordered" startContent={<ToolbarAddIcon />} onPress={handleAdd}>添加设备</Button>
+            <Button size="sm" variant="bordered" startContent={<ToolbarDeleteIcon />} isDisabled={selectedGroupIds.length === 0} onPress={() => setBatchDeleteModalOpen(true)}>批量删除{selectedGroupIds.length > 0 ? `（${selectedGroupIds.length}）` : ''}</Button>
+            <RefreshButton onRefresh={() => loadData(false)} />
           </div>
-          <div className="-mx-4 -mb-4"><div className="settings-table-scroll"><Table removeWrapper aria-label="设备列表" selectionMode="multiple" selectedKeys={selectedKeys} onSelectionChange={setSelectedKeys} disabledKeys={orphanNodes.map(node => `node-${node.id}`)} classNames={{ base: "w-full", table: "w-full management-table-selectable", th: "management-table-heading", td: "management-table-cell" }}>
+          <div><div className="settings-table-scroll"><Table removeWrapper aria-label="设备列表" selectionMode="multiple" selectedKeys={selectedKeys} onSelectionChange={setSelectedKeys} disabledKeys={orphanNodes.map(node => `node-${node.id}`)} classNames={{ base: "w-full", table: "w-full management-table-selectable", th: "management-table-heading", td: "management-table-cell" }}>
           <TableHeader><TableColumn className="w-16">排序</TableColumn><TableColumn>设备 ID</TableColumn><TableColumn>名称</TableColumn><TableColumn>角色</TableColumn><TableColumn>服务器</TableColumn><TableColumn>可见用户组</TableColumn><TableColumn>倍率</TableColumn><TableColumn>备注</TableColumn><TableColumn align="end">操作</TableColumn></TableHeader>
           <TableBody emptyContent={<EmptyState />}>{[
-            ...groups.map(group => { const isChainGroup = group.direction === 'chain'; return <TableRow key={`group-${group.id}`} onDragOver={(e: React.DragEvent) => e.preventDefault()} onDrop={() => handleGroupRowDrop(group.id)}><TableCell><span draggable className="cursor-grab active:cursor-grabbing inline-flex" onDragStart={() => { draggedGroupIdRef.current = group.id; }}><DragHandleIcon /></span></TableCell><TableCell>#{group.id}</TableCell><TableCell className="font-medium">{group.name}</TableCell><TableCell>{{ inbound: '入口', outbound: '出口', monitor: '监控', both: '入口＋出口', chain: '链式出口' }[group.direction || 'inbound']}</TableCell><TableCell>{isChainGroup ? <span className="text-default-500">{(group.chainHops || []).length} 跳链路</span> : group.nodeName}</TableCell><TableCell>{userGroupNames(group.userGroupIds)}</TableCell><TableCell>{group.ratio}</TableCell><TableCell>{group.remark || '—'}</TableCell><TableCell><div className="flex justify-end items-center gap-1">{!isChainGroup && group.nodeId && renderDockMenu(group.nodeId, `${group.name} (#${group.id})`)}<Button isIconOnly size="sm" variant="flat" onPress={() => handleEdit(group)} title="编辑"><EditIcon className="w-4 h-4" /></Button>{!isChainGroup && group.nodeId && <Button isIconOnly size="sm" variant="flat" color="default" onPress={() => handleResetSecret(group.nodeId!)} title="重置 Token"><KeyIcon className="w-4 h-4" /></Button>}{!isChainGroup && group.nodeId && <Button isIconOnly size="sm" variant="flat" onPress={() => handleAdvancedEdit(group.nodeId!)} title="高级编辑"><SettingsIcon className="w-4 h-4" /></Button>}<Button isIconOnly size="sm" variant="flat" color="danger" onPress={() => handleDelete(group)} title="删除"><DeleteIcon className="w-4 h-4" /></Button></div></TableCell></TableRow>; }),
-            ...orphanNodes.map(node => <TableRow key={`node-${node.id}`}><TableCell>—</TableCell><TableCell>—</TableCell><TableCell className="font-medium">{node.name}</TableCell><TableCell><span className="text-warning">未配置</span></TableCell><TableCell>{node.serverIp || node.ip || '—'}</TableCell><TableCell>—</TableCell><TableCell>—</TableCell><TableCell>此设备尚未建立设备组</TableCell><TableCell><div className="flex justify-end items-center gap-1">{renderDockMenu(node.id, `${node.name} (#${node.id})`)}<Button isIconOnly size="sm" variant="flat" color="default" onPress={() => handleResetSecret(node.id)} title="重置 Token"><KeyIcon className="w-4 h-4" /></Button><Button isIconOnly size="sm" variant="flat" onPress={() => handleAdvancedEdit(node.id)} title="高级编辑"><SettingsIcon className="w-4 h-4" /></Button><Button isIconOnly size="sm" variant="flat" color="danger" onPress={() => handleDeleteNode(node)} title="删除"><DeleteIcon className="w-4 h-4" /></Button><Button size="sm" color="default" onPress={() => handleConfigureOrphan(node)}>补全配置</Button></div></TableCell></TableRow>)
+            ...groups.map(group => { const isChainGroup = group.direction === 'chain'; return <TableRow key={`group-${group.id}`} onDragOver={(e: React.DragEvent) => e.preventDefault()} onDrop={() => handleGroupRowDrop(group.id)}><TableCell><span draggable className="cursor-grab active:cursor-grabbing inline-flex" onDragStart={() => { draggedGroupIdRef.current = group.id; }}><DragHandleIcon /></span></TableCell><TableCell>#{group.id}</TableCell><TableCell className="font-medium">{group.name}</TableCell><TableCell>{{ inbound: '入口', outbound: '出口', monitor: '监控', both: '入口＋出口', chain: '链式出口' }[group.direction || 'inbound']}</TableCell><TableCell>{isChainGroup ? <span className="text-default-500">{(group.chainHops || []).length} 跳链路</span> : group.nodeName}</TableCell><TableCell>{userGroupNames(group.userGroupIds)}</TableCell><TableCell>{group.ratio}</TableCell><TableCell>{group.remark || '—'}</TableCell><TableCell><div className="flex justify-end items-center gap-1">{!isChainGroup && group.nodeId && renderDockMenu(group.nodeId, `${group.name} (#${group.id})`)}<Button isIconOnly size="sm" variant="flat" onPress={() => handleEdit(group)} title="编辑"><EditIcon className="w-4 h-4" /></Button>{!isChainGroup && group.nodeId && <Button isIconOnly size="sm" variant="flat" color="default" onPress={() => handleResetSecret(group.nodeId!)} title="重置 Token"><KeyIcon className="w-4 h-4" /></Button>}{!isChainGroup && group.nodeId && <Button isIconOnly size="sm" variant="flat" onPress={() => handleAdvancedEdit(group.nodeId!)} title="高级编辑" aria-label="高级编辑"><AdvancedEditIcon className="w-4 h-4" /></Button>}<Button isIconOnly size="sm" variant="flat" color="danger" onPress={() => handleDelete(group)} title="删除"><DeleteIcon className="w-4 h-4" /></Button></div></TableCell></TableRow>; }),
+            ...orphanNodes.map(node => <TableRow key={`node-${node.id}`}><TableCell>—</TableCell><TableCell>—</TableCell><TableCell className="font-medium">{node.name}</TableCell><TableCell><span className="text-warning">未配置</span></TableCell><TableCell>{node.serverIp || node.ip || '—'}</TableCell><TableCell>—</TableCell><TableCell>—</TableCell><TableCell>此设备尚未建立设备组</TableCell><TableCell><div className="flex justify-end items-center gap-1">{renderDockMenu(node.id, `${node.name} (#${node.id})`)}<Button isIconOnly size="sm" variant="flat" color="default" onPress={() => handleResetSecret(node.id)} title="重置 Token"><KeyIcon className="w-4 h-4" /></Button><Button isIconOnly size="sm" variant="flat" onPress={() => handleAdvancedEdit(node.id)} title="高级编辑" aria-label="高级编辑"><AdvancedEditIcon className="w-4 h-4" /></Button><Button isIconOnly size="sm" variant="flat" color="danger" onPress={() => handleDeleteNode(node)} title="删除"><DeleteIcon className="w-4 h-4" /></Button><Button size="sm" color="default" onPress={() => handleConfigureOrphan(node)}>补全配置</Button></div></TableCell></TableRow>)
           ]}</TableBody>
         </Table></div></div></CardBody>
       </Card>
@@ -1073,18 +1079,20 @@ export default function DeviceGroupPage() {
                 <h2 className="text-base font-semibold">高级编辑 - {advancedTarget?.name || '—'}</h2>
               </ModalHeader>
               <ModalBody>
-                <div className="space-y-2">
-                  <div className="text-sm font-medium text-default-700">屏蔽协议</div>
-                  <div className="text-xs text-default-500 mb-2">开启开关以屏蔽对应协议</div>
-                  <div className="grid grid-cols-3 gap-3 bg-default-50 dark:bg-default-100 p-3 rounded-md border border-default-200 dark:border-default-100/30">
-                    {(['http', 'tls', 'socks'] as const).map(key => (
-                      <div key={key} className="px-3 py-3 rounded-lg bg-white dark:bg-default-50 border border-default-200 dark:border-default-100/30">
-                        <div className="text-sm font-medium text-default-700 mb-2 uppercase">{key}</div>
-                        <div className="flex items-center justify-between">
-                          <div className="text-xs text-default-500">禁用/启用</div>
-                          <Switch size="sm" isSelected={advancedForm[key] === 1} onValueChange={(v) => setAdvancedForm(prev => ({ ...prev, [key]: v ? 1 : 0 }))} />
-                        </div>
-                        <div className="mt-1 text-xs text-default-400">{advancedForm[key] === 1 ? '已开启' : '已关闭'}</div>
+                <div>
+                  <div className="text-sm font-medium text-foreground mb-1.5">
+                    <HelpTooltip content="开启开关后，该设备屏蔽对应协议">屏蔽协议</HelpTooltip>
+                  </div>
+                  <div>
+                    {([
+                      { key: 'http', label: 'HTTP' },
+                      { key: 'tls', label: 'TLS' },
+                      { key: 'socks', label: 'SOCKS' },
+                      { key: 'ss', label: 'Shadowsocks', tip: 'Shadowsocks 没有固定特征，只能按「首包像随机数据」判断：同时会拦截 VMess 等其他全加密协议，也可能误伤传输压缩或加密数据的普通 TCP 业务；UDP 流量不检测。需要节点版本 1.2.5 及以上且在线' },
+                    ] as const).map(({ key, label, ...rest }) => (
+                      <div key={key} className="flex items-center justify-between py-2">
+                        <span className="text-sm text-foreground">{'tip' in rest ? <HelpTooltip content={rest.tip}>{label}</HelpTooltip> : label}</span>
+                        <Switch size="sm" aria-label={`屏蔽 ${label}`} isSelected={advancedForm[key] === 1} onValueChange={(v) => setAdvancedForm(prev => ({ ...prev, [key]: v ? 1 : 0 }))} />
                       </div>
                     ))}
                   </div>
@@ -1092,7 +1100,6 @@ export default function DeviceGroupPage() {
 
                 <Select listboxProps={{ emptyContent: <EmptyState compact /> }} labelPlacement="outside-top"
                   size="sm"
-                  className="mt-4"
                   selectionMode="multiple"
                   label={<HelpTooltip content="该节点所属的节点组，用于分配套餐/用户组可使用的节点范围；一个节点可以同时属于多个节点组">节点组</HelpTooltip>}
                   placeholder="未归属任何节点组"

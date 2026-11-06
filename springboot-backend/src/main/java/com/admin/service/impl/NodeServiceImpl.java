@@ -214,12 +214,26 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
         boolean httpChanged = newHttp != null && !newHttp.equals(node.getHttp());
         boolean tlsChanged = newTls != null && !newTls.equals(node.getTls());
         boolean socksChanged = newSocks != null && !newSocks.equals(node.getSocks());
+        Integer newSs = nodeUpdateDto.getSs();
+        boolean ssChanged = newSs != null && !newSs.equals(node.getSs());
 
-        if (online && (httpChanged || tlsChanged || socksChanged)) {
+        // 旧版节点不认识 ss，会直接返回成功但实际没有屏蔽；节点离线时也无法确认版本，所以开启前必须确认
+        if (ssChanged && newSs == 1) {
+            if (!online) {
+                return R.err("节点离线，无法开启屏蔽 Shadowsocks");
+            }
+            if (!supportsSsBlock(node.getVersion())) {
+                return R.err("节点版本过低，请先更新节点后再开启屏蔽 Shadowsocks");
+            }
+        }
+
+        if (online && (httpChanged || tlsChanged || socksChanged || ssChanged)) {
             JSONObject req = new JSONObject();
             req.put("http", newHttp);
             req.put("tls", newTls);
             req.put("socks", newSocks);
+            // 节点按全量设置，没传时沿用现有值，否则会被关掉
+            req.put("ss", newSs != null ? newSs : node.getSs());
 
             GostDto gostResult = WebSocketServer.send_msg(node.getId(), req, "SetProtocol");
             if (!Objects.equals(gostResult.getMsg(), "OK")){
@@ -347,6 +361,7 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
         node.setHttp(nodeUpdateDto.getHttp());
         node.setTls(nodeUpdateDto.getTls());
         node.setSocks(nodeUpdateDto.getSocks());
+        node.setSs(nodeUpdateDto.getSs());
         // 验证端口范围
         validatePortRange(node.getPortSta(), node.getPortEnd());
         
@@ -671,4 +686,24 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
         }
     }
 
+
+    /** 节点程序从 1.2.5 开始支持屏蔽 Shadowsocks */
+    static boolean supportsSsBlock(String version) {
+        if (version == null) {
+            return false;
+        }
+        int[] minimum = {1, 2, 5};
+        String[] parts = version.trim().split("\\.");
+        try {
+            for (int i = 0; i < minimum.length; i++) {
+                int part = i < parts.length ? Integer.parseInt(parts[i]) : 0;
+                if (part != minimum[i]) {
+                    return part > minimum[i];
+                }
+            }
+            return true;
+        } catch (NumberFormatException e) {
+            return false;
+        }
+    }
 }

@@ -37,10 +37,17 @@ const PAYMENT_TYPE_LABELS: Record<PaymentChannel['type'], string> = {
 };
 
 const NoPaymentIcon = () => (
-  <svg className="w-16 h-16 text-default-300" viewBox="0 0 64 64" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round">
-    <path d="M50 20V13a5 5 0 00-5-5H13a6 6 0 00-6 6v34a6 6 0 006 6h37a5 5 0 005-5V28a5 5 0 00-5-5H13" />
-    <rect x="38" y="31" width="19" height="13" rx="4" />
-    <circle cx="45" cy="37.5" r="1.8" fill="currentColor" stroke="none" />
+  <svg className="w-28 h-28" viewBox="0 0 112 112" fill="none" aria-hidden="true">
+    <ellipse cx="50" cy="98" rx="42" ry="6" className="fill-default-300" />
+    <path d="M14 64h72l8 14v18a3 3 0 01-3 3H9a3 3 0 01-3-3V78l8-14z" className="fill-default-400" />
+    <rect x="26" y="22" width="48" height="64" rx="2" className="fill-default-500" />
+    <rect x="32" y="29" width="36" height="17" rx="1" className="fill-default-400" />
+    <path d="M32 54h36M32 62h36M32 70h24" className="stroke-default-300" strokeWidth="2.5" />
+    <path d="M6 78h24l4 8h32l4-8h24v18a3 3 0 01-3 3H9a3 3 0 01-3-3V78z" className="fill-default-400" />
+    <path d="M90 6c8 0 14 5 14 11.500S98 29 90 29c-2 0-4-.3-5.700-1L76 31l2.500-6.500C77 22.500 76 20 76 17.500 76 11 82 6 90 6z" className="fill-default-400" />
+    <circle cx="84" cy="17.500" r="1.800" className="fill-default-200" />
+    <circle cx="90" cy="17.500" r="1.800" className="fill-default-200" />
+    <circle cx="96" cy="17.500" r="1.800" className="fill-default-200" />
   </svg>
 );
 
@@ -227,27 +234,27 @@ export default function ShopPage() {
 
   return (
     <div className="management-page px-4 lg:px-6 py-5 lg:py-6">
-      <div className="mb-6">
-        <h1 className="text-base font-semibold text-foreground">我的钱包</h1>
-        <p className="mt-1 text-sm text-default-600">钱包余额：<span className="font-semibold text-foreground">{walletBalance.toFixed(0)} 元</span></p>
-      </div>
+      <Card className="management-table-card mb-4">
+        <CardHeader className="px-6 py-4 border-b border-default-100"><h1 className="text-base font-semibold text-foreground">我的钱包</h1></CardHeader>
+        <CardBody className="p-6 gap-6">
+          <p className="pt-2 text-xl font-semibold text-foreground">钱包余额: {Number(walletBalance)} 元</p>
 
-      <Card className="management-table-card mb-6">
-        <CardHeader className="p-4 border-b border-default-100"><h2 className="text-base font-semibold text-foreground">钱包充值</h2></CardHeader>
-        <CardBody className="p-4 lg:p-5">
-          <div className="flex items-end gap-2 max-w-sm">
-            <Input
-              size="sm"
-              autoComplete="off"
-              label="充值金额"
+          <div className="rounded-medium border-1 border-default-200">
+            <div className="px-6 py-4 border-b border-default-200"><h2 className="text-base font-semibold text-foreground">钱包充值</h2></div>
+            <div className="p-6">
+          <div className="inline-flex h-8 max-w-full items-stretch rounded-small border-1 border-default-300 text-sm">
+            <label htmlFor="recharge-amount" className="flex items-center whitespace-nowrap rounded-l-small border-r-1 border-default-300 bg-default-100 px-3 text-foreground">充值金额</label>
+            <input
+              id="recharge-amount"
               type="number"
+              autoComplete="off"
               value={rechargeAmount}
               onChange={(e) => setRechargeAmount(e.target.value)}
-              variant="bordered"
-              endContent={<span className="text-sm text-default-500">CNY</span>}
+              className="w-44 min-w-0 bg-transparent px-3 text-foreground outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-primary"
             />
+            <span className="flex items-center rounded-r-small border-l-1 border-default-300 bg-default-100 px-3 text-foreground">CNY</span>
           </div>
-          <p className="mt-3 text-sm font-medium text-default-600">最小充值金额: {minRechargeAmount} 元</p>
+          <p className="mt-4 text-base font-semibold text-foreground">最小充值金额: {minRechargeAmount} 元</p>
 
           {paymentChannels.length > 0 ? (
             <div className="mt-6 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
@@ -258,17 +265,19 @@ export default function ShopPage() {
               ))}
             </div>
           ) : (
-            <div className="flex flex-col items-center justify-center gap-3 py-12">
+            <div className="flex flex-col items-center justify-center gap-3 pt-2">
               <NoPaymentIcon />
-              <p className="text-sm text-default-500">站点未配置任何支付方式!</p>
+              <p className="text-sm text-foreground">站点未配置任何支付方式!</p>
             </div>
           )}
+            </div>
+          </div>
         </CardBody>
       </Card>
 
-      <Card className="management-table-card mb-6">
-        <CardHeader className="p-4 border-b border-default-100"><h2 className="text-base font-semibold text-foreground">购买套餐</h2></CardHeader>
-        <CardBody className="p-4 lg:p-5">
+      <Card className="management-table-card mb-4">
+        <CardHeader className="px-6 py-4 border-b border-default-100"><h2 className="text-base font-semibold text-foreground">购买套餐</h2></CardHeader>
+        <CardBody className="p-6">
           {plans.length > 0 ? (
             <div className="flex flex-wrap gap-4">
               {plans.map((plan) => (
@@ -317,14 +326,14 @@ export default function ShopPage() {
               ))}
             </div>
           ) : (
-            <EmptyState className="py-12" />
+            <EmptyState />
           )}
         </CardBody>
       </Card>
 
       <Card className="management-table-card">
-        <CardHeader className="p-4 border-b border-default-100"><h2 className="text-base font-semibold text-foreground">兑换套餐</h2></CardHeader>
-        <CardBody className="p-4 lg:p-5">
+        <CardHeader className="px-6 py-4 border-b border-default-100"><h2 className="text-base font-semibold text-foreground">兑换套餐</h2></CardHeader>
+        <CardBody className="p-6">
           <p className="text-sm text-default-500 mb-3">如果您有兑换码，则可以免费或低价购买对应的套餐。</p>
           <div className="flex gap-2 max-w-lg">
             <Input

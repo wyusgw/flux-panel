@@ -1,4 +1,5 @@
 import { Card, CardBody, CardHeader } from "@heroui/card";
+import { nextSort, SortableHeader } from "@/components/table-sort";
 import { Button } from "@heroui/button";
 import { Input } from "@heroui/input";
 import { Popover, PopoverTrigger, PopoverContent } from "@heroui/popover";
@@ -9,6 +10,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LabelList } from "recharts";
 
 import { StatCell } from "@/components/stat-cell";
+import { EmptyState } from "@/components/empty-state";
 import { getAllUsers, getNodeList, getAdminOrderList, getTaskQueueHealth, getDashboardFlowStats, getNodeOnlineTrend } from "@/api";
 
 type Order = { amount?: number; orderStatus?: number; createdTime?: number; paidTime?: number };
@@ -182,9 +184,9 @@ function RankTable({ title, rows: allRows, kind }: { title: string; rows: { name
       </CardHeader>
       <CardBody className="p-0">
         {view === 'table' ? (
-          <Table removeWrapper aria-label={title} sortDescriptor={sortDescriptor} onSortChange={setSortDescriptor} classNames={{ th: "management-table-heading", td: "management-table-cell" }}>
+          <Table removeWrapper aria-label={title} sortDescriptor={sortDescriptor} onSortChange={(next) => setSortDescriptor(nextSort(sortDescriptor, next))} classNames={{ th: "management-table-heading", td: "management-table-cell", sortIcon: "hidden" }}>
             <TableHeader>
-              <TableColumn key="rank" allowsSorting>排名</TableColumn>
+              <TableColumn key="rank" allowsSorting><SortableHeader label="排名" columnKey="rank" sort={sortDescriptor} /></TableColumn>
               <TableColumn key="name">
                 <div className="flex items-center gap-1.5">
                   {noun}
@@ -211,14 +213,14 @@ function RankTable({ title, rows: allRows, kind }: { title: string; rows: { name
                   </Popover>
                 </div>
               </TableColumn>
-              <TableColumn key="value" allowsSorting>单向流量</TableColumn>
+              <TableColumn key="value" allowsSorting><SortableHeader label="单向流量" columnKey="value" sort={sortDescriptor} /></TableColumn>
             </TableHeader>
-            <TableBody emptyContent={filtering && allRows.length > 0 ? "没有符合条件的数据" : "暂无统计数据"}>
+            <TableBody emptyContent={<EmptyState text={filtering && allRows.length > 0 ? "没有符合条件的数据" : "暂无统计数据"} />}>
               {rows.map((row) => <TableRow key={`${row.name}-${row.rank}`}><TableCell>{row.rank}</TableCell><TableCell>{row.name}</TableCell><TableCell>{formatFlow(row.value)}</TableCell></TableRow>)}
             </TableBody>
           </Table>
         ) : rows.length === 0 ? (
-          <div className="py-12 text-center text-sm text-default-500">{filtering && allRows.length > 0 ? '没有符合条件的数据' : '暂无统计数据'}</div>
+          <EmptyState text={filtering && allRows.length > 0 ? '没有符合条件的数据' : '暂无统计数据'} />
         ) : (
           <div className="p-4" style={{ height: Math.max(160, rows.length * 36) }}>
             <ResponsiveContainer width="100%" height="100%">

@@ -50,12 +50,11 @@ public class ViteConfigServiceImpl extends ServiceImpl<ViteConfigMapper, ViteCon
         
         boolean admin = isAdminRequest();
         for (ViteConfig config : configList) {
-            // 服务端密钥（名称以 _secret_key 结尾，如验证码的 Secret Key）只给管理员；
-            // 这个接口不需要登录就能访问，不能把密钥返回给其他人
+            // 这个接口不需要登录就能访问，密钥只给真管理员（演示账号也算其他人）
             if (!admin && isSecretConfig(config.getName())) {
                 continue;
             }
-            configMap.put(config.getName(), config.getValue());
+            configMap.put(config.getName(), admin ? config.getValue() : publicValue(config.getName(), config.getValue()));
         }
         
         return R.ok(configMap);
@@ -81,6 +80,9 @@ public class ViteConfigServiceImpl extends ServiceImpl<ViteConfigMapper, ViteCon
             return R.err(ERROR_CONFIG_NOT_FOUND);
         }
 
+        if (!isAdminRequest()) {
+            config.setValue(publicValue(config.getName(), config.getValue()));
+        }
         return R.ok(config);
     }
 
@@ -113,6 +115,51 @@ public class ViteConfigServiceImpl extends ServiceImpl<ViteConfigMapper, ViteCon
         }
     }
 
+    /** 站点设置里演示账号能改的配置项，其余（注册、验证码、流量重置、日志保留、Looking Glass 隐藏 IP 等）改了影响真实用户且恢复不了后果 */
+    private static final java.util.Set<String> DEMO_SITE_CONFIGS = new java.util.HashSet<>(java.util.Arrays.asList(
+            "app_name", "site_announcement", "theme_policy", "transparent_theme_landscape_url",
+            "transparent_theme_portrait_url", "diagnosis_ping_count", "diagnosis_detail_ping_count"));
+
+    /** 配置项是否在已分配区域内。推送通知里的 Bot 开关和密钥不开放，只开放消息模板、提醒阈值和离线设置 */
+    static boolean isDemoEditable(String name, java.util.Set<String> areas) {
+        if (areas.contains(com.admin.common.utils.DemoArea.SITE.getCode()) && DEMO_SITE_CONFIGS.contains(name)) {
+            return true;
+        }
+        return areas.contains(com.admin.common.utils.DemoArea.PUSH.getCode()) && name != null
+                && (name.startsWith("telegram_tpl_") || name.startsWith("device_offline_")
+                || name.equals("telegram_expiry_reminder_days") || name.equals("telegram_flow_reminder_percent")
+                || name.equals("telegram_reminder_hour"));
+    }
+
+    @Override
+    public R updateConfigsAsDemo(Map<String, String> configMap, java.util.Set<String> areas) {
+        if (configMap == null || configMap.isEmpty()) {
+            return R.err("配置数据不能为空");
+        }
+        Map<String, String> current = new HashMap<>();
+        for (ViteConfig config : this.list()) {
+            current.put(config.getName(), publicValue(config.getName(), config.getValue()));
+        }
+        Map<String, String> allowed = new HashMap<>();
+        for (Map.Entry<String, String> entry : configMap.entrySet()) {
+            String value = entry.getValue();
+            // 页面一次提交整个分组：打码内容和没有改动的配置项跳过，真正改了不允许的配置项才拒绝
+            if (value != null && value.contains(com.admin.common.utils.DemoDataMasker.MASK)) {
+                continue;
+            }
+            if (isDemoEditable(entry.getKey(), areas)) {
+                allowed.put(entry.getKey(), value);
+            } else if (!java.util.Objects.equals(emptyToNull(value), emptyToNull(current.get(entry.getKey())))) {
+                return R.err(403, "禁止编辑");
+            }
+        }
+        return allowed.isEmpty() ? R.ok(SUCCESS_UPDATE_MSG) : updateConfigs(allowed);
+    }
+
+    private static String emptyToNull(String value) {
+        return value == null || value.isEmpty() ? null : value;
+    }
+
     /**
      * 更新单个配置项
      * 
@@ -140,17 +187,44 @@ public class ViteConfigServiceImpl extends ServiceImpl<ViteConfigMapper, ViteCon
 
     // ========== 私有辅助方法 ==========
 
-    /** 服务端密钥类配置：名称以 _secret_key 结尾 */
-    private static boolean isSecretConfig(String name) {
-        return name != null && name.endsWith("_secret_key");
+    /** 只有真管理员能读取的配置：服务端密钥、Bot Token、Webhook 地址（路径里带 Token） */
+    static boolean isSecretConfig(String name) {
+        return name != null && (name.contains("secret") || name.contains("token") || name.equals("telegram_webhook_url"));
     }
 
-    /** 当前请求是否来自管理员：必须带有签名和有效期都通过校验的管理员令牌，不能只看令牌里自称的角色 */
+    /**
+     * 其他人看到的配置值。支付渠道配置是公开的（商城页要列出可用渠道），但每个渠道的 config
+     * 里有接口地址、商户号和密钥，要去掉；解析不了时按没有渠道处理，不能把原文返回出去
+     */
+    static String publicValue(String name, String value) {
+        if (!"payment_config_json".equals(name)) {
+            return value;
+        }
+        try {
+            com.alibaba.fastjson2.JSONArray channels = com.alibaba.fastjson2.JSON.parseArray(value);
+            if (channels == null) {
+                return "[]";
+            }
+            for (int i = 0; i < channels.size(); i++) {
+                channels.getJSONObject(i).remove("config");
+            }
+            return channels.toJSONString();
+        } catch (Exception e) {
+            return "[]";
+        }
+    }
+
+    /** 当前请求是否来自真管理员：必须带有签名和有效期都通过校验的管理员令牌，不能只看令牌里自称的角色；演示账号不算 */
     private static boolean isAdminRequest() {
         try {
-            String token = com.admin.common.utils.HttpContextUtils.getHttpServletRequest().getHeader("Authorization");
+            javax.servlet.http.HttpServletRequest request = com.admin.common.utils.HttpContextUtils.getHttpServletRequest();
+            if (request.getAttribute(com.admin.common.interceptor.ReadOnlyInterceptor.CONFIG_SECRETS_HIDDEN_ATTRIBUTE) != null) {
+                return false;
+            }
+            String token = request.getHeader("Authorization");
             return token != null && com.admin.common.utils.JwtUtil.validateToken(token)
-                    && Integer.valueOf(0).equals(com.admin.common.utils.JwtUtil.getRoleIdFromToken(token));
+                    && Integer.valueOf(0).equals(com.admin.common.utils.JwtUtil.getRoleIdFromToken(token))
+                    && !com.admin.common.utils.JwtUtil.isDemoToken(token);
         } catch (Exception e) {
             return false;
         }

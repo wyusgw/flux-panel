@@ -64,6 +64,9 @@ public class JwtUtil {
             payload.put("user", user.getUser());
             payload.put("name", user.getUser());
             payload.put("role_id", user.getRoleId());
+            if (Integer.valueOf(1).equals(user.getDemoMode())) {
+                payload.put("demo", true);
+            }
 
             String payloadJson = JSON.toJSONString(payload);
             String encodedPayload = Base64.getUrlEncoder().withoutPadding()
@@ -124,6 +127,18 @@ public class JwtUtil {
      * @param token JWT Token
      * @return 用户ID
      */
+    public static boolean isDemoToken(String token) {
+        try {
+            String encodedPayload = token.split("\\.")[1];
+            String decodedPayload = new String(Base64.getUrlDecoder().decode(encodedPayload), StandardCharsets.UTF_8);
+            Map<String, Object> payload = JSON.parseObject(decodedPayload, Map.class);
+            return Boolean.TRUE.equals(payload.get("demo"));
+        } catch (Exception e) {
+            // 解析不了就不是演示令牌；调用方都会先校验签名
+            return false;
+        }
+    }
+
     public static Long getUserIdFromToken(String token) {
         String[] parts = token.split("\\.");
         String encodedPayload = parts[1];

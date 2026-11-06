@@ -9,6 +9,7 @@ import { Select, SelectItem } from "@heroui/select";
 import { Modal, ModalBody, ModalContent, ModalFooter, ModalHeader, useDisclosure } from "@heroui/modal";
 import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from "@heroui/table";
 import toast from 'react-hot-toast';
+import { showApiFailure } from '@/components/error-dialog';
 import { updateConfigs } from '@/api';
 
 import { isAdmin } from '@/utils/auth';
@@ -306,7 +307,8 @@ export default function ConfigPage() {
   const initialConfigs = getInitialConfigs();
   const [configs, setConfigs] = useState<Record<string, string>>(initialConfigs);
   const [loading, setLoading] = useState(Object.keys(initialConfigs).length === 0); // 如果有缓存数据，不显示loading
-  const [saving, setSaving] = useState(false);
+  // 正在保存的分区：只让被点击的保存按钮转圈，其他分区的按钮在此期间仅禁用
+  const [savingSection, setSavingSection] = useState<ConfigItem['section'] | null>(null);
   const [hasChanges, setHasChanges] = useState(false);
   const [originalConfigs, setOriginalConfigs] = useState<Record<string, string>>(initialConfigs);
   const [paymentChannels, setPaymentChannels] = useState<PaymentChannel[]>([]);
@@ -423,9 +425,9 @@ export default function ConfigPage() {
   };
 
   // 保存配置
-  const handleSave = async (section?: ConfigItem['section']) => {
+  const handleSave = async (section: ConfigItem['section']) => {
     const sectionKeys = CONFIG_ITEMS
-      .filter(item => (!section || item.section === section) && item.type !== 'readonly')
+      .filter(item => item.section === section && item.type !== 'readonly')
       .map(item => item.key);
     const configsToSave = Object.fromEntries(
       sectionKeys.filter(key => key in configs).map(key => [key, configs[key]])
@@ -436,7 +438,7 @@ export default function ConfigPage() {
       return;
     }
 
-    setSaving(true);
+    setSavingSection(section);
     try {
       const response = await updateConfigs(configsToSave);
       if (response.code === 0) {
@@ -470,12 +472,12 @@ export default function ConfigPage() {
           detail: { changedKeys } 
         }));
       } else {
-        toast.error('保存配置失败: ' + response.msg);
+        showApiFailure('保存', response);
       }
     } catch (error) {
-      toast.error('保存配置出错，请重试');
+      showApiFailure('保存', { msg: '请求出错，请重试' });
     } finally {
-      setSaving(false);
+      setSavingSection(null);
     }
   };
 
@@ -688,7 +690,7 @@ export default function ConfigPage() {
                     <div className="settings-table-scroll">
                         <Table removeWrapper aria-label="支付渠道列表" classNames={{ base: "w-full", th: "management-table-heading", td: "management-table-cell", table: "w-full payment-channel-table" }}>
                           <TableHeader><TableColumn className="w-16">排序</TableColumn><TableColumn className="w-32">类型</TableColumn><TableColumn>名称</TableColumn><TableColumn className="w-28">是否启用</TableColumn><TableColumn align="end" className="w-44 text-right">操作</TableColumn></TableHeader>
-                          <TableBody emptyContent="暂无支付渠道">
+                          <TableBody emptyContent={<EmptyState text="暂无支付渠道" />}>
                             {paymentChannels.map((channel, index) => <TableRow key={channel.id}>
                               <TableCell>{index + 1}</TableCell><TableCell>{PAYMENT_TYPES.find(type => type.value === channel.type)?.label}</TableCell><TableCell>{channel.name || '未命名渠道'}</TableCell><TableCell>{channel.enabled ? '启用' : '禁用'}</TableCell>
                               <TableCell><div className="flex justify-end gap-2"><Button size="sm" variant="flat" onPress={() => openChannelConfig(channel)}>编辑</Button><Button size="sm" variant="light" color="danger" onPress={() => updatePaymentChannels(paymentChannels.filter(item => item.id !== channel.id))}>删除</Button></div></TableCell>
@@ -707,8 +709,8 @@ export default function ConfigPage() {
                     size="sm"
                     color="primary"
                     onPress={() => handleSave(section.key)}
-                    isLoading={saving}
-                    isDisabled={!sectionHasChanges}
+                    isLoading={savingSection === section.key}
+                    isDisabled={!sectionHasChanges || savingSection !== null}
                   >
                     保 存
                   </Button>

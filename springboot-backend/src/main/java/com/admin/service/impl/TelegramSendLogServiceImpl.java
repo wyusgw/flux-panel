@@ -96,7 +96,7 @@ public class TelegramSendLogServiceImpl extends ServiceImpl<TelegramSendLogMappe
             Map<String, Object> row = new HashMap<>();
             row.put("id", item.getId());
             row.put("userId", item.getUserId());
-            row.put("userName", item.getUserId() != null ? userNameMap.getOrDefault(item.getUserId(), "用户#" + item.getUserId()) : null);
+            row.put("userName", item.getUserId() != null ? userNameMap.getOrDefault(item.getUserId(), "用户" + item.getUserId()) : null);
             row.put("chatId", item.getChatId());
             row.put("type", item.getType());
             row.put("content", item.getContent());

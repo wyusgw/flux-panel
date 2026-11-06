@@ -1,3 +1,4 @@
+import { EmptyState } from "@/components/empty-state";
 import { useState, useEffect } from 'react';
 import { Input } from "@heroui/input";
 import { Button } from "@heroui/button";
@@ -133,7 +134,7 @@ export const SettingsPage = () => {
             <CardBody className="p-6">
               <h2 className="text-lg font-medium text-foreground mb-4">已保存的面板地址</h2>
               {panelAddresses.length === 0 ? (
-                <p className="text-xs text-default-500 text-center py-8">暂无保存的面板地址</p>
+                <EmptyState text="暂无保存的面板地址" />
               ) : (
                 <div className="space-y-3">
                   {panelAddresses.map((panel, index) => (

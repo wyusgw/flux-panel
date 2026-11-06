@@ -1,6 +1,11 @@
 package com.admin.config;
 
 import com.admin.common.interceptor.JwtInterceptor;
+import com.admin.common.interceptor.ReadOnlyInterceptor;
+import com.admin.mapper.UserMapper;
+import com.admin.service.DemoChangeService;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.cors.CorsConfiguration;
@@ -15,6 +20,14 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 @Configuration
 @EnableWebMvc
 public class WebMvcConfig implements WebMvcConfigurer {
+
+    @Autowired
+    @Lazy
+    private UserMapper userMapper;
+
+    @Autowired
+    @Lazy
+    private DemoChangeService demoChangeService;
 
     private CorsConfiguration buildConfig() {
         CorsConfiguration corsConfiguration = new CorsConfiguration();
@@ -62,6 +75,16 @@ public class WebMvcConfig implements WebMvcConfigurer {
                 .excludePathPatterns("/api/v1/config/list")
                 .excludePathPatterns("/api/v1/user/login")
                 .excludePathPatterns("/api/v1/user/register")
+                .excludePathPatterns("/api/v1/captcha/**")
+                .excludePathPatterns("/api/v1/recharge/notify/**")
+                .excludePathPatterns("/api/v1/telegram/webhook/**");
+
+        // 演示管理员：排在 JWT 校验之后，未登录的请求仍然先得到 401。
+        // 登录和验证码要能用；支付回调、Telegram webhook、订阅接口是外部系统调用，不受限制
+        registry.addInterceptor(new ReadOnlyInterceptor(userMapper, demoChangeService))
+                .addPathPatterns("/api/**")
+                .excludePathPatterns("/api/v1/openApi/**")
+                .excludePathPatterns("/api/v1/user/login")
                 .excludePathPatterns("/api/v1/captcha/**")
                 .excludePathPatterns("/api/v1/recharge/notify/**")
                 .excludePathPatterns("/api/v1/telegram/webhook/**");

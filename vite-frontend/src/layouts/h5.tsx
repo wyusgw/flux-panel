@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 
 import { ThemeSwitch } from '@/components/theme-switch';
 import { siteConfig, getCachedConfigs } from '@/config/site';
+import { canAccessPath, useMenuPermissions } from '@/utils/menu-permissions';
 import { primaryNavItems, managementNavItems } from '@/config/nav-items';
 import { safeLogout } from '@/utils/logout';
 import { consumePasswordChangePrompt } from '@/utils/auth';
@@ -20,6 +21,7 @@ export default function H5Layout({
   const location = useLocation();
   const [isAdmin, setIsAdmin] = useState(false);
   const [singleTunnelEnabled, setSingleTunnelEnabled] = useState(false);
+  const { permissions: menuPermissions } = useMenuPermissions();
   const [lookingGlassEnabled, setLookingGlassEnabled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   // 「管理」二级菜单是否展开：默认折叠；进入某个管理页面时自动展开，方便看到当前所在位置
@@ -56,9 +58,10 @@ export default function H5Layout({
   const filteredPrimaryNavItems = primaryNavItems.filter(item =>
     (!item.adminOnly || isAdmin) &&
     (item.path !== '/single-tunnel' || singleTunnelEnabled) &&
-    (item.path !== '/looking-glass' || lookingGlassEnabled)
+    (item.path !== '/looking-glass' || lookingGlassEnabled) &&
+    canAccessPath(item.path, menuPermissions)
   );
-  const filteredManagementNavItems = managementNavItems.filter(item => !item.adminOnly || isAdmin);
+  const filteredManagementNavItems = managementNavItems.filter(item => (!item.adminOnly || isAdmin) && canAccessPath(item.path, menuPermissions));
 
   const handleMenuNavigate = (path: string) => {
     setMenuOpen(false);

@@ -18,6 +18,7 @@ import org.springframework.stereotype.Component;
 
 import javax.annotation.Resource;
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -83,7 +84,7 @@ public class NotificationUtil {
             Map<String, String> vars = new LinkedHashMap<>();
             vars.put("amount", escapeHtml(amount.toPlainString()));
             vars.put("balance", escapeHtml(newBalance.toPlainString()));
-            String text = buildMessage("充值成功", render("telegram_tpl_payment_success", DEFAULT_TPL_PAYMENT_SUCCESS, vars));
+            String text = buildMessage("充值成功", user, render("telegram_tpl_payment_success", DEFAULT_TPL_PAYMENT_SUCCESS, vars));
             sendWithRetry(user.getId(), user.getTelegramChatId(), text, "PAYMENT_SUCCESS", token);
         } catch (Exception e) {
             log.warn("发送充值通知失败: {}", e.getMessage());
@@ -113,17 +114,23 @@ public class NotificationUtil {
             String defaultTpl = online ? DEFAULT_TPL_DEVICE_ONLINE : DEFAULT_TPL_DEVICE_OFFLINE;
             String type = online ? "DEVICE_ONLINE" : "DEVICE_OFFLINE";
             String body = render(tplKey, defaultTpl, vars);
-            String text = buildMessage(title, body);
             // 管理员的设备上下线通知标题前加红/绿圆点 emoji，一眼区分离线与恢复（项目里唯一允许用 emoji 的地方，见类注释）
-            String adminText = buildMessage((online ? EMOJI_GREEN_CIRCLE : EMOJI_RED_CIRCLE) + " [管理员通知] " + title, body);
+            String adminTitle = (online ? EMOJI_GREEN_CIRCLE : EMOJI_RED_CIRCLE) + " [管理员通知] " + title;
 
             // 管理员与普通用户一样只按各自的 notify_device_mode / 设备组范围过滤，
-            // 不再无条件接收全部设备上下线通知（否则白名单/黑名单对管理员不生效）
+            // 不再无条件接收全部设备上下线通知（否则白名单/黑名单对管理员不生效）。
+            // 一个 Telegram 可以关联多个账号，同一条设备通知对它们内容完全相同，所以每个 Telegram 只发一条，并列出涉及的账号
+            Map<String, List<User>> recipients = new LinkedHashMap<>();
             for (User candidate : candidates) {
                 if (isBlank(candidate.getTelegramChatId())) continue;
                 if (!shouldNotifyDevice(candidate, nodeGroupIds)) continue;
-                boolean isAdmin = candidate.getRoleId() != null && candidate.getRoleId() == 0;
-                sendWithRetry(candidate.getId(), candidate.getTelegramChatId(), isAdmin ? adminText : text, type, token);
+                recipients.computeIfAbsent(candidate.getTelegramChatId(), chatId -> new ArrayList<>()).add(candidate);
+            }
+            for (Map.Entry<String, List<User>> recipient : recipients.entrySet()) {
+                List<User> users = recipient.getValue();
+                boolean anyAdmin = users.stream().anyMatch(user -> user.getRoleId() != null && user.getRoleId() == 0);
+                String text = buildMessage(anyAdmin ? adminTitle : title, users, body);
+                sendWithRetry(users.get(0).getId(), recipient.getKey(), text, type, token);
             }
         } catch (Exception e) {
             log.warn("发送设备状态通知失败: {}", e.getMessage());
@@ -141,7 +148,7 @@ public class NotificationUtil {
             if (isBlank(token)) return;
             Map<String, String> vars = new LinkedHashMap<>();
             vars.put("amount", escapeHtml(amount.toPlainString()));
-            String text = buildMessage("自动续费成功", render("telegram_tpl_renew_success", DEFAULT_TPL_RENEW_SUCCESS, vars));
+            String text = buildMessage("自动续费成功", user, render("telegram_tpl_renew_success", DEFAULT_TPL_RENEW_SUCCESS, vars));
             sendWithRetry(user.getId(), user.getTelegramChatId(), text, "RENEW_SUCCESS", token);
         } catch (Exception e) {
             log.warn("发送自动续费成功通知失败: {}", e.getMessage());
@@ -159,7 +166,7 @@ public class NotificationUtil {
             if (isBlank(token)) return;
             Map<String, String> vars = new LinkedHashMap<>();
             vars.put("reason", escapeHtml(isBlank(reason) ? "未知错误" : reason));
-            String text = buildMessage("自动续费失败", render("telegram_tpl_renew_failed", DEFAULT_TPL_RENEW_FAILED, vars));
+            String text = buildMessage("自动续费失败", user, render("telegram_tpl_renew_failed", DEFAULT_TPL_RENEW_FAILED, vars));
             sendWithRetry(user.getId(), user.getTelegramChatId(), text, "RENEW_FAILED", token);
         } catch (Exception e) {
             log.warn("发送自动续费失败通知失败: {}", e.getMessage());
@@ -177,7 +184,7 @@ public class NotificationUtil {
             if (isBlank(token)) return;
             Map<String, String> vars = new LinkedHashMap<>();
             vars.put("days", String.valueOf(Math.max(diffDays, 0)));
-            String text = buildMessage("套餐到期提醒", render("telegram_tpl_expiry_reminder", DEFAULT_TPL_EXPIRY_REMINDER, vars));
+            String text = buildMessage("套餐到期提醒", user, render("telegram_tpl_expiry_reminder", DEFAULT_TPL_EXPIRY_REMINDER, vars));
             sendWithRetry(user.getId(), user.getTelegramChatId(), text, "EXPIRY_REMINDER", token);
         } catch (Exception e) {
             log.warn("发送到期提醒失败: {}", e.getMessage());
@@ -195,7 +202,7 @@ public class NotificationUtil {
             if (isBlank(token)) return;
             Map<String, String> vars = new LinkedHashMap<>();
             vars.put("percent", String.format("%.0f", usedPercent));
-            String text = buildMessage("流量提醒", render("telegram_tpl_flow_reminder", DEFAULT_TPL_FLOW_REMINDER, vars));
+            String text = buildMessage("流量提醒", user, render("telegram_tpl_flow_reminder", DEFAULT_TPL_FLOW_REMINDER, vars));
             sendWithRetry(user.getId(), user.getTelegramChatId(), text, "FLOW_REMINDER", token);
         } catch (Exception e) {
             log.warn("发送流量提醒失败: {}", e.getMessage());
@@ -209,7 +216,7 @@ public class NotificationUtil {
         if (user == null || isBlank(user.getTelegramChatId())) return false;
         String token = getConfigValue("telegram_bot_token");
         if (isBlank(token)) return false;
-        String text = buildMessage("测试消息", "这是一条测试消息，收到即代表 Telegram 通知配置正常。");
+        String text = buildMessage("测试消息", user, "这是一条测试消息，收到即代表 Telegram 通知配置正常。");
         boolean ok = TelegramBotUtil.sendMessage(token, user.getTelegramChatId(), text, PARSE_MODE_HTML);
         telegramSendLogService.record(user.getId(), user.getTelegramChatId(), "TEST", text, ok, ok ? null : "发送失败");
         return ok;
@@ -262,10 +269,22 @@ public class NotificationUtil {
     }
 
     /**
-     * 拼装最终发送的 HTML 消息：粗体标题（代码固定，除管理员设备上下线通知外为纯文本）+ 空行 + 正文
+     * 拼装最终发送的 HTML 消息：粗体标题（代码固定，除管理员设备上下线通知外为纯文本）+ 空行 + 正文。
+     * 这个 Telegram 关联了多个账号时，标题下方再加账号名，否则分不清是哪个账号的通知；只关联一个账号时不需要。
+     * 账号名由代码统一添加，不依赖管理员自定义的模板
      */
-    private String buildMessage(String title, String body) {
-        return "<b>" + escapeHtml(title) + "</b>\n\n" + body;
+    private String buildMessage(String title, User user, String body) {
+        return buildMessage(title, Collections.singletonList(user), body);
+    }
+
+    private String buildMessage(String title, List<User> users, String body) {
+        String heading = "<b>" + escapeHtml(title) + "</b>";
+        long boundAccounts = userService.count(new QueryWrapper<User>().eq("telegram_chat_id", users.get(0).getTelegramChatId()));
+        if (boundAccounts <= 1) {
+            return heading + "\n\n" + body;
+        }
+        String accounts = users.stream().map(user -> escapeHtml(user.getUser())).distinct().collect(Collectors.joining("、"));
+        return heading + "\n账号：" + accounts + "\n\n" + body;
     }
 
     /**

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { ToolbarAddIcon, ToolbarDeleteIcon } from "@/components/toolbar-icons";
 import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Button } from "@heroui/button";
 import { Input } from "@heroui/input";
@@ -213,18 +214,15 @@ export default function NodeGroupPage() {
     <div className="management-page px-4 lg:px-6 py-5 lg:py-6">
       <Card className="management-table-card max-w-[1600px] mx-auto">
         <CardHeader className="flex-row items-center justify-between gap-4 p-4 border-b border-default-100">
-          <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="text-base font-semibold text-foreground">节点组管理</h1>
-            <RefreshButton onRefresh={() => loadData(false)} />
-          </div>
+          <h1 className="text-base font-semibold text-foreground">节点组管理</h1>
         </CardHeader>
         <CardBody className="p-4 space-y-3">
-          <p className="text-xs text-default-500">对节点进行分类，用于分配哪些节点可被套餐/用户组使用</p>
-          <div className="flex flex-wrap items-center gap-2">
-            {selectedIds.length > 0 && <Button size="sm" color="danger" variant="bordered" onPress={() => setBatchDeleteModalOpen(true)}>批量删除（{selectedIds.length}）</Button>}
-            <Button size="sm" variant="bordered" onPress={handleAdd}>添加节点组</Button>
+          <div className="flex flex-wrap items-center gap-3.5">
+            {selectedIds.length > 0 && <Button size="sm" variant="bordered" startContent={<ToolbarDeleteIcon />} onPress={() => setBatchDeleteModalOpen(true)}>批量删除（{selectedIds.length}）</Button>}
+            <Button size="sm" variant="bordered" startContent={<ToolbarAddIcon />} onPress={handleAdd}>添加节点组</Button>
+            <RefreshButton onRefresh={() => loadData(false)} />
           </div>
-          <div className="-mx-4 -mb-4">
+          <div>
           <div className="settings-table-scroll">
             <Table removeWrapper aria-label="节点组列表" selectionMode="multiple" selectedKeys={selectedKeys} onSelectionChange={setSelectedKeys} classNames={{ base: "w-full", table: "w-full min-w-[600px] table-fixed management-table-selectable", th: "management-table-heading", td: "management-table-cell" }}>
               <TableHeader><TableColumn className="w-16">排序</TableColumn><TableColumn className="w-28">ID</TableColumn><TableColumn>名称</TableColumn><TableColumn className="w-40">节点数量</TableColumn><TableColumn align="end" className="w-44 text-right">操作</TableColumn></TableHeader>

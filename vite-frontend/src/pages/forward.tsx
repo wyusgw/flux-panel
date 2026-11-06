@@ -20,6 +20,7 @@ import { copyText } from '@/utils/clipboard';
 import { EmptyState } from "@/components/empty-state";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { showApiFailure } from "@/components/error-dialog";
+import { nextSort, SortableHeader } from "@/components/table-sort";
 import { ToastWarningIcon } from "@/components/toast-icons";
 import { HelpTooltip } from "@/components/help-tooltip";
 import { DiagnosisResultItem, DispatchStats, DiagnosisLeg, DiagnosisPanelFeedback } from "@/components/tcp-ping-diagnosis";
@@ -1487,10 +1488,10 @@ export default function ForwardPage() {
           {!isImpersonating && (
             <>
               <span className="rounded-small border border-default-200 px-2 py-0.5 text-xs text-foreground">
-                流量: <span className={(packageInfo?.flow ?? 0) <= 0 || usedGiB >= (packageInfo?.flow ?? 0) ? 'text-warning-600' : ''}>{usedGiB.toFixed(2)} GiB / {(packageInfo?.flow ?? 0).toFixed(2)} GiB</span>
+                流量: <span className={(packageInfo?.flow ?? 0) <= 0 || usedGiB >= (packageInfo?.flow ?? 0) ? 'text-orange-500' : ''}>{usedGiB.toFixed(2)} GiB / {(packageInfo?.flow ?? 0).toFixed(2)} GiB</span>
               </span>
               {packageInfo?.expTime && (
-                <span className="rounded-small border border-default-200 px-2 py-0.5 text-xs text-foreground">到期: {new Date(packageInfo.expTime).toLocaleString('zh-CN')}</span>
+                <span className="rounded-small border border-default-200 px-2 py-0.5 text-xs text-foreground">到期: {new Date(packageInfo.expTime).toLocaleString('zh-CN', { hour12: true })}</span>
               )}
               <span className="rounded-small border border-default-200 px-2 py-0.5 text-xs text-foreground">规则数: {myForwardsAll.length} / {packageInfo?.num ?? '-'}</span>
             </>
@@ -1532,17 +1533,17 @@ export default function ForwardPage() {
 
         {/* 工具列 */}
         <div className="flex flex-wrap items-center gap-2">
-          <Button size="sm" color="primary" startContent={<IconAddSingle />} onPress={handleAdd}>添加规则</Button>
+          <Button size="sm" variant="bordered" startContent={<IconAddSingle />} onPress={handleAdd}>添加规则</Button>
           <Button size="sm" variant="bordered" startContent={<IconImport />} onPress={handleImport}>批量导入</Button>
           <Button size="sm" variant="bordered" startContent={<IconExport />} isLoading={exportLoading} onPress={handleExport}>批量导出</Button>
           <Button size="sm" variant="bordered" startContent={<IconToggle />} isDisabled={selectedIds.length === 0} isLoading={batchLoading} onPress={handleBatchToggle}>批量切换</Button>
           <Button size="sm" variant="bordered" startContent={<IconFlow />} isDisabled={selectedIds.length === 0} onPress={handleBatchClearFlow}>清空流量</Button>
-          <Button size="sm" variant="bordered" color="danger" startContent={<IconDelete />} isDisabled={selectedIds.length === 0} isLoading={batchLoading} onPress={handleBatchDelete}>删除选中</Button>
+          <Button size="sm" variant="bordered" startContent={<IconDelete />} isDisabled={selectedIds.length === 0} isLoading={batchLoading} onPress={handleBatchDelete}>删除选中</Button>
         </div>
 
         {/* 规则列表 */}
         {/* 没有规则或筛选后没有匹配时也保留表格：表头（含状态筛选图标）始终可见，表体显示「暂无数据」 */}
-        <div className="-mx-4 -mb-4">
+        <div>
               <div className="settings-table-scroll">
                 <Table
                   removeWrapper
@@ -1551,14 +1552,14 @@ export default function ForwardPage() {
                   selectedKeys={selectedKeys}
                   onSelectionChange={setSelectedKeys}
                   sortDescriptor={sortDescriptor}
-                  onSortChange={(d) => { setSortDescriptor(d); setPage(1); }}
-                  classNames={{ base: "w-full", table: "w-full management-table-selectable forward-table", th: "management-table-heading", td: "management-table-cell" }}
+                  onSortChange={(d) => { setSortDescriptor(nextSort(sortDescriptor, d)); setPage(1); }}
+                  classNames={{ base: "w-full", table: "w-full management-table-selectable forward-table", th: "management-table-heading", td: "management-table-cell", sortIcon: "hidden" }}
                 >
                   <TableHeader>
-                    <TableColumn key="name" allowsSorting>规则名</TableColumn>
-                    <TableColumn key="in" allowsSorting>入口</TableColumn>
-                    <TableColumn key="out" allowsSorting>出口</TableColumn>
-                    <TableColumn key="flow" allowsSorting>已用流量</TableColumn>
+                    <TableColumn key="name" allowsSorting><SortableHeader label="规则名" columnKey="name" sort={sortDescriptor} /></TableColumn>
+                    <TableColumn key="in" allowsSorting><SortableHeader label="入口" columnKey="in" sort={sortDescriptor} /></TableColumn>
+                    <TableColumn key="out" allowsSorting><SortableHeader label="出口" columnKey="out" sort={sortDescriptor} /></TableColumn>
+                    <TableColumn key="flow" allowsSorting><SortableHeader label="已用流量" columnKey="flow" sort={sortDescriptor} /></TableColumn>
                     <TableColumn key="status">
                       <div className="flex items-center gap-1.5">
                         状态

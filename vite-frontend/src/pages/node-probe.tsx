@@ -6,6 +6,7 @@ import axios from 'axios';
 import { getDeviceGroupList, getNodeList, getUserGroupNames, getNodeGroupNames } from '@/api';
 import { ThemeSwitch } from '@/components/theme-switch';
 import { OsLogo } from '@/components/os-logo';
+import { EmptyState } from "@/components/empty-state";
 import { isAdmin } from '@/utils/auth';
 import 'flag-icons/css/flag-icons.min.css';
 
@@ -426,7 +427,7 @@ export default function NodeProbePage() {
           <div className="probe-loading"><div className="probe-loading-ring" /><p>加载节点状态…</p></div>
         ) : visibleNodeGroups.length === 0 ? (
           <div className="probe-empty">
-            <h2>暂无数据</h2>
+            <EmptyState className="pb-3" />
             <p>{effectiveAdmin ? '暂无节点组数据，请前往"设备管理"将节点归入节点组后再查看' : '暂无可显示的节点'}</p>
           </div>
         ) : (

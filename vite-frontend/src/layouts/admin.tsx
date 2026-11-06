@@ -9,6 +9,7 @@ import { ToastWarningIcon } from '@/components/toast-icons';
 import { safeLogout } from '@/utils/logout';
 import { consumePasswordChangePrompt } from '@/utils/auth';
 import { siteConfig, getCachedConfigs } from '@/config/site';
+import { canAccessPath, useMenuPermissions } from '@/utils/menu-permissions';
 import { navIcons } from '@/config/nav-icons';
 
 
@@ -34,6 +35,7 @@ export default function AdminLayout({
   const [username, setUsername] = useState('');
   const [isAdmin, setIsAdmin] = useState(false);
   const [singleTunnelEnabled, setSingleTunnelEnabled] = useState(false);
+  const { permissions: menuPermissions } = useMenuPermissions();
   const [lookingGlassEnabled, setLookingGlassEnabled] = useState(false);
 
   // 菜单项配置
@@ -237,7 +239,7 @@ export default function AdminLayout({
 
   // 过滤菜单项（根据权限与站点配置开关）
   const filteredMenuItems = menuItems.filter(item =>
-    (!item.adminOnly || isAdmin) && !item.hidden
+    (!item.adminOnly || isAdmin) && !item.hidden && canAccessPath(item.path, menuPermissions)
   );
   const primaryMenuItems = filteredMenuItems.filter(item => !item.adminOnly);
   const managementMenuItems = filteredMenuItems
@@ -259,7 +261,7 @@ export default function AdminLayout({
   }, [location.pathname]);
 
   return (
-    <div className={`admin-shell flex flex-col ${isMobile ? 'min-h-screen' : 'h-screen'} bg-gray-100 dark:bg-black`}>
+    <div className="admin-shell flex flex-col min-h-screen bg-gray-100 dark:bg-black">
       {/* 顶栏：横跨整个窗口，左侧站点名称，右侧用户菜单与主题切换；侧边栏从顶栏下方开始，直接以菜单项起头 */}
       <header className="app-topbar h-16 flex items-center justify-between px-4 sm:px-6 relative z-10 shrink-0">
         <div className="flex items-center gap-3 min-w-0">
@@ -373,7 +375,7 @@ export default function AdminLayout({
       </aside>
 
       {/* 主内容区域 */}
-      <main className={`flex-1 min-w-0 ${isMobile ? '' : 'admin-main overflow-y-auto'}`}>
+      <main className={`flex-1 min-w-0 ${isMobile ? '' : 'admin-main'}`}>
         {children}
       </main>
       </div>

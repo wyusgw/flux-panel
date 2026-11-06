@@ -75,7 +75,7 @@ public class TelegramPollingTask {
         }
     }
 
-    private static final String HELP_TEXT = "可用指令：\n/bind <绑定码> 绑定账号（在个人中心获取绑定码）\n/unbind 解除当前账号的绑定\n/help 查看本帮助";
+    private static final String HELP_TEXT = "可用指令：\n/bind <绑定码> 绑定账号（在个人中心获取绑定码，可绑定多个账号）\n/unbind 解除这个 Telegram 绑定的全部账号\n/help 查看本帮助";
 
     /**
      * 处理一条 Telegram 更新（/bind、/unbind、/help 等指令），轮询与 Webhook 两种模式共用。
@@ -124,20 +124,21 @@ public class TelegramPollingTask {
                 .set("telegram_bind_time", null)
                 .set("updated_time", System.currentTimeMillis()));
 
-        TelegramBotUtil.sendMessage(token, update.chatId, "绑定成功！后续将通过该账号接收您的推送通知。");
+        TelegramBotUtil.sendMessage(token, update.chatId, "账号 " + user.getUser() + " 绑定成功！后续将通过 Telegram 接收该账号的推送通知。可以用其他账号的绑定码继续绑定。");
     }
 
+    /** 一个 Telegram 可以关联多个账号，/unbind 解除它关联的全部账号；只解除某一个账号在个人中心操作 */
     private void handleUnbind(String token, TelegramBotUtil.TelegramUpdate update) {
-        User user = userService.getOne(new QueryWrapper<User>().eq("telegram_chat_id", update.chatId));
-        if (user == null) {
+        long count = userService.count(new QueryWrapper<User>().eq("telegram_chat_id", update.chatId));
+        if (count == 0) {
             TelegramBotUtil.sendMessage(token, update.chatId, "当前未绑定任何账号");
             return;
         }
         userService.update(new UpdateWrapper<User>()
-                .eq("id", user.getId())
+                .eq("telegram_chat_id", update.chatId)
                 .set("telegram_chat_id", null)
                 .set("updated_time", System.currentTimeMillis()));
-        TelegramBotUtil.sendMessage(token, update.chatId, "已解除绑定，将不再接收推送通知");
+        TelegramBotUtil.sendMessage(token, update.chatId, "已解除 " + count + " 个账号的绑定，将不再接收这些账号的推送通知");
     }
 
     private String getConfigValue(String name) {

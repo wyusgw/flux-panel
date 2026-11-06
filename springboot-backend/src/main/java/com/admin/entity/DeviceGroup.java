@@ -80,6 +80,11 @@ public class DeviceGroup extends BaseEntity {
      */
     private String remark;
 
+    /**
+     * 高级编辑保存的 JSON 配置；目前只做保存和展示，节点和转发都不读取
+     */
+    private String config;
+
     private Integer sort;
 
     /**

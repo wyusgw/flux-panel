@@ -1,3 +1,4 @@
+import { TipButton } from "@/components/tip-button";
 import { ApiOutlined, CopyOutlined, KeyOutlined } from "@/components/ant-icons";
 import { useState, useEffect } from "react";
 import { ToolbarAddIcon } from "@/components/toolbar-icons";
@@ -85,7 +86,6 @@ const DEFAULT_FORM: GroupForm = {
   shared: false
 };
 
-const MAX_ENTRY_IPS = 5;
 
 // 入口 IP/域名 存进后端时是逗号拼接的单个字符串，这里负责跟表单里"一行一个输入框"的字符串数组互相转换
 const parseEntryIps = (value?: string | null): string[] => {
@@ -450,15 +450,15 @@ export default function SingleTunnelPage() {
                             </DropdownSection>
                           </DropdownMenu>
                         </Dropdown>
-                        <Button isIconOnly size="sm" variant="flat" onPress={() => handleEdit(group)} title="编辑">
+                        <TipButton isIconOnly size="sm" variant="flat" onPress={() => handleEdit(group)} title="编辑">
                           <EditIcon />
-                        </Button>
-                        <Button isIconOnly size="sm" variant="flat" onPress={() => handleResetSecret(group)} title="重置 Token">
+                        </TipButton>
+                        <TipButton isIconOnly size="sm" variant="flat" onPress={() => handleResetSecret(group)} title="重置 Token">
                           <KeyIcon />
-                        </Button>
-                        <Button isIconOnly size="sm" variant="flat" color="danger" onPress={() => handleDelete(group)} title="删除">
+                        </TipButton>
+                        <TipButton isIconOnly size="sm" variant="flat" color="danger" onPress={() => handleDelete(group)} title="删除">
                           <DeleteIcon />
-                        </Button>
+                        </TipButton>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -508,7 +508,7 @@ export default function SingleTunnelPage() {
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="text-sm font-medium text-foreground">入口 IP / 域名</span>
-                      <span className="text-xs text-default-400">{form.entryIps.length} / {MAX_ENTRY_IPS}</span>
+                      <span className="text-xs text-default-400">{form.entryIps.length} 个</span>
                     </div>
                     {errors.entryIp && <p className="text-xs text-danger">{errors.entryIp}</p>}
                     <div className="space-y-2">
@@ -522,23 +522,22 @@ export default function SingleTunnelPage() {
                             variant="bordered"
                             className="flex-1"
                           />
-                          <Button
+                          <TipButton
                             isIconOnly size="sm" variant="light" color="danger"
                             isDisabled={form.entryIps.length <= 1}
                             onPress={() => setForm(prev => ({ ...prev, entryIps: prev.entryIps.filter((_, i) => i !== index) }))}
                             title="删除这一行"
                           >
                             <DeleteIcon />
-                          </Button>
+                          </TipButton>
                         </div>
                       ))}
                     </div>
                     <Button
                       size="sm" variant="flat" className="w-full"
-                      isDisabled={form.entryIps.length >= MAX_ENTRY_IPS}
                       onPress={() => setForm(prev => ({ ...prev, entryIps: [...prev.entryIps, ''] }))}
                     >
-                      + 添加一行（{form.entryIps.length} / {MAX_ENTRY_IPS}）
+                      + 添加一行
                     </Button>
                   </div>
 

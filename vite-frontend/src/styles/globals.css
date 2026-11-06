@@ -603,3 +603,6 @@ section[role="dialog"] > footer { padding: 12px 24px 20px; gap: 8px; }
 .hover-dropdown-content { border-radius: 8px; padding: 4px; min-width: 0; }
 html.dark:not(.theme-transparent) .hover-dropdown-content { background-color: #1f1f1f; }
 .management-page button.dock-btn[aria-expanded="true"] { border-color: hsl(var(--heroui-primary)) !important; color: hsl(var(--heroui-primary)); }
+
+/* 操作列图标按钮悬停：边框和图标变蓝 */
+.management-page td.management-table-cell button.px-0[data-hover="true"]:not([data-disabled="true"]) { border-color: hsl(var(--heroui-primary)) !important; color: hsl(var(--heroui-primary)) !important; opacity: 1; }

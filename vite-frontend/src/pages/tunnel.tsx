@@ -1,3 +1,4 @@
+import { TipButton } from "@/components/tip-button";
 import { AimOutlined, DeleteOutlined, EditOutlined } from "@/components/ant-icons";
 import { useState, useEffect } from "react";
 import { ToolbarAddIcon } from "@/components/toolbar-icons";
@@ -519,15 +520,15 @@ export default function TunnelPage() {
                           </TableCell>
                           <TableCell>
                             <div className="flex justify-end items-center gap-1">
-                              <Button isIconOnly size="sm" variant="flat" title={tunnel.status === 1 ? '诊断' : '仅启用状态下可诊断'} isDisabled={tunnel.status !== 1} onPress={() => handleDiagnose(tunnel)}>
+                              <TipButton isIconOnly size="sm" variant="flat" title={tunnel.status === 1 ? '诊断' : '仅启用状态下可诊断'} isDisabled={tunnel.status !== 1} onPress={() => handleDiagnose(tunnel)}>
                                 <AimOutlined />
-                              </Button>
-                              <Button isIconOnly size="sm" variant="flat" title="编辑" onPress={() => handleEdit(tunnel)}>
+                              </TipButton>
+                              <TipButton isIconOnly size="sm" variant="flat" title="编辑" onPress={() => handleEdit(tunnel)}>
                                 <EditOutlined />
-                              </Button>
-                              <Button isIconOnly size="sm" variant="flat" color="danger" title="删除" onPress={() => handleDelete(tunnel)}>
+                              </TipButton>
+                              <TipButton isIconOnly size="sm" variant="flat" color="danger" title="删除" onPress={() => handleDelete(tunnel)}>
                                 <DeleteOutlined />
-                              </Button>
+                              </TipButton>
                             </div>
                           </TableCell>
                         </TableRow>

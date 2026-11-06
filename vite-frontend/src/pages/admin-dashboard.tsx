@@ -1,3 +1,4 @@
+import { TipButton } from "@/components/tip-button";
 import { BarChartOutlined, FilterFilled, TableOutlined } from "@/components/ant-icons";
 import { Card, CardBody, CardHeader } from "@heroui/card";
 import { nextSort, SortableHeader } from "@/components/table-sort";
@@ -179,8 +180,8 @@ function RankTable({ title, rows: allRows, kind }: { title: string; rows: { name
       <CardHeader className="px-6 py-4 border-b border-default-100 flex items-center justify-between">
         <h2 className="text-sm font-semibold">{title}</h2>
         <div className="flex items-center gap-1">
-          <Button isIconOnly size="sm" variant={view === 'table' ? 'flat' : 'light'} color="default" onPress={() => setView('table')} title="表格视图"><TableIcon /></Button>
-          <Button isIconOnly size="sm" variant={view === 'chart' ? 'flat' : 'light'} color="default" onPress={() => setView('chart')} title="图表视图"><ChartIcon /></Button>
+          <TipButton isIconOnly size="sm" variant={view === 'table' ? 'flat' : 'light'} color="default" onPress={() => setView('table')} title="表格视图"><TableIcon /></TipButton>
+          <TipButton isIconOnly size="sm" variant={view === 'chart' ? 'flat' : 'light'} color="default" onPress={() => setView('chart')} title="图表视图"><ChartIcon /></TipButton>
         </div>
       </CardHeader>
       <CardBody className="p-0">

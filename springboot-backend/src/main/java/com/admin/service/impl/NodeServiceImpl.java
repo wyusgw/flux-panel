@@ -425,6 +425,7 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
             item.put("ratio", group.getRatio());
             item.put("hideInProbe", group.getHideInProbe());
             item.put("remark", group.getRemark());
+            item.put("config", group.getConfig() == null ? "{}" : group.getConfig());
             item.put("userGroupIds", userGroupIds.getOrDefault(group.getId(), Collections.emptyList()));
             return item;
         }).collect(Collectors.toList()));

@@ -69,6 +69,31 @@ class NodeConfigTest {
     }
 
     @Test
+    void configMustBeAJsonObject() {
+        for (String ok : new String[]{"{}", "{\"a\": 1}", " {\n} "}) {
+            assertTrue(DeviceGroupServiceImpl.isJsonObject(ok), ok);
+        }
+        for (String bad : new String[]{null, "", "  ", "[]", "1", "\"x\"", "{", "{a:1}", "***"}) {
+            assertFalse(DeviceGroupServiceImpl.isJsonObject(bad), String.valueOf(bad));
+        }
+    }
+
+    @Test
+    void configDefaultsToEmptyObjectAndIsMaskedForDemo() {
+        Node node = new Node();
+        node.setId(7L);
+        DeviceGroup empty = new DeviceGroup();
+        empty.setId(1L);
+        DeviceGroup filled = new DeviceGroup();
+        filled.setId(2L);
+        filled.setConfig("{\"token\":\"real-config-value\"}");
+        JsonNode json = new ObjectMapper().valueToTree(NodeServiceImpl.buildNodeConfig(node, Arrays.asList(empty, filled),
+                Collections.emptyMap(), Collections.emptyList()));
+        assertEquals("{}", json.get("deviceGroups").get(0).get("config").asText());
+        assertFalse(DemoDataMasker.mask(json).toString().contains("real-config-value"));
+    }
+
+    @Test
     void protocolIsOnlyReturnedForGroupsWithAnOutboundRole() {
         assertEquals("tls", protocolOf("outbound").asText());
         assertEquals("tls", protocolOf("both").asText());

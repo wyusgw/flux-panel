@@ -1,3 +1,4 @@
+import { TipButton } from "@/components/tip-button";
 import { RuleSearchModal, EMPTY_RULE_SEARCH, countRuleSearch, matchRuleSearch } from "@/components/rule-search-modal";
 import { AimOutlined, BarChartOutlined, CheckSquareOutlined, CloseOutlined, CopyOutlined, DeleteOutlined, DownloadOutlined, EditOutlined, FileAddOutlined, FilterFilled, FireOutlined, FolderAddOutlined, InfoCircleOutlined, PauseCircleOutlined, PlayCircleOutlined, SearchOutlined, SettingOutlined } from "@/components/ant-icons";
 import { useState, useEffect, useRef } from "react";
@@ -1645,13 +1646,13 @@ export default function ForwardPage() {
                           </TableCell>
                           <TableCell>
                             <div className="flex justify-end items-center gap-1">
-                              <Button isIconOnly size="sm" variant="flat" title={forward.serviceRunning ? '暂停' : '启动'} isDisabled={forward.status !== 1 && forward.status !== 0} onPress={() => handleServiceToggle(forward)}>
+                              <TipButton isIconOnly size="sm" variant="flat" title={forward.serviceRunning ? '暂停' : '启动'} isDisabled={forward.status !== 1 && forward.status !== 0} onPress={() => handleServiceToggle(forward)}>
                                 {forward.serviceRunning ? <IconPause /> : <IconPlay />}
-                              </Button>
-                              <Button isIconOnly size="sm" variant="flat" title={forward.status === 1 ? '诊断' : '仅正常状态下可诊断'} isDisabled={forward.status !== 1} onPress={() => handleDiagnose(forward)}><IconHelp /></Button>
-                              <Button isIconOnly size="sm" variant="flat" title="复制" onPress={() => handleCopyRule(forward)}><IconCopy /></Button>
-                              <Button isIconOnly size="sm" variant="flat" title="编辑" onPress={() => handleEdit(forward)}><IconEdit /></Button>
-                              <Button isIconOnly size="sm" variant="flat" color="danger" title="删除" onPress={() => handleDelete(forward)}><IconDelete /></Button>
+                              </TipButton>
+                              <TipButton isIconOnly size="sm" variant="flat" title={forward.status === 1 ? '诊断' : '仅正常状态下可诊断'} isDisabled={forward.status !== 1} onPress={() => handleDiagnose(forward)}><IconHelp /></TipButton>
+                              <TipButton isIconOnly size="sm" variant="flat" title="复制" onPress={() => handleCopyRule(forward)}><IconCopy /></TipButton>
+                              <TipButton isIconOnly size="sm" variant="flat" title="编辑" onPress={() => handleEdit(forward)}><IconEdit /></TipButton>
+                              <TipButton isIconOnly size="sm" variant="flat" color="danger" title="删除" onPress={() => handleDelete(forward)}><IconDelete /></TipButton>
                             </div>
                           </TableCell>
                         </TableRow>

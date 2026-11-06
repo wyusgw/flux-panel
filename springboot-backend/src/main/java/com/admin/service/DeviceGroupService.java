@@ -16,6 +16,11 @@ public interface DeviceGroupService extends IService<DeviceGroup> {
     R createDeviceGroup(DeviceGroupDto deviceGroupDto);
 
     /**
+     * 保存高级编辑的 JSON 配置，必须是 JSON 对象
+     */
+    R updateDeviceGroupConfig(Long id, String config);
+
+    /**
      * 获取设备组列表：管理员查看全部；普通用户仅查看对自己可见（未绑定用户组或与自身用户组一致）的设备组
      */
     R getAllDeviceGroups();

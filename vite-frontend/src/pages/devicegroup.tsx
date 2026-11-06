@@ -1,4 +1,6 @@
-import { CopyOutlined, DisconnectOutlined, EditFilled, InboxOutlined, InfoCircleOutlined, PlusOutlined } from "@/components/ant-icons";
+import { TipButton } from "@/components/tip-button";
+import { CopyOutlined, DisconnectOutlined, EditFilled, InboxOutlined, InfoCircleOutlined, PlusOutlined, SettingOutlined } from "@/components/ant-icons";
+import { JsonEditor } from "@/components/json-editor";
 import { useState, useEffect, useRef } from "react";
 import { ToolbarAddIcon, ToolbarDeleteIcon } from "@/components/toolbar-icons";
 import { Card, CardBody, CardHeader } from "@heroui/card";
@@ -19,6 +21,7 @@ import {
   createDeviceGroup,
   getDeviceGroupList,
   updateDeviceGroup,
+  updateDeviceGroupConfig,
   deleteDeviceGroup,
   batchDeleteDeviceGroups,
   reorderDeviceGroups,
@@ -37,7 +40,7 @@ import { EmptyState } from "@/components/empty-state";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import RefreshButton from "@/components/refresh-button";
 
-const AdvancedEditIcon = () => <EditFilled />;
+const DeviceSettingIcon = () => <SettingOutlined />;
 
 const KeyIcon = () => <DisconnectOutlined />;
 
@@ -71,6 +74,7 @@ interface DeviceGroupItem {
   hideInProbe: number;
   direction?: 'inbound' | 'outbound' | 'monitor' | 'both' | 'chain';
   protocol?: string;
+  config?: string;
   remark?: string;
   sort?: number;
   chainHops?: ChainHopItem[];
@@ -133,7 +137,6 @@ interface DeviceGroupForm {
 }
 
 const MAX_CHAIN_HOPS = 3;
-const MAX_ENTRY_IPS = 5;
 
 // 入口 IP/域名 存进后端时是逗号拼接的单个字符串（跟转发规则的目标地址是同一套约定），
 // 这里负责跟表单里"一行一个输入框"的字符串数组互相转换
@@ -187,6 +190,10 @@ export default function DeviceGroupPage() {
   const [isEdit, setIsEdit] = useState(false);
   // 新增设备组时，类型选择之前只显示名称、用户组、类型、探针隐藏、备注；选择类型后才显示该类型对应的选项（编辑时始终已有类型）
   const [typeChosen, setTypeChosen] = useState(false);
+  const [jsonTarget, setJsonTarget] = useState<DeviceGroupItem | null>(null);
+  const [jsonText, setJsonText] = useState('{}');
+  const [jsonError, setJsonError] = useState('');
+  const [jsonLoading, setJsonLoading] = useState(false);
   const [chainPanelOpen, setChainPanelOpen] = useState(false);
   // 端口范围用单个输入框「起始-结束」填写，这里保存输入框里的原始文字
   const [portRangeText, setPortRangeText] = useState('');
@@ -482,6 +489,42 @@ export default function DeviceGroupPage() {
     window.open(`/nodeConfig?id=${nodeId}`, '_blank');
   };
 
+  const handleOpenJsonEdit = (group: DeviceGroupItem) => {
+    setJsonTarget(group);
+    setJsonText(group.config || '{}');
+    setJsonError('');
+  };
+
+  const submitJsonEdit = async () => {
+    if (!jsonTarget) return;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(jsonText);
+    } catch (error) {
+      setJsonError(`JSON 格式错误：${(error as Error).message}`);
+      return;
+    }
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      setJsonError('配置必须是 JSON 对象，例如 {}');
+      return;
+    }
+    setJsonLoading(true);
+    try {
+      const res = await updateDeviceGroupConfig(jsonTarget.id, jsonText);
+      if (res.code !== 0) {
+        setJsonError(res.msg || '保存失败');
+        return;
+      }
+      toast.success('保存成功');
+      setJsonTarget(null);
+      loadData(false);
+    } catch (error) {
+      setJsonError('保存失败');
+    } finally {
+      setJsonLoading(false);
+    }
+  };
+
   const handleAdvancedEdit = (nodeId: number) => {
     const node = nodes.find(n => n.id === nodeId) || orphanNodes.find(n => n.id === nodeId) || null;
     setAdvancedTarget(node);
@@ -686,8 +729,8 @@ export default function DeviceGroupPage() {
           <div><div className="settings-table-scroll"><Table removeWrapper aria-label="设备列表" selectionMode="multiple" selectedKeys={selectedKeys} onSelectionChange={setSelectedKeys} disabledKeys={orphanNodes.map(node => `node-${node.id}`)} classNames={{ base: "w-full", table: "w-full management-table-selectable", th: "management-table-heading", td: "management-table-cell" }}>
           <TableHeader><TableColumn className="w-16">排序</TableColumn><TableColumn>设备 ID</TableColumn><TableColumn>名称</TableColumn><TableColumn>角色</TableColumn><TableColumn>服务器</TableColumn><TableColumn>可见用户组</TableColumn><TableColumn>倍率</TableColumn><TableColumn>备注</TableColumn><TableColumn>操作</TableColumn></TableHeader>
           <TableBody emptyContent={<EmptyState />}>{[
-            ...groups.map(group => { const isChainGroup = group.direction === 'chain'; return <TableRow key={`group-${group.id}`} onDragOver={(e: React.DragEvent) => e.preventDefault()} onDrop={() => handleGroupRowDrop(group.id)}><TableCell><span draggable className="cursor-grab active:cursor-grabbing inline-flex" onDragStart={() => { draggedGroupIdRef.current = group.id; }}><DragHandleIcon /></span></TableCell><TableCell>#{group.id}</TableCell><TableCell className="font-medium">{group.name}</TableCell><TableCell>{{ inbound: '入口', outbound: '出口', monitor: '仅监控', both: '入口＋出口', chain: '链式出口' }[group.direction || 'inbound']}</TableCell><TableCell>{isChainGroup ? <span className="text-default-500">{(group.chainHops || []).length} 跳链路</span> : group.nodeName}</TableCell><TableCell>{userGroupNames(group.userGroupIds)}</TableCell><TableCell>{group.ratio}</TableCell><TableCell>{group.remark || '—'}</TableCell><TableCell><div className="flex items-center gap-2">{!isChainGroup && group.nodeId && renderDockMenu(group.nodeId, `${group.name} (#${group.id})`)}{!isChainGroup && group.nodeId && <Button isIconOnly size="sm" variant="flat" color="default" onPress={() => handleResetSecret(group.nodeId!)} title="重置 Token"><KeyIcon /></Button>}<Button isIconOnly size="sm" variant="flat" onPress={() => handleEdit(group)} title="编辑"><EditIcon /></Button>{!isChainGroup && group.nodeId && <Button isIconOnly size="sm" variant="flat" onPress={() => handleAdvancedEdit(group.nodeId!)} title="高级编辑" aria-label="高级编辑"><AdvancedEditIcon /></Button>}<Button isIconOnly size="sm" variant="flat" onPress={() => handleDelete(group)} title="删除"><DeleteIcon /></Button></div></TableCell></TableRow>; }),
-            ...orphanNodes.map(node => <TableRow key={`node-${node.id}`}><TableCell>—</TableCell><TableCell>—</TableCell><TableCell className="font-medium">{node.name}</TableCell><TableCell><span className="text-warning">未配置</span></TableCell><TableCell>{node.serverIp || node.ip || '—'}</TableCell><TableCell>—</TableCell><TableCell>—</TableCell><TableCell>此设备尚未建立设备组</TableCell><TableCell><div className="flex items-center gap-2">{renderDockMenu(node.id, `${node.name} (#${node.id})`)}<Button isIconOnly size="sm" variant="flat" color="default" onPress={() => handleResetSecret(node.id)} title="重置 Token"><KeyIcon /></Button><Button isIconOnly size="sm" variant="flat" onPress={() => handleAdvancedEdit(node.id)} title="高级编辑" aria-label="高级编辑"><AdvancedEditIcon /></Button><Button isIconOnly size="sm" variant="flat" onPress={() => handleDeleteNode(node)} title="删除"><DeleteIcon /></Button><Button size="sm" color="default" onPress={() => handleConfigureOrphan(node)}>补全配置</Button></div></TableCell></TableRow>)
+            ...groups.map(group => { const isChainGroup = group.direction === 'chain'; return <TableRow key={`group-${group.id}`} onDragOver={(e: React.DragEvent) => e.preventDefault()} onDrop={() => handleGroupRowDrop(group.id)}><TableCell><span draggable className="cursor-grab active:cursor-grabbing inline-flex" onDragStart={() => { draggedGroupIdRef.current = group.id; }}><DragHandleIcon /></span></TableCell><TableCell>#{group.id}</TableCell><TableCell className="font-medium">{group.name}</TableCell><TableCell>{{ inbound: '入口', outbound: '出口', monitor: '仅监控', both: '入口＋出口', chain: '链式出口' }[group.direction || 'inbound']}</TableCell><TableCell>{isChainGroup ? <span className="text-default-500">{(group.chainHops || []).length} 跳链路</span> : group.nodeName}</TableCell><TableCell>{userGroupNames(group.userGroupIds)}</TableCell><TableCell>{group.ratio}</TableCell><TableCell>{group.remark || '—'}</TableCell><TableCell><div className="flex items-center gap-2">{!isChainGroup && group.nodeId && renderDockMenu(group.nodeId, `${group.name} (#${group.id})`)}{!isChainGroup && group.nodeId && <TipButton isIconOnly size="sm" variant="flat" color="default" onPress={() => handleResetSecret(group.nodeId!)} title="重置 Token"><KeyIcon /></TipButton>}<TipButton isIconOnly size="sm" variant="flat" onPress={() => handleEdit(group)} title="编辑"><EditIcon /></TipButton><TipButton isIconOnly size="sm" variant="flat" onPress={() => handleOpenJsonEdit(group)} title="高级编辑" aria-label="高级编辑"><EditFilled /></TipButton>{!isChainGroup && group.nodeId && <TipButton isIconOnly size="sm" variant="flat" onPress={() => handleAdvancedEdit(group.nodeId!)} title="设备设置" aria-label="设备设置"><DeviceSettingIcon /></TipButton>}<TipButton isIconOnly size="sm" variant="flat" onPress={() => handleDelete(group)} title="删除"><DeleteIcon /></TipButton></div></TableCell></TableRow>; }),
+            ...orphanNodes.map(node => <TableRow key={`node-${node.id}`}><TableCell>—</TableCell><TableCell>—</TableCell><TableCell className="font-medium">{node.name}</TableCell><TableCell><span className="text-warning">未配置</span></TableCell><TableCell>{node.serverIp || node.ip || '—'}</TableCell><TableCell>—</TableCell><TableCell>—</TableCell><TableCell>此设备尚未建立设备组</TableCell><TableCell><div className="flex items-center gap-2">{renderDockMenu(node.id, `${node.name} (#${node.id})`)}<TipButton isIconOnly size="sm" variant="flat" color="default" onPress={() => handleResetSecret(node.id)} title="重置 Token"><KeyIcon /></TipButton><TipButton isIconOnly size="sm" variant="flat" onPress={() => handleAdvancedEdit(node.id)} title="设备设置" aria-label="设备设置"><DeviceSettingIcon /></TipButton><TipButton isIconOnly size="sm" variant="flat" onPress={() => handleDeleteNode(node)} title="删除"><DeleteIcon /></TipButton><Button size="sm" color="default" onPress={() => handleConfigureOrphan(node)}>补全配置</Button></div></TableCell></TableRow>)
           ]}</TableBody>
         </Table></div></div></CardBody>
       </Card>
@@ -770,9 +813,9 @@ export default function DeviceGroupPage() {
                       <Input labelPlacement="outside-top" size="sm" autoComplete="off" label="服务器 IP / 域名" placeholder="例如：203.0.113.10 或 node.example.com" value={form.serverIp} onChange={(e) => setForm(prev => ({ ...prev, serverIp: e.target.value }))} isInvalid={!!errors.serverIp} errorMessage={errors.serverIp} variant="bordered" />
 
                       <Textarea labelPlacement="outside-top" size="sm" autoComplete="off" variant="bordered" disableAutosize rows={3}
-                        label={<HelpTooltip content={`用户连接使用的 IP 或域名，一行一个，最多 ${MAX_ENTRY_IPS} 个`}>连接地址</HelpTooltip>}
+                        label={<HelpTooltip content="用户连接使用的 IP 或域名，一行一个，数量不限">连接地址</HelpTooltip>}
                         value={form.entryIps.join('\n')}
-                        onChange={(e) => setForm(prev => ({ ...prev, entryIps: e.target.value.split('\n').slice(0, MAX_ENTRY_IPS) }))}
+                        onChange={(e) => setForm(prev => ({ ...prev, entryIps: e.target.value.split('\n') }))}
                         isInvalid={!!errors.entryIp}
                         errorMessage={errors.entryIp}
                         classNames={{ input: 'resize-y min-h-[4.5rem]' }}
@@ -893,9 +936,9 @@ export default function DeviceGroupPage() {
                                   <span className="text-xs text-default-500">Mux</span>
                                   <Switch size="sm" isSelected={hop.mux} onValueChange={(v) => setForm(prev => ({ ...prev, chainHops: prev.chainHops.map((h, i) => i === index ? { ...h, mux: v } : h) }))} />
                                 </div>
-                                <Button isIconOnly size="sm" variant="light" onPress={() => setForm(prev => ({ ...prev, chainHops: prev.chainHops.filter((_, i) => i !== index) }))} title="删除这一跳">
+                                <TipButton isIconOnly size="sm" variant="light" onPress={() => setForm(prev => ({ ...prev, chainHops: prev.chainHops.filter((_, i) => i !== index) }))} title="删除这一跳">
                                   <DeleteIcon />
-                                </Button>
+                                </TipButton>
                               </div>
                             </div>
                             <Select listboxProps={{ emptyContent: <EmptyState compact /> }} size="sm" aria-label={`第 ${index + 1} 跳出口`} placeholder="请选择出口" variant="bordered"
@@ -943,6 +986,25 @@ export default function DeviceGroupPage() {
         onConfirm={confirmDelete}
         loading={deleteLoading}
       />
+
+      {/* 高级编辑：保存设备组的 JSON 配置 */}
+      <Modal isOpen={jsonTarget !== null} onOpenChange={(open) => { if (!open) setJsonTarget(null); }} size="lg" scrollBehavior="outside" backdrop="opaque" placement="center" hideCloseButton classNames={{ base: "max-w-[520px]" }}>
+        <ModalContent>
+          {(onClose) => (
+            <>
+              <ModalHeader>{jsonTarget?.name} (#{jsonTarget?.id})</ModalHeader>
+              <ModalBody className="py-0">
+                <JsonEditor ariaLabel="设备组 JSON 配置" value={jsonText} onChange={(value) => { setJsonText(value); setJsonError(''); }} />
+                {jsonError && <p className="break-words text-xs text-danger">{jsonError}</p>}
+              </ModalBody>
+              <ModalFooter>
+                <Button size="sm" variant="bordered" className="dialog-btn" onPress={onClose}>取消</Button>
+                <Button size="sm" color="primary" className="dialog-btn" isLoading={jsonLoading} onPress={submitJsonEdit}>确定</Button>
+              </ModalFooter>
+            </>
+          )}
+        </ModalContent>
+      </Modal>
 
       <Modal isOpen={offlineModalOpen} onOpenChange={setOfflineModalOpen} size="lg" scrollBehavior="outside" backdrop="opaque" placement="center">
         <ModalContent>
@@ -1000,7 +1062,7 @@ export default function DeviceGroupPage() {
           {(onClose) => (
             <>
               <ModalHeader className="flex flex-col gap-1">
-                <h2 className="text-base font-semibold">高级编辑 - {advancedTarget?.name || '—'}</h2>
+                <h2 className="text-base font-semibold">设备设置 - {advancedTarget?.name || '—'}</h2>
               </ModalHeader>
               <ModalBody>
                 <div>

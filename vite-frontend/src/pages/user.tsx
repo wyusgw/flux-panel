@@ -1,3 +1,4 @@
+import { TipButton } from "@/components/tip-button";
 import { RuleSearchModal, EMPTY_RULE_SEARCH, countRuleSearch, matchRuleSearch, RuleSearchFilters } from "@/components/rule-search-modal";
 import { getDeviceGroupList, getForwardList } from "@/api";
 import { ControlOutlined, DeleteOutlined, DisconnectOutlined, FireOutlined, PaperClipOutlined, SafetyCertificateOutlined, SettingOutlined, ShoppingOutlined, UserAddOutlined } from "@/components/ant-icons";
@@ -963,34 +964,34 @@ export default function UserPage() {
       default:
         return (
           <div className="flex items-center gap-1.5 [&>button]:!border-1 [&>button]:!border-default-300">
-            <Button isIconOnly size="sm" variant="bordered" onPress={() => handleManageForwards(user)} isDisabled={user.roleId === 0} title="管理转发规则">
+            <TipButton isIconOnly size="sm" variant="bordered" onPress={() => handleManageForwards(user)} isDisabled={user.roleId === 0} title="管理转发规则">
               <PaperClipOutlined />
-            </Button>
-            <Button isIconOnly size="sm" variant="bordered" onPress={() => handleManageTunnels(user)} title="隧道权限" aria-label="隧道权限">
+            </TipButton>
+            <TipButton isIconOnly size="sm" variant="bordered" onPress={() => handleManageTunnels(user)} title="隧道权限" aria-label="隧道权限">
               <DisconnectOutlined />
-            </Button>
-            <Button isIconOnly size="sm" variant="bordered" onPress={() => handleEdit(user)} title="编辑">
+            </TipButton>
+            <TipButton isIconOnly size="sm" variant="bordered" onPress={() => handleEdit(user)} title="编辑">
               <EditIcon />
-            </Button>
+            </TipButton>
             {myMenuPermissions === null && (
-              <Button isIconOnly size="sm" variant="bordered" onPress={() => handleOpenMenuPermission(user)} title="权限分配" aria-label="权限分配">
+              <TipButton isIconOnly size="sm" variant="bordered" onPress={() => handleOpenMenuPermission(user)} title="权限分配" aria-label="权限分配">
                 <ControlOutlined />
-              </Button>
+              </TipButton>
             )}
             {user.demoMode === 1 && user.roleId === 0 && (
-              <Button isIconOnly size="sm" variant="bordered" onPress={() => handleOpenPermission(user)} title="演示权限分配" aria-label="演示权限分配">
+              <TipButton isIconOnly size="sm" variant="bordered" onPress={() => handleOpenPermission(user)} title="演示权限分配" aria-label="演示权限分配">
                 <SafetyCertificateOutlined />
-              </Button>
+              </TipButton>
             )}
-            <Button isIconOnly size="sm" variant="bordered" onPress={() => handleEditPackage(user)} isDisabled={user.roleId === 0} title="编辑用户套餐">
+            <TipButton isIconOnly size="sm" variant="bordered" onPress={() => handleEditPackage(user)} isDisabled={user.roleId === 0} title="编辑用户套餐">
               <ShoppingOutlined />
-            </Button>
-            <Button isIconOnly size="sm" variant="bordered" onPress={() => handleResetFlow(user)} title="重置流量">
+            </TipButton>
+            <TipButton isIconOnly size="sm" variant="bordered" onPress={() => handleResetFlow(user)} title="重置流量">
               <FireOutlined />
-            </Button>
-            <Button isIconOnly size="sm" variant="bordered" onPress={() => handleDelete(user)} isDisabled={user.roleId === 0 && user.demoMode !== 1} title="删除">
+            </TipButton>
+            <TipButton isIconOnly size="sm" variant="bordered" onPress={() => handleDelete(user)} isDisabled={user.roleId === 0 && user.demoMode !== 1} title="删除">
               <DeleteIcon />
-            </Button>
+            </TipButton>
           </div>
         );
     }
@@ -1440,7 +1441,7 @@ export default function UserPage() {
                             >
                               {userTunnel.status === 1 ? '禁用' : '启用'}
                             </Button>
-                            <Button
+                            <TipButton
                               size="sm"
                               variant="flat"
                               color="default"
@@ -1449,7 +1450,7 @@ export default function UserPage() {
                               title="重置流量"
                             >
                               <FireOutlined />
-                            </Button>
+                            </TipButton>
                             <Button
                               size="sm"
                               variant="flat"

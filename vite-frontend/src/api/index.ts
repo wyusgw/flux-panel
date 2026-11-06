@@ -123,6 +123,7 @@ export const deleteTaskQueue = (id: number) => Network.post("/taskQueue/delete",
 export const createDeviceGroup = (data: any) => Network.post("/deviceGroup/create", data);
 export const getDeviceGroupList = () => Network.post("/deviceGroup/list");
 export const updateDeviceGroup = (data: any) => Network.post("/deviceGroup/update", data);
+export const updateDeviceGroupConfig = (id: number, config: string) => Network.post("/deviceGroup/updateConfig", { id, config });
 export const deleteDeviceGroup = (id: number) => Network.post("/deviceGroup/delete", { id });
 export const batchDeleteDeviceGroups = (ids: number[]) => Network.post("/deviceGroup/batchDelete", { ids });
 export const reorderDeviceGroups = (groups: Array<{ id: number; sort: number }>) => Network.post("/deviceGroup/reorder", { groups });

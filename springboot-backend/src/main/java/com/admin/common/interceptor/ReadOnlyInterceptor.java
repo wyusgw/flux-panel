@@ -125,7 +125,7 @@ public class ReadOnlyInterceptor implements HandlerInterceptor {
                 "create", "update", "delete");
         addRoutes("deviceGroup", DemoArea.DEVICE_GROUP,
                 Arrays.asList("device_group", "device_group_chain_hop", "device_group_user_group_relation"),
-                "create", "update", "delete", "batchDelete");
+                "create", "update", "updateConfig", "delete", "batchDelete");
         addRoutes("speedLimit", DemoArea.SPEED_LIMIT, Collections.singletonList("speed_limit"),
                 "create", "update", "delete");
         addRoutes("user", DemoArea.USER, Arrays.asList("user", "user_tunnel", "forward"),

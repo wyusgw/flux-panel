@@ -45,6 +45,15 @@ public class DeviceGroupController extends BaseController {
 
     @LogAnnotation
     @RequireRole
+    @PostMapping("/updateConfig")
+    public R updateConfig(@RequestBody Map<String, Object> params) {
+        Object id = params.get("id");
+        Object config = params.get("config");
+        return deviceGroupService.updateDeviceGroupConfig(id == null ? null : Long.valueOf(id.toString()), config == null ? null : config.toString());
+    }
+
+    @LogAnnotation
+    @RequireRole
     @PostMapping("/update")
     public R update(@Validated @RequestBody DeviceGroupUpdateDto deviceGroupUpdateDto) {
         return deviceGroupService.updateDeviceGroup(deviceGroupUpdateDto);

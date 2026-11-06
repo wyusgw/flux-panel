@@ -25,7 +25,7 @@ public final class DemoDataMasker {
     public static final String MASK = "***";
 
     private static final Set<String> MASKED_KEYS = new HashSet<>(Arrays.asList(
-            "addr", "chatid", "code", "content", "dedupkey", "error", "info", "interfacename",
+            "addr", "chatid", "code", "config", "content", "dedupkey", "error", "info", "interfacename",
             "lasterror", "payload", "redeemcode", "remark", "summary", "tcplistenaddr",
             "telegrambindcode", "telegramchatid", "tradeno", "udplistenaddr", "walletbalance"
     ));

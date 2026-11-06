@@ -1,3 +1,4 @@
+import { TipButton } from "@/components/tip-button";
 import { useState, useEffect, useRef } from "react";
 import { ToolbarAddIcon, ToolbarDeleteIcon } from "@/components/toolbar-icons";
 import { Card, CardBody, CardHeader } from "@heroui/card";
@@ -337,8 +338,8 @@ export default function PackagePlanPage() {
                   <TableCell>{plan.hidden === 1 ? '是' : '否'}</TableCell>
                   <TableCell>
                     <div className="flex justify-end items-center gap-1">
-                      <Button isIconOnly size="sm" variant="flat" onPress={() => handleEdit(plan)} title="编辑"><EditIcon /></Button>
-                      <Button isIconOnly size="sm" variant="flat" color="danger" onPress={() => handleDelete(plan)} title="删除"><DeleteIcon /></Button>
+                      <TipButton isIconOnly size="sm" variant="flat" onPress={() => handleEdit(plan)} title="编辑"><EditIcon /></TipButton>
+                      <TipButton isIconOnly size="sm" variant="flat" color="danger" onPress={() => handleDelete(plan)} title="删除"><DeleteIcon /></TipButton>
                     </div>
                   </TableCell>
                 </TableRow>

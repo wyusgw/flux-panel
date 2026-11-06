@@ -1567,3 +1567,38 @@ SET @sql = (
 PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
+
+-- 连接地址不再限制个数：隧道的入口地址会复制节点的连接地址，放宽为 longtext（重复执行无影响）
+SET @sql = (
+    SELECT IF(
+        EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = DATABASE()
+              AND table_name = 'tunnel'
+              AND column_name = 'in_ip'
+              AND data_type <> 'longtext'
+        ),
+        'ALTER TABLE `tunnel` MODIFY COLUMN `in_ip` LONGTEXT NOT NULL;',
+        'SELECT "Column `in_ip` not exists or already modified in `tunnel`";'
+    )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- device_group 表：添加 config 字段（高级编辑保存的 JSON 配置，重复执行无影响）
+SET @sql = (
+    SELECT IF(
+        NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = DATABASE()
+              AND table_name = 'device_group'
+              AND column_name = 'config'
+        ),
+        'ALTER TABLE `device_group` ADD COLUMN `config` LONGTEXT COMMENT "高级编辑保存的 JSON 配置";',
+        'SELECT "Column `config` already exists in `device_group`";'
+    )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;

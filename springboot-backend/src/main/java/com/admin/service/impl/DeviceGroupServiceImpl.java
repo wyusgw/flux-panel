@@ -1,5 +1,7 @@
 package com.admin.service.impl;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.admin.common.dto.DeviceGroupChainHopDto;
 import com.admin.common.dto.DeviceGroupDto;
 import com.admin.common.dto.DeviceGroupUpdateDto;
@@ -44,6 +46,7 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
 
     private static final String ERROR_NODE_NOT_FOUND = "所属节点不存在";
     private static final String ERROR_GROUP_NOT_FOUND = "设备组不存在";
+    private static final String EMPTY_CONFIG = "{}";
     private static final String ERROR_CREATE_FAILED = "设备组创建失败";
     private static final String ERROR_UPDATE_FAILED = "设备组更新失败";
     private static final String ERROR_IN_USE = "该设备组仍被转发规则使用，请先删除相关规则";
@@ -283,6 +286,7 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
             item.put("sort", group.getSort());
             if (isAdmin) {
                 item.put("remark", group.getRemark());
+                item.put("config", group.getConfig() == null ? EMPTY_CONFIG : group.getConfig());
                 item.put("offlineGraceEnabled", group.getOfflineGraceEnabled() != null && group.getOfflineGraceEnabled() == 1);
                 item.put("offlineGraceSeconds", group.getOfflineGraceSeconds());
                 item.put("offlineRetainEnabled", group.getOfflineRetainEnabled() != null && group.getOfflineRetainEnabled() == 1);
@@ -311,6 +315,30 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
         }).collect(Collectors.toList());
 
         return R.ok(result);
+    }
+
+    @Override
+    public R updateDeviceGroupConfig(Long id, String config) {
+        DeviceGroup group = id == null ? null : this.getById(id);
+        if (group == null) {
+            return R.err(ERROR_GROUP_NOT_FOUND);
+        }
+        if (!isJsonObject(config)) {
+            return R.err("配置必须是合法的 JSON 对象");
+        }
+        group.setConfig(config);
+        return this.updateById(group) ? R.ok() : R.err("配置保存失败");
+    }
+
+    static boolean isJsonObject(String config) {
+        if (config == null || config.trim().isEmpty()) {
+            return false;
+        }
+        try {
+            return new ObjectMapper().readTree(config).isObject();
+        } catch (JsonProcessingException e) {
+            return false;
+        }
     }
 
     @Override

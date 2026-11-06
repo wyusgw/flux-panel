@@ -37,17 +37,25 @@ const PAYMENT_TYPE_LABELS: Record<PaymentChannel['type'], string> = {
 };
 
 const NoPaymentIcon = () => (
-  <svg className="w-28 h-28" viewBox="0 0 112 112" fill="none" aria-hidden="true">
-    <ellipse cx="50" cy="98" rx="42" ry="6" className="fill-default-300" />
-    <path d="M14 64h72l8 14v18a3 3 0 01-3 3H9a3 3 0 01-3-3V78l8-14z" className="fill-default-400" />
-    <rect x="26" y="22" width="48" height="64" rx="2" className="fill-default-500" />
-    <rect x="32" y="29" width="36" height="17" rx="1" className="fill-default-400" />
-    <path d="M32 54h36M32 62h36M32 70h24" className="stroke-default-300" strokeWidth="2.5" />
-    <path d="M6 78h24l4 8h32l4-8h24v18a3 3 0 01-3 3H9a3 3 0 01-3-3V78z" className="fill-default-400" />
-    <path d="M90 6c8 0 14 5 14 11.500S98 29 90 29c-2 0-4-.3-5.700-1L76 31l2.500-6.500C77 22.500 76 20 76 17.500 76 11 82 6 90 6z" className="fill-default-400" />
-    <circle cx="84" cy="17.500" r="1.800" className="fill-default-200" />
-    <circle cx="90" cy="17.500" r="1.800" className="fill-default-200" />
-    <circle cx="96" cy="17.500" r="1.800" className="fill-default-200" />
+  <svg width="105" height="102" viewBox="31 8 105 102" fill="none" aria-hidden="true">
+    <defs>
+      <linearGradient id="no-payment-shadow" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stopColor="#939395" />
+        <stop offset="1" stopColor="#5f5f60" />
+      </linearGradient>
+    </defs>
+    <ellipse cx="75.700" cy="101.700" rx="44.700" ry="7.700" fill="url(#no-payment-shadow)" />
+    <path d="M51 64 40 76h71.500l-11-12H51Z" fill="#7e848b" />
+    <path d="M51 31.500a1.500 1.500 0 0 1 1.500-1.500h46.600a1.500 1.500 0 0 1 1.500 1.500V76H51V31.500Z" fill="#aeaeb0" />
+    <rect x="58" y="37.500" width="36" height="18.500" rx="1" fill="#9da0a4" />
+    <rect x="58" y="63.400" width="36" height="2.500" rx="1.250" fill="#9da0a4" />
+    <rect x="58" y="71" width="36" height="2.500" rx="1.250" fill="#9da0a4" />
+    <path d="M40 76h71.500v23.500a3 3 0 0 1-3 3H43a3 3 0 0 1-3-3V76Z" fill="#9da0a4" />
+    <path d="M60 76h31.400c-.3 3.500-1.800 7-4 7H64c-2.200 0-3.700-3.500-4-7Z" fill="#a7a7aa" />
+    <path d="M121.500 9.500c8.300 0 15 5.400 15 12s-6.700 12-15 12c-3 0-5.800-.7-8.100-1.900L108 34l1.400-6.200c-1.800-1.800-2.900-3.900-2.900-6.300 0-6.600 6.700-12 15-12Z" fill="#9da0a4" />
+    <path d="m115.500 19.700 1.900 3.300h-3.800l1.900-3.300Z" fill="#aeaeb0" />
+    <rect x="119.800" y="19.800" width="3.200" height="3.200" fill="#aeaeb0" />
+    <circle cx="127.700" cy="21.400" r="1.700" fill="#aeaeb0" />
   </svg>
 );
 
@@ -59,7 +67,7 @@ const planTypeLabel = (durationDays: number) => {
 };
 
 const TagIcon = () => (
-  <svg className="w-4 h-4 text-default-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+  <svg className="w-4 h-4 text-default-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20.59 13.41L11 3.83A2 2 0 009.59 3.2L4 3a1 1 0 00-1 1l.2 5.59a2 2 0 00.58 1.41l9.59 9.59a2 2 0 002.83 0l4.41-4.41a2 2 0 000-2.83z" />
     <circle cx="7.5" cy="7.5" r="1.25" fill="currentColor" stroke="none" />
   </svg>
@@ -265,7 +273,7 @@ export default function ShopPage() {
               ))}
             </div>
           ) : (
-            <div className="flex flex-col items-center justify-center gap-3 pt-2">
+            <div className="flex flex-col items-center justify-center gap-2 pt-4">
               <NoPaymentIcon />
               <p className="text-sm text-foreground">站点未配置任何支付方式!</p>
             </div>
@@ -334,8 +342,8 @@ export default function ShopPage() {
       <Card className="management-table-card">
         <CardHeader className="px-6 py-4 border-b border-default-100"><h2 className="text-base font-semibold text-foreground">兑换套餐</h2></CardHeader>
         <CardBody className="p-6">
-          <p className="text-sm text-default-500 mb-3">如果您有兑换码，则可以免费或低价购买对应的套餐。</p>
-          <div className="flex gap-2 max-w-lg">
+          <p className="mt-3 mb-7 py-0.5 pl-2.5 border-l-[3px] border-default-100 text-sm text-default-600">如果您有兑换码，则可以免费或低价购买对应的套餐。</p>
+          <div className="flex items-center gap-3.5">
             <Input
               size="sm"
               autoComplete="off"
@@ -344,9 +352,10 @@ export default function ShopPage() {
               onChange={(e) => setRedeemInput(e.target.value)}
               variant="bordered"
               startContent={<TagIcon />}
-              className="flex-1"
+              className="w-[196px]"
+              classNames={{ inputWrapper: "h-8 min-h-8 border-small border-default-300 rounded-small" }}
             />
-            <Button color="default" onPress={handleRedeem} isLoading={redeemLoading}>兑换</Button>
+            <Button size="sm" color="primary" radius="sm" className="h-8 min-w-16 text-sm tracking-[0.2em]" onPress={handleRedeem} isLoading={redeemLoading}>兑换</Button>
           </div>
         </CardBody>
       </Card>

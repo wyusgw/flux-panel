@@ -142,6 +142,7 @@ export const getNodeList = () => Network.post("/node/list");
 export const updateNode = (data: any) => Network.post("/node/update", data);
 export const deleteNode = (id: number) => Network.post("/node/delete", { id });
 export const getNodeInstallCommand = (id: number) => Network.post("/node/install", { id });
+export const getNodeConfig = (id: number) => Network.post("/node/config", { id });
 export const resetNodeSecret = (id: number) => Network.post("/node/resetSecret", { id });
 export const checkNodeStatus = (nodeId?: number) => {
   const params = nodeId ? { nodeId } : {};

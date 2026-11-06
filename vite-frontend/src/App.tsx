@@ -10,6 +10,7 @@ import HomePage from "@/pages/home";
 import ForwardPage from "@/pages/forward";
 import TunnelPage from "@/pages/tunnel";
 import NodeProbePage from "@/pages/node-probe";
+import NodeConfigPage from "@/pages/node-config";
 import UserPage from "@/pages/user";
 import ShopPage from "@/pages/shop";
 import OrdersPage from "@/pages/orders";
@@ -218,6 +219,7 @@ function App() {
         } 
       />
       <Route path="/node" element={<ProtectedRoute skipLayout={true}><NodeProbePage /></ProtectedRoute>} />
+      <Route path="/nodeConfig" element={<ProtectedRoute skipLayout={true}><NodeConfigPage /></ProtectedRoute>} />
       <Route
         path="/user"
         element={

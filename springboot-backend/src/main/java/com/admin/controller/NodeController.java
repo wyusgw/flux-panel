@@ -63,6 +63,14 @@ public class NodeController extends BaseController {
 
     @LogAnnotation
     @RequireRole
+    @PostMapping("/config")
+    public R getNodeConfig(@RequestBody Map<String, Object> params) {
+        Long id = Long.valueOf(params.get("id").toString());
+        return nodeService.getNodeConfig(id);
+    }
+
+    @LogAnnotation
+    @RequireRole
     @PostMapping("/resetSecret")
     public R resetSecret(@RequestBody Map<String, Object> params) {
         Long id = Long.valueOf(params.get("id").toString());

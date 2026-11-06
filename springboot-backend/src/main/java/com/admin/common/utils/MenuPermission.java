@@ -83,7 +83,7 @@ public final class MenuPermission {
                 "cleanup/invalidUsers", "cleanup/cleanInvalidUsers", "cleanup/invalidForwards", "cleanup/cleanInvalidForwards");
         gate(new String[]{"adminDashboard", "orderManagement", "user"}, "user/list");
         gate(new String[]{"adminDashboard", "deviceGroup", "lookingGlass", "nodeProbe", "tunnel"}, "node/list");
-        gate(new String[]{"deviceGroup"}, "node/create", "node/delete", "node/install", "node/resetSecret", "node/update",
+        gate(new String[]{"deviceGroup"}, "node/config", "node/create", "node/delete", "node/install", "node/resetSecret", "node/update",
                 "deviceGroup/batchDelete", "deviceGroup/create", "deviceGroup/delete", "deviceGroup/reorder", "deviceGroup/update");
         gate(new String[]{"pushNotification"}, "deviceGroup/offlineConfig", "telegramLog/list", "user/telegram/test");
         gate(new String[]{"config", "pushNotification"}, "config/update", "config/updateSingle");

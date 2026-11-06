@@ -207,8 +207,6 @@ export default function DeviceGroupPage() {
   // 要求紧跟用户操作、中间不能有 await 网络请求，否则会静默失败（仍返回 true，但实际
   // 没有复制到剪贴板），提前取好数据能避开这个坑
   const [installInfoCache, setInstallInfoCache] = useState<Record<number, InstallInfo>>({});
-  const [configModalOpen, setConfigModalOpen] = useState(false);
-  const [configTarget, setConfigTarget] = useState<{ node: NodeItem | null; group: DeviceGroupItem | null }>({ node: null, group: null });
   const [offlineModalOpen, setOfflineModalOpen] = useState(false);
   const [offlineInfo, setOfflineInfo] = useState<InstallInfo | null>(null);
   const [offlineTitle, setOfflineTitle] = useState('');
@@ -481,11 +479,7 @@ export default function DeviceGroupPage() {
   };
 
   const handleViewConfig = (nodeId: number) => {
-    setConfigTarget({
-      node: nodes.find(node => node.id === nodeId) || null,
-      group: groups.find(group => group.nodeId === nodeId) || null
-    });
-    setConfigModalOpen(true);
+    window.open(`/nodeConfig?id=${nodeId}`, '_blank');
   };
 
   const handleAdvancedEdit = (nodeId: number) => {
@@ -949,33 +943,6 @@ export default function DeviceGroupPage() {
         onConfirm={confirmDelete}
         loading={deleteLoading}
       />
-
-      <Modal isOpen={configModalOpen} onOpenChange={setConfigModalOpen} size="lg" scrollBehavior="outside" backdrop="opaque" placement="center">
-        <ModalContent>
-          {(onClose) => (
-            <>
-              <ModalHeader className="flex flex-col gap-1">
-                <h2 className="text-lg font-semibold">查看节点配置 - {configTarget.node?.name || '—'}</h2>
-              </ModalHeader>
-              <ModalBody>
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div className="text-default-500">设备名称</div><div className="font-medium">{configTarget.node?.name || '—'}</div>
-                  <div className="text-default-500">服务器 IP / 域名</div><div className="font-medium">{configTarget.node?.serverIp || '—'}</div>
-                  <div className="text-default-500">入口 IP / 域名</div><div className="font-medium">{configTarget.node?.ip || '—'}</div>
-                  <div className="text-default-500">端口范围</div><div className="font-medium">{configTarget.node?.portSta || '—'} - {configTarget.node?.portEnd || '—'}</div>
-                  <div className="text-default-500">设备角色</div><div className="font-medium">{configTarget.group ? { inbound: '入口', outbound: '出口', monitor: '监控', both: '入口＋出口', chain: '链式出口' }[configTarget.group.direction || 'inbound'] : '未配置设备组'}</div>
-                  <div className="text-default-500">可见用户组</div><div className="font-medium">{configTarget.group ? userGroupNames(configTarget.group.userGroupIds) : '—'}</div>
-                  <div className="text-default-500">流量倍率</div><div className="font-medium">{configTarget.group?.ratio ?? '—'}</div>
-                  <div className="text-default-500">备注</div><div className="font-medium">{configTarget.group?.remark || '—'}</div>
-                </div>
-              </ModalBody>
-              <ModalFooter>
-                <Button variant="light" onPress={onClose}>关闭</Button>
-              </ModalFooter>
-            </>
-          )}
-        </ModalContent>
-      </Modal>
 
       <Modal isOpen={offlineModalOpen} onOpenChange={setOfflineModalOpen} size="lg" scrollBehavior="outside" backdrop="opaque" placement="center">
         <ModalContent>

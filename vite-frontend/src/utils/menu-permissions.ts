@@ -15,6 +15,7 @@ const PATH_PERMISSIONS: Record<string, string[]> = {
   '/push-notification': ['pushNotification'],
   '/tunnel': ['tunnel'],
   '/devicegroup': ['deviceGroup'],
+  '/nodeConfig': ['deviceGroup'],
   '/nodegroup': ['nodeGroup'],
   '/user': ['user'],
   '/usergroup': ['userGroup'],

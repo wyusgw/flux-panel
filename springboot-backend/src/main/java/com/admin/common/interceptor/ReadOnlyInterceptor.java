@@ -49,6 +49,7 @@ public class ReadOnlyInterceptor implements HandlerInterceptor {
             PREFIX + "forward/list",
             PREFIX + "forwardGroup/list",
             PREFIX + "inviteCode/list",
+            PREFIX + "node/config",
             PREFIX + "node/list",
             PREFIX + "nodeGroup/list",
             PREFIX + "nodeGroup/names",

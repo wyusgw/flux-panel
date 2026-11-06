@@ -1,4 +1,4 @@
-import { CopyOutlined, DisconnectOutlined, EditFilled, PlusOutlined } from "@/components/ant-icons";
+import { CopyOutlined, DisconnectOutlined, EditFilled, InboxOutlined, InfoCircleOutlined, PlusOutlined } from "@/components/ant-icons";
 import { useState, useEffect, useRef } from "react";
 import { ToolbarAddIcon, ToolbarDeleteIcon } from "@/components/toolbar-icons";
 import { Card, CardBody, CardHeader } from "@heroui/card";
@@ -9,7 +9,8 @@ import { Select, SelectItem } from "@heroui/select";
 import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter } from "@heroui/modal";
 import { Spinner } from "@heroui/spinner";
 import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from "@heroui/table";
-import { Dropdown, DropdownTrigger, DropdownMenu, DropdownItem, DropdownSection } from "@heroui/dropdown";
+import { DropdownMenu, DropdownItem, DropdownSection } from "@heroui/dropdown";
+import { HoverDropdown } from "@/components/hover-dropdown";
 import { Switch } from "@heroui/switch";
 import toast from 'react-hot-toast';
 import { copyText } from '@/utils/clipboard';
@@ -602,19 +603,19 @@ export default function DeviceGroupPage() {
   };
 
   const renderDockMenu = (nodeId: number, title: string) => (
-    <Dropdown placement="bottom-end">
-      <DropdownTrigger>
-        <Button size="sm" variant="bordered" className="dialog-btn" isLoading={dockLoadingNodeId === nodeId} onPress={() => prefetchInstallInfo(nodeId)}>对接</Button>
-      </DropdownTrigger>
-      <DropdownMenu aria-label="对接操作" onAction={(key) => handleDockAction(nodeId, key as string, title)}>
-        <DropdownSection title={title}>
-          <DropdownItem key="copy-auto">复制在线安装命令（自动探测线路）</DropdownItem>
-          <DropdownItem key="copy-overseas">复制在线安装命令（海外主线路）</DropdownItem>
-          <DropdownItem key="offline">离线部署</DropdownItem>
-          <DropdownItem key="view-config">查看节点配置</DropdownItem>
+    <HoverDropdown
+      onOpen={() => prefetchInstallInfo(nodeId)}
+      trigger={<Button size="sm" variant="bordered" className="dialog-btn dock-btn" isLoading={dockLoadingNodeId === nodeId}>对接</Button>}
+    >
+      <DropdownMenu aria-label="对接操作" className="p-0" itemClasses={{ base: 'gap-2.5 rounded-small px-3 py-1.5', title: 'text-sm font-normal' }} onAction={(key) => handleDockAction(nodeId, key as string, title)}>
+        <DropdownSection title={title} classNames={{ base: 'mb-0', heading: 'block border-b-1 border-default-200 px-3 pb-2 pt-1 mb-1 text-sm font-normal text-default-400' }}>
+          <DropdownItem key="copy-auto" startContent={<CopyOutlined className="w-3 h-3 flex-shrink-0 text-default-500" />}>复制在线安装命令 (自动探测线路)</DropdownItem>
+          <DropdownItem key="copy-overseas" startContent={<CopyOutlined className="w-3 h-3 flex-shrink-0 text-default-500" />}>复制在线安装命令 (海外主线路)</DropdownItem>
+          <DropdownItem key="offline" startContent={<InboxOutlined className="w-3 h-3 flex-shrink-0 text-default-500" />}>离线部署</DropdownItem>
+          <DropdownItem key="view-config" startContent={<InfoCircleOutlined className="w-3 h-3 flex-shrink-0 text-default-500" />}>查看节点配置（调试用）</DropdownItem>
         </DropdownSection>
       </DropdownMenu>
-    </Dropdown>
+    </HoverDropdown>
   );
 
   const handleGroupRowDrop = async (targetId: number) => {

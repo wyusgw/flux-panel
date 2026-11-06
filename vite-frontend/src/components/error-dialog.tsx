@@ -62,7 +62,7 @@ export function ErrorDialogHost() {
       isOpen={!!current}
       onOpenChange={(open) => { if (!open) close(); }}
       size="sm"
-      backdrop="blur"
+      backdrop="opaque"
       placement="center"
       hideCloseButton
     >

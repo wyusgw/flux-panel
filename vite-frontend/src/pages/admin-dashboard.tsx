@@ -1,3 +1,4 @@
+import { BarChartOutlined, FilterFilled, TableOutlined } from "@/components/ant-icons";
 import { Card, CardBody, CardHeader } from "@heroui/card";
 import { nextSort, SortableHeader } from "@/components/table-sort";
 import { Button } from "@heroui/button";
@@ -40,8 +41,8 @@ const isSameMonth = (time: number | undefined, date: Date) => {
 const currency = (amount: number) => `${amount.toFixed(2)} 元`;
 const formatFlow = (value: number) => value < 1024 ** 2 ? `${(value / 1024).toFixed(2)} KiB` : value < 1024 ** 3 ? `${(value / 1024 ** 2).toFixed(2)} MiB` : `${(value / 1024 ** 3).toFixed(2)} GiB`;
 
-const TableIcon = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 20 20"><rect x="3" y="4" width="14" height="12" rx="1.5" /><path d="M3 8h14M8 8v8" /></svg>;
-const ChartIcon = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 20 20"><path strokeLinecap="round" d="M4 16V9M9 16V4M14 16v-5" /><path strokeLinecap="round" strokeLinejoin="round" d="M3 16h14" /></svg>;
+const TableIcon = () => <TableOutlined />;
+const ChartIcon = () => <BarChartOutlined />;
 
 // 充值趋势迷你折线图：「今日充值」「本月充值」两格右侧用的是同一个组件，
 // 只是喂进去的趋势数据范围不同（按天 14 天 / 按月 6 个月）
@@ -157,7 +158,7 @@ const NodeOnlineChart = () => {
 
 // 排行卡片的表头筛选与排序（样式与转发规则表格一致）：「排名」「单向流量」列可点击排序，
 // 「用户 / 节点」列表头有漏斗图标，点开按名称关键字筛选；筛选和排序后保留原始名次，表格与图表视图共用同一份结果
-const IconFilter = () => <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M3 4h18l-7 8.5V19l-4 2v-8.5L3 4z" /></svg>;
+const IconFilter = () => <FilterFilled />;
 function RankTable({ title, rows: allRows, kind }: { title: string; rows: { name: string; value: number }[]; kind: 'flow' | 'node' }) {
   const [view, setView] = useState<'table' | 'chart'>('table');
   const [keyword, setKeyword] = useState('');

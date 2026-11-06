@@ -235,7 +235,7 @@ export default function NodeGroupPage() {
           </CardBody>
       </Card>
 
-      <Modal isOpen={modalOpen} onOpenChange={setModalOpen} size="lg" scrollBehavior="outside" backdrop="blur" placement="center">
+      <Modal isOpen={modalOpen} onOpenChange={setModalOpen} size="lg" scrollBehavior="outside" backdrop="opaque" placement="center">
         <ModalContent>
           {(onClose) => (
             <>

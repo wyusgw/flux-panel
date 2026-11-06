@@ -1,3 +1,4 @@
+import { CheckOutlined, DisconnectOutlined, DownOutlined, LinkOutlined, LockOutlined, PlusCircleOutlined, RightOutlined, SearchOutlined, SettingOutlined, SyncOutlined, UserOutlined } from "@/components/ant-icons";
 import { useState, useEffect, useRef, ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardBody, CardHeader } from "@heroui/card";
@@ -68,30 +69,18 @@ const DANGER_OUTLINE_BUTTON = 'border-1 !border-red-500 !text-red-500 text-sm fo
 const THIN_INPUT = { inputWrapper: 'border-1' };
 
 const LockIcon = () => (
-  <svg className="w-4 h-4 text-default-400 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
-    <rect x="5" y="11" width="14" height="9" rx="2" />
-    <path d="M8 11V7a4 4 0 018 0v4" />
-  </svg>
+  <LockOutlined className="w-4 h-4 text-default-400 flex-shrink-0" />
 );
 
 const UserFieldIcon = () => (
-  <svg className="w-4 h-4 text-default-400 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
-    <circle cx="12" cy="8" r="3.2" />
-    <path d="M5.5 19.5a6.5 6.5 0 0113 0" />
-  </svg>
+  <UserOutlined className="w-4 h-4 text-default-400 flex-shrink-0" />
 );
 
-const ButtonIcon = ({ children }: { children: ReactNode }) => (
-  <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24" aria-hidden="true">
-    {children}
-  </svg>
-);
-
-const RenewIcon = () => <ButtonIcon><path d="M4 12a8 8 0 0113.7-5.7L20 8.5M20 4v4.5h-4.5M20 12a8 8 0 01-13.7 5.7L4 15.5M4 20v-4.5h4.5" /></ButtonIcon>;
-const RechargeIcon = () => <ButtonIcon><circle cx="12" cy="12" r="8.5" /><path d="M12 8.5v7M8.5 12h7" /></ButtonIcon>;
-const LinkIcon = () => <ButtonIcon><path d="M10 14a4 4 0 005.7 0l3-3a4 4 0 00-5.7-5.7l-1 1M14 10a4 4 0 00-5.7 0l-3 3a4 4 0 005.7 5.7l1-1" /></ButtonIcon>;
-const UnlinkIcon = () => <ButtonIcon><path d="M13.5 6.3l-.5.5M10.5 17.7l.5-.5M16.5 13.5l2.2-2.5a4 4 0 00-5.7-5.7M7.5 10.5L5.3 13a4 4 0 005.7 5.7M4 4l16 16" /></ButtonIcon>;
-const SettingsIcon = () => <ButtonIcon><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-2.9 1.2V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-2.9-1.2l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00-1.2-2.9H3a2 2 0 110-4h.1a1.7 1.7 0 001.2-2.9l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3h.1A1.7 1.7 0 0010 3.1V3a2 2 0 114 0v.1a1.7 1.7 0 002.9 1.2l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8v.1a1.7 1.7 0 001.5 1h.1a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z" /></ButtonIcon>;
+const RenewIcon = () => <SyncOutlined />;
+const RechargeIcon = () => <PlusCircleOutlined />;
+const LinkIcon = () => <LinkOutlined />;
+const UnlinkIcon = () => <DisconnectOutlined />;
+const SettingsIcon = () => <SettingOutlined />;
 
 /** 按钮上方的气泡确认 */
 const PopConfirm = ({ title, onConfirm, children }: { title: string; onConfirm: () => void; children: ReactNode }) => {
@@ -207,9 +196,7 @@ const GroupMultiSelect = ({
           }
         }}
         endContent={
-          <svg className="w-4 h-4 text-default-400 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24" aria-hidden="true">
-            {open ? <><circle cx="11" cy="11" r="6.5" /><path d="M16 16l4 4" /></> : <path d="M6 9l6 6 6-6" />}
-          </svg>
+          open ? <SearchOutlined className="w-4 h-4 text-default-400 flex-shrink-0" /> : <DownOutlined className="w-4 h-4 text-default-400 flex-shrink-0" />
         }
       />
       {open && (
@@ -226,7 +213,7 @@ const GroupMultiSelect = ({
               >
                 <span className="truncate">{group.name}</span>
                 {selected.includes(group.id) && (
-                  <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
+                  <CheckOutlined className="w-4 h-4 flex-shrink-0" />
                 )}
               </button>
             ))
@@ -610,7 +597,7 @@ export default function AccountCenterPage() {
       </Card>
 
       {/* Telegram 绑定码弹窗 */}
-      <Modal isOpen={isBindOpen} onOpenChange={onBindOpenChange} size="sm" placement="center" backdrop="blur">
+      <Modal isOpen={isBindOpen} onOpenChange={onBindOpenChange} size="sm" placement="center" backdrop="opaque">
         <ModalContent>
           <ModalHeader>关联 Telegram</ModalHeader>
           <ModalBody className="space-y-3 text-sm">
@@ -640,7 +627,7 @@ export default function AccountCenterPage() {
       </Modal>
 
       {/* 推送设置弹窗 */}
-      <Modal isOpen={isPushOpen} onOpenChange={onPushOpenChange} placement="center" backdrop="blur" classNames={{ base: 'max-w-[600px] overflow-visible' }}>
+      <Modal isOpen={isPushOpen} onOpenChange={onPushOpenChange} placement="center" backdrop="opaque" classNames={{ base: 'max-w-[600px] overflow-visible' }}>
         <ModalContent>
           <ModalHeader className="pb-3">推送设置</ModalHeader>
           <ModalBody className="py-0">
@@ -651,7 +638,7 @@ export default function AccountCenterPage() {
                 onClick={() => setPushChannelOpen((open) => !open)}
                 className={`flex w-full items-center gap-2.5 rounded-medium bg-default-100 px-4 py-3 text-left text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-primary ${pushChannelOpen ? 'rounded-b-none border-b-1 border-default-200' : ''}`}
               >
-                <svg className={`w-4 h-4 flex-shrink-0 transition-transform motion-reduce:transition-none ${pushChannelOpen ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
+                <RightOutlined className={`w-4 h-4 flex-shrink-0 transition-transform motion-reduce:transition-none ${pushChannelOpen ? 'rotate-90' : ''}`} />
                 <span>通道: Telegram</span>
               </button>
               {pushChannelOpen && (
@@ -714,7 +701,7 @@ export default function AccountCenterPage() {
       </Modal>
 
       {/* 随机生成密码展示 */}
-      <Modal isOpen={isGeneratedOpen} onOpenChange={() => {}} isDismissable={false} size="sm" placement="center" backdrop="blur">
+      <Modal isOpen={isGeneratedOpen} onOpenChange={() => {}} isDismissable={false} size="sm" placement="center" backdrop="opaque">
         <ModalContent>
           <ModalHeader>密码重置成功</ModalHeader>
           <ModalBody className="space-y-3 text-sm">

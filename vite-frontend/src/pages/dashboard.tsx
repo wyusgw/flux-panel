@@ -958,7 +958,7 @@ export default function DashboardPage() {
         {/* 地址列表弹窗 */}
         <Modal isOpen={addressModalOpen} onClose={() => setAddressModalOpen(false)} size="2xl" 
         scrollBehavior="outside"
-        backdrop="blur"
+        backdrop="opaque"
         placement="center">
           <ModalContent>
             <ModalHeader>{addressModalTitle}</ModalHeader>

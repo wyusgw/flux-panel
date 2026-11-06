@@ -1,3 +1,6 @@
+import { RuleSearchModal, EMPTY_RULE_SEARCH, countRuleSearch, matchRuleSearch, RuleSearchFilters } from "@/components/rule-search-modal";
+import { getDeviceGroupList, getForwardList } from "@/api";
+import { ControlOutlined, DeleteOutlined, DisconnectOutlined, FireOutlined, PaperClipOutlined, SafetyCertificateOutlined, SettingOutlined, ShoppingOutlined, UserAddOutlined } from "@/components/ant-icons";
 import React, { useState, useEffect, useMemo } from 'react';
 import { Button } from "@heroui/button";
 import { Card, CardBody, CardHeader } from "@heroui/card";
@@ -64,7 +67,7 @@ import {
   getUserGroupList,
   getPackagePlanList
 } from '@/api';
-import { SearchIcon, EditIcon, DeleteIcon, UserIcon } from '@/components/icons';
+import { SearchIcon, EditIcon, DeleteIcon } from '@/components/icons';
 import { EmptyState } from '@/components/empty-state';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { FieldLabel, UnitField } from '@/components/form-field';
@@ -175,7 +178,11 @@ export default function UserPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(false);
   // 搜索词只在前端按用户名/昵称/UID 过滤，输入时实时生效，不再每次输入都重新请求后端
-  const [searchKeyword, setSearchKeyword] = useState('');
+  // 搜索规则：表格只显示拥有匹配规则的用户；null 表示没有在搜索
+  const [ruleFilters, setRuleFilters] = useState(EMPTY_RULE_SEARCH);
+  const [ruleMatchedUserIds, setRuleMatchedUserIds] = useState<Set<number> | null>(null);
+  const [ruleSearchLoading, setRuleSearchLoading] = useState(false);
+  const [ruleSearchGroups, setRuleSearchGroups] = useState<Array<{ id: number; name: string; direction?: string }>>([]);
   const [searchModalOpen, setSearchModalOpen] = useState(false);
   // 排序三态：升序 → 降序 → 取消（恢复默认的 UID 升序，表头不高亮）
   const [sortDescriptor, setSortDescriptor] = useState<SortDescriptor | undefined>(undefined);
@@ -619,6 +626,41 @@ export default function UserPage() {
 
   // 跳转到独立的"管理转发规则"页（/user-forward，与普通用户自己使用的 /forward 是两个页面），
   // 代该用户查看/新增/编辑/删除转发规则；在新窗口打开，管理员可同时保留用户管理列表
+  const openRuleSearch = async () => {
+    setSearchModalOpen(true);
+    // 入口、出口的选项；取不到时下拉框为空，其他条件仍可用
+    try {
+      const res = await getDeviceGroupList();
+      if (res.code === 0) setRuleSearchGroups(res.data || []);
+    } catch (error) {
+      console.warn('获取设备组失败', error);
+    }
+  };
+
+  const applyRuleSearch = async (filters: RuleSearchFilters) => {
+    if (countRuleSearch(filters) === 0) {
+      setRuleFilters(EMPTY_RULE_SEARCH);
+      setRuleMatchedUserIds(null);
+      setPage(1);
+      setSearchModalOpen(false);
+      return;
+    }
+    setRuleSearchLoading(true);
+    try {
+      const res = await getForwardList();
+      if (res.code !== 0) { toast.error(res.msg || '搜索规则失败'); return; }
+      const rules: Array<Parameters<typeof matchRuleSearch>[0] & { userId?: number }> = res.data || [];
+      setRuleFilters(filters);
+      setRuleMatchedUserIds(new Set(rules.filter(rule => matchRuleSearch(rule, filters)).map(rule => Number(rule.userId))));
+      setPage(1);
+      setSearchModalOpen(false);
+    } catch (error) {
+      toast.error('搜索规则失败');
+    } finally {
+      setRuleSearchLoading(false);
+    }
+  };
+
   const handleManageForwards = (user: User) => {
     window.open(`/user-forward?userId=${user.id}&userName=${encodeURIComponent(user.user)}`, '_blank');
   };
@@ -784,10 +826,7 @@ export default function UserPage() {
 
   // 搜索过滤 + 排序 + 分页都在前端完成
   const sortedUsers = useMemo(() => {
-    const keyword = searchKeyword.trim().toLowerCase();
-    const filtered = keyword
-      ? users.filter(u => `${u.id} #${u.id} ${u.user} ${u.name || ''}`.toLowerCase().includes(keyword))
-      : users;
+    const filtered = ruleMatchedUserIds ? users.filter(u => ruleMatchedUserIds.has(u.id)) : users;
     const idKeyword = textFilters.id.trim();
     const nameKeyword = textFilters.user.trim().toLowerCase();
     const headerFiltered = filtered.filter(u =>
@@ -815,7 +854,7 @@ export default function UserPage() {
       if (typeof vx === 'string' && typeof vy === 'string') return vx.localeCompare(vy, 'zh') * dir;
       return ((vx as number) - (vy as number)) * dir;
     });
-  }, [users, searchKeyword, textFilters, optionFilters, sortDescriptor, userGroups, packagePlans]);
+  }, [users, ruleMatchedUserIds, textFilters, optionFilters, sortDescriptor, userGroups, packagePlans]);
 
   // 表格按行对象缓存单元格，对象不变就不会重新渲染：排序变化时要生成新的行对象，当前排序列的高亮才会更新
   const pagedUsers = useMemo(
@@ -925,34 +964,32 @@ export default function UserPage() {
         return (
           <div className="flex items-center gap-1.5 [&>button]:!border-1 [&>button]:!border-default-300">
             <Button isIconOnly size="sm" variant="bordered" onPress={() => handleManageForwards(user)} isDisabled={user.roleId === 0} title="管理转发规则">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 7h13M17 7l-3-3M17 7l-3 3M20 17H7M7 17l3-3M7 17l3 3" />
-              </svg>
+              <PaperClipOutlined />
             </Button>
             <Button isIconOnly size="sm" variant="bordered" onPress={() => handleManageTunnels(user)} title="隧道权限" aria-label="隧道权限">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M10 14a4 4 0 005.7 0l3-3a4 4 0 00-5.7-5.7l-1 1M14 10a4 4 0 00-5.7 0l-3 3a4 4 0 005.7 5.7l1-1" /></svg>
+              <DisconnectOutlined />
             </Button>
             <Button isIconOnly size="sm" variant="bordered" onPress={() => handleEdit(user)} title="编辑">
-              <EditIcon className="w-4 h-4" />
+              <EditIcon />
             </Button>
             {myMenuPermissions === null && (
               <Button isIconOnly size="sm" variant="bordered" onPress={() => handleOpenMenuPermission(user)} title="权限分配" aria-label="权限分配">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2" /></svg>
+                <ControlOutlined />
               </Button>
             )}
             {user.demoMode === 1 && user.roleId === 0 && (
               <Button isIconOnly size="sm" variant="bordered" onPress={() => handleOpenPermission(user)} title="演示权限分配" aria-label="演示权限分配">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 4.5-3 8.2-7 10-4-1.8-7-5.5-7-10V6l7-3z" /><path d="M9 12l2 2 4-4" /></svg>
+                <SafetyCertificateOutlined />
               </Button>
             )}
             <Button isIconOnly size="sm" variant="bordered" onPress={() => handleEditPackage(user)} isDisabled={user.roleId === 0} title="编辑用户套餐">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M6 8h12l1 12H5L6 8zM9 8V7a3 3 0 016 0v1" /></svg>
+              <ShoppingOutlined />
             </Button>
             <Button isIconOnly size="sm" variant="bordered" onPress={() => handleResetFlow(user)} title="重置流量">
-              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1z" clipRule="evenodd" /></svg>
+              <FireOutlined />
             </Button>
             <Button isIconOnly size="sm" variant="bordered" onPress={() => handleDelete(user)} isDisabled={user.roleId === 0 && user.demoMode !== 1} title="删除">
-              <DeleteIcon className="w-4 h-4" />
+              <DeleteIcon />
             </Button>
           </div>
         );
@@ -967,7 +1004,7 @@ export default function UserPage() {
             <h1 className="text-base font-semibold text-foreground">用户管理</h1>
             <Popover placement="bottom-end">
               <PopoverTrigger>
-                <Button size="sm" variant="bordered" className="border-1 border-dashed border-default-300 h-7 font-normal text-sm" startContent={<svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-2.9 1.2V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-2.9-1.2l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00-1.2-2.9H3a2 2 0 110-4h.1a1.7 1.7 0 001.2-2.9l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3h.1A1.7 1.7 0 0010 3.1V3a2 2 0 114 0v.1a1.7 1.7 0 002.9 1.2l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8v.1a1.7 1.7 0 001.5 1h.1a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z" /></svg>}>显示列</Button>
+                <Button size="sm" variant="bordered" className="border-1 border-dashed border-default-300 h-7 font-normal text-sm" startContent={<SettingOutlined />}>显示列</Button>
               </PopoverTrigger>
               <PopoverContent>
                 <div className="p-2 flex flex-col gap-2">
@@ -987,13 +1024,13 @@ export default function UserPage() {
           </CardHeader>
           <CardBody className="p-4 space-y-4">
             <div className="flex flex-nowrap items-center gap-3.5 overflow-x-auto [&>*]:shrink-0 [&>button]:!border-1 [&>button]:!border-default-300 [&>button]:!font-normal [&>button]:!text-sm">
-              <Button size="sm" variant="bordered" onPress={handleAdd} startContent={<UserIcon className="w-4 h-4" />}>添加用户</Button>
-              <Button size="sm" variant="bordered" onPress={() => setSearchModalOpen(true)} startContent={<SearchIcon className="w-4 h-4" />}>
-                {searchKeyword.trim() ? `搜索：${searchKeyword.trim()}` : '搜索用户'}
+              <Button size="sm" variant="bordered" onPress={handleAdd} startContent={<UserAddOutlined />}>添加用户</Button>
+              <Button size="sm" variant="bordered" onPress={openRuleSearch} startContent={<SearchIcon />}>
+                {countRuleSearch(ruleFilters) > 0 ? `搜索规则（${countRuleSearch(ruleFilters)}）` : '搜索规则'}
               </Button>
-              <Button size="sm" variant="bordered" onPress={() => handleOpenCleanup('users')} startContent={<svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4.5h6V7M6.5 7l1 13h9l1-13" /></svg>}>清理无效用户</Button>
-              <Button size="sm" variant="bordered" onPress={() => handleOpenCleanup('forwards')} startContent={<svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4.5h6V7M6.5 7l1 13h9l1-13" /></svg>}>清理无效规则</Button>
-              <RefreshButton onRefresh={() => loadUsers(false)} />
+              <Button size="sm" variant="bordered" onPress={() => handleOpenCleanup('users')} startContent={<DeleteOutlined />}>清理无效用户</Button>
+              <Button size="sm" variant="bordered" onPress={() => handleOpenCleanup('forwards')} startContent={<DeleteOutlined />}>清理无效规则</Button>
+              <RefreshButton onRefresh={async () => { await loadUsers(false); if (countRuleSearch(ruleFilters) > 0) await applyRuleSearch(ruleFilters); }} />
             </div>
             <div className="settings-table-scroll">
             <Table
@@ -1052,26 +1089,15 @@ export default function UserPage() {
         </Card>
 
         {/* 搜索用户模态框：输入时实时按用户名/昵称/UID 过滤列表 */}
-        <Modal isOpen={searchModalOpen} onOpenChange={setSearchModalOpen} size="sm" placement="center" backdrop="blur">
-          <ModalContent>
-            <ModalHeader>搜索用户</ModalHeader>
-            <ModalBody className="pb-6">
-              <Input
-                size="sm"
-                autoComplete="off"
-                autoFocus
-                placeholder="按用户名、昵称或 UID 搜索"
-                value={searchKeyword}
-                onChange={(e) => { setSearchKeyword(e.target.value); setPage(1); }}
-                variant="bordered"
-                startContent={<SearchIcon className="w-4 h-4 text-default-400" />}
-                isClearable
-                onClear={() => { setSearchKeyword(''); setPage(1); }}
-              />
-              <p className="text-xs text-default-400 mt-2">共匹配 {sortedUsers.length} 位用户</p>
-            </ModalBody>
-          </ModalContent>
-        </Modal>
+        <RuleSearchModal
+          isOpen={searchModalOpen}
+          onOpenChange={setSearchModalOpen}
+          title="搜索用户规则"
+          filters={ruleFilters}
+          deviceGroups={ruleSearchGroups}
+          loading={ruleSearchLoading}
+          onConfirm={applyRuleSearch}
+        />
 
 
       {/* 用户表单模态框 */}
@@ -1080,7 +1106,7 @@ export default function UserPage() {
         onClose={onUserModalClose}
         size="md"
       scrollBehavior="outside"
-      backdrop="blur"
+      backdrop="opaque"
       placement="center"
       >
         <ModalContent>
@@ -1327,7 +1353,7 @@ export default function UserPage() {
         onClose={onTunnelModalClose}
         size="2xl"
       scrollBehavior="outside"
-      backdrop="blur"
+      backdrop="opaque"
       placement="center"
         isDismissable={false}
         classNames={{
@@ -1422,9 +1448,7 @@ export default function UserPage() {
                               onClick={() => handleResetTunnelFlow(userTunnel)}
                               title="重置流量"
                             >
-                              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                                <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
-                              </svg>
+                              <FireOutlined />
                             </Button>
                             <Button
                               size="sm"
@@ -1433,7 +1457,7 @@ export default function UserPage() {
                               isIconOnly
                               onClick={() => handleRemoveTunnel(userTunnel)}
                             >
-                              <DeleteIcon className="w-4 h-4" />
+                              <DeleteIcon />
                             </Button>
                           </div>
                         </TableCell>
@@ -1454,7 +1478,7 @@ export default function UserPage() {
 
       {/* 删除确认对话框 */}
       {/* 编辑用户套餐：选择套餐，并勾选要把套餐里的哪些内容更新到该用户 */}
-      <Modal isOpen={cleanupTarget !== null} onClose={() => setCleanupTarget(null)} size="md" backdrop="blur" placement="center">
+      <Modal isOpen={cleanupTarget !== null} onClose={() => setCleanupTarget(null)} size="sm" backdrop="opaque" placement="center" hideCloseButton classNames={{ base: "max-w-[416px]" }}>
         <ModalContent>
           <ModalHeader>
             <h2 className="text-base font-semibold">{cleanupTarget === 'users' ? '清理无效用户' : '清理无效规则'}</h2>
@@ -1483,7 +1507,7 @@ export default function UserPage() {
         </ModalContent>
       </Modal>
 
-      <Modal isOpen={isMenuPermissionOpen} onClose={onMenuPermissionClose} size="md" backdrop="blur" placement="center">
+      <Modal isOpen={isMenuPermissionOpen} onClose={onMenuPermissionClose} size="md" backdrop="opaque" placement="center">
         <ModalContent>
           <ModalHeader>
             <h2 className="text-base font-semibold">权限分配 {menuPermissionUser?.user}</h2>
@@ -1512,7 +1536,7 @@ export default function UserPage() {
         </ModalContent>
       </Modal>
 
-      <Modal isOpen={isPermissionOpen} onClose={onPermissionClose} size="md" backdrop="blur" placement="center">
+      <Modal isOpen={isPermissionOpen} onClose={onPermissionClose} size="md" backdrop="opaque" placement="center">
         <ModalContent>
           <ModalHeader>
             <h2 className="text-base font-semibold">演示权限分配 {permissionUser?.user}</h2>
@@ -1577,7 +1601,7 @@ export default function UserPage() {
         </ModalContent>
       </Modal>
 
-      <Modal isOpen={isPackageModalOpen} onClose={onPackageModalClose} size="sm" backdrop="blur" placement="center">
+      <Modal isOpen={isPackageModalOpen} onClose={onPackageModalClose} size="sm" backdrop="opaque" placement="center">
         <ModalContent>
           <ModalHeader>
             <h2 className="text-base font-semibold">编辑用户套餐{packageTarget ? ` ${packageTarget.name || packageTarget.user} (UID=${packageTarget.id})` : ''}</h2>

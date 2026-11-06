@@ -1,3 +1,4 @@
+import { DownOutlined, MenuOutlined } from "@/components/ant-icons";
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 
@@ -102,9 +103,7 @@ export default function H5Layout({
             aria-label="打开导航菜单"
             className="p-1.5 -ml-1.5 rounded-lg text-gray-600 dark:text-gray-300 active:bg-gray-100 dark:active:bg-gray-800"
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-            </svg>
+            <MenuOutlined className="w-5 h-5" />
           </button>
           <h1 className="app-topbar-brand text-foreground truncate">{siteConfig.name}</h1>
         </div>
@@ -151,12 +150,7 @@ export default function H5Layout({
                     className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-gray-700 dark:text-gray-300 active:bg-gray-100 dark:active:bg-gray-800 transition-colors"
                   >
                     <span>管理</span>
-                    <svg
-                      className={`w-4 h-4 text-gray-400 transition-transform duration-[360ms] ease-[cubic-bezier(0.22,0.8,0.24,1)] ${manageOpen ? 'rotate-180' : ''}`}
-                      fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"
-                    >
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 9l6 6 6-6" />
-                    </svg>
+                    <DownOutlined className={`w-2.5 h-2.5 text-gray-400 transition-transform duration-[360ms] ease-[cubic-bezier(0.22,0.8,0.24,1)] ${manageOpen ? 'rotate-180' : ''}`} />
                   </button>
                   <div className={`nav-collapse${manageOpen ? ' is-open' : ''}`}>
                     <div>

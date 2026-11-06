@@ -1,3 +1,4 @@
+import { ExclamationCircleFilled, InfoCircleFilled, TagsOutlined } from "@/components/ant-icons";
 import { useState, useEffect } from "react";
 import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Button } from "@heroui/button";
@@ -67,22 +68,15 @@ const planTypeLabel = (durationDays: number) => {
 };
 
 const TagIcon = () => (
-  <svg className="w-4 h-4 text-default-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20.59 13.41L11 3.83A2 2 0 009.59 3.2L4 3a1 1 0 00-1 1l.2 5.59a2 2 0 00.58 1.41l9.59 9.59a2 2 0 002.83 0l4.41-4.41a2 2 0 000-2.83z" />
-    <circle cx="7.5" cy="7.5" r="1.25" fill="currentColor" stroke="none" />
-  </svg>
+  <TagsOutlined className="w-4 h-4 text-default-600 flex-shrink-0" />
 );
 
 const WarningIcon = () => (
-  <svg className="w-4 h-4 text-warning" fill="currentColor" viewBox="0 0 20 20">
-    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l6.28 11.184c.75 1.334-.213 2.98-1.742 2.98H3.72c-1.53 0-2.492-1.646-1.743-2.98L8.257 3.1zM11 14a1 1 0 11-2 0 1 1 0 012 0zm-.25-7.25a.75.75 0 00-1.5 0v3.5a.75.75 0 001.5 0v-3.5z" clipRule="evenodd" />
-  </svg>
+  <ExclamationCircleFilled className="w-4 h-4 text-warning" />
 );
 
 const InfoIcon = () => (
-  <svg className="w-5 h-5 text-primary" fill="currentColor" viewBox="0 0 20 20">
-    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-  </svg>
+  <InfoCircleFilled className="w-5 h-5 text-primary" />
 );
 
 export default function ShopPage() {
@@ -360,7 +354,7 @@ export default function ShopPage() {
         </CardBody>
       </Card>
 
-      <Modal isOpen={successModalOpen} onOpenChange={setSuccessModalOpen} size="sm" placement="center" backdrop="blur">
+      <Modal isOpen={successModalOpen} onOpenChange={setSuccessModalOpen} size="sm" placement="center" backdrop="opaque">
         <ModalContent>
           {(onClose) => (
             <>

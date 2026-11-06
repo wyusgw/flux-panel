@@ -1,3 +1,4 @@
+import { LeftOutlined, RightOutlined } from "@/components/ant-icons";
 import { Select, SelectItem } from "@heroui/select";
 import { Button } from "@heroui/button";
 
@@ -35,9 +36,7 @@ export const TablePagination = ({
           onPress={() => onPageChange(page - 1)}
           aria-label="上一页"
         >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 20 20" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12.5 15l-5-5 5-5" />
-          </svg>
+          <LeftOutlined />
         </Button>
         <span className={`min-w-[32px] h-8 px-2 flex items-center justify-center rounded-md text-primary font-medium border-1 border-primary`}>
           {page}
@@ -50,9 +49,7 @@ export const TablePagination = ({
           onPress={() => onPageChange(page + 1)}
           aria-label="下一页"
         >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 20 20" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7.5 5l5 5-5 5" />
-          </svg>
+          <RightOutlined />
         </Button>
       </div>
       <Select

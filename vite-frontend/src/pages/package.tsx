@@ -337,8 +337,8 @@ export default function PackagePlanPage() {
                   <TableCell>{plan.hidden === 1 ? '是' : '否'}</TableCell>
                   <TableCell>
                     <div className="flex justify-end items-center gap-1">
-                      <Button isIconOnly size="sm" variant="flat" onPress={() => handleEdit(plan)} title="编辑"><EditIcon className="w-4 h-4" /></Button>
-                      <Button isIconOnly size="sm" variant="flat" color="danger" onPress={() => handleDelete(plan)} title="删除"><DeleteIcon className="w-4 h-4" /></Button>
+                      <Button isIconOnly size="sm" variant="flat" onPress={() => handleEdit(plan)} title="编辑"><EditIcon /></Button>
+                      <Button isIconOnly size="sm" variant="flat" color="danger" onPress={() => handleDelete(plan)} title="删除"><DeleteIcon /></Button>
                     </div>
                   </TableCell>
                 </TableRow>
@@ -349,7 +349,7 @@ export default function PackagePlanPage() {
           </CardBody>
       </Card>
 
-      <Modal isOpen={modalOpen} onOpenChange={setModalOpen} size="2xl" scrollBehavior="outside" backdrop="blur" placement="center">
+      <Modal isOpen={modalOpen} onOpenChange={setModalOpen} size="2xl" scrollBehavior="outside" backdrop="opaque" placement="center">
         <ModalContent>
           {(onClose) => (
             <>

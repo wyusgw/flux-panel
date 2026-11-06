@@ -1,3 +1,4 @@
+import { LeftOutlined } from "@/components/ant-icons";
 import { EmptyState } from "@/components/empty-state";
 import { useState, useEffect } from 'react';
 import { Input } from "@heroui/input";
@@ -89,9 +90,7 @@ export const SettingsPage = () => {
               onClick={() => navigate(-1)}
               className="text-default-600"
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
+              <LeftOutlined className="w-4 h-4" />
             </Button>
             <h1 className="text-base font-semibold text-foreground">面板设置</h1>
           </div>

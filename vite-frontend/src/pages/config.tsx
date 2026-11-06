@@ -1,3 +1,4 @@
+import { FileAddOutlined } from "@/components/ant-icons";
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from "@heroui/button";
@@ -685,7 +686,7 @@ export default function ConfigPage() {
                       <Input size="sm" autoComplete="off" variant="bordered" value={configs.payment_min_amount || ''} onChange={(event) => handleConfigChange('payment_min_amount', event.target.value)} placeholder="10.00" endContent={<span className="text-sm text-default-500">元</span>} className="w-full" />
                     </div>
                     <div className="flex flex-wrap gap-2 py-2">
-                      <Button size="sm" variant="bordered" onPress={addPaymentChannel} startContent={<svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></svg>}>添加支付渠道</Button>
+                      <Button size="sm" variant="bordered" onPress={addPaymentChannel} startContent={<FileAddOutlined />}>添加支付渠道</Button>
                     </div>
                     <div className="settings-table-scroll">
                         <Table removeWrapper aria-label="支付渠道列表" classNames={{ base: "w-full", th: "management-table-heading", td: "management-table-cell", table: "w-full payment-channel-table" }}>
@@ -733,7 +734,7 @@ export default function ConfigPage() {
           </Card>
         )}
 
-        <Modal isOpen={isChannelConfigOpen} onClose={onChannelConfigClose} size="lg" scrollBehavior="outside" backdrop="blur" placement="center">
+        <Modal isOpen={isChannelConfigOpen} onClose={onChannelConfigClose} size="lg" scrollBehavior="outside" backdrop="opaque" placement="center">
           <ModalContent>
             <ModalHeader>{paymentChannels.some(channel => channel.id === configuringChannel?.id) ? '编辑支付渠道' : '添加支付渠道'}</ModalHeader>
             <ModalBody>

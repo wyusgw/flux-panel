@@ -374,7 +374,7 @@ export default function TaskQueuePage() {
         loading={deleteLoading}
       />
 
-      <Modal isOpen={detailModalOpen} onOpenChange={setDetailModalOpen} size="lg" scrollBehavior="outside" backdrop="blur" placement="center">
+      <Modal isOpen={detailModalOpen} onOpenChange={setDetailModalOpen} size="lg" scrollBehavior="outside" backdrop="opaque" placement="center">
         <ModalContent>
           {(onClose) => (
             <>
@@ -437,7 +437,7 @@ export default function TaskQueuePage() {
         </ModalContent>
       </Modal>
 
-      <Modal isOpen={errorLogsModalOpen} onOpenChange={setErrorLogsModalOpen} size="3xl" scrollBehavior="inside" backdrop="blur" placement="center">
+      <Modal isOpen={errorLogsModalOpen} onOpenChange={setErrorLogsModalOpen} size="3xl" scrollBehavior="inside" backdrop="opaque" placement="center">
         <ModalContent>
           {() => (
             <>

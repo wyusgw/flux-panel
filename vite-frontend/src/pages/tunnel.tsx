@@ -1,3 +1,4 @@
+import { AimOutlined, DeleteOutlined, EditOutlined } from "@/components/ant-icons";
 import { useState, useEffect } from "react";
 import { ToolbarAddIcon } from "@/components/toolbar-icons";
 import { Card, CardBody, CardHeader } from "@heroui/card";
@@ -519,19 +520,13 @@ export default function TunnelPage() {
                           <TableCell>
                             <div className="flex justify-end items-center gap-1">
                               <Button isIconOnly size="sm" variant="flat" title={tunnel.status === 1 ? '诊断' : '仅启用状态下可诊断'} isDisabled={tunnel.status !== 1} onPress={() => handleDiagnose(tunnel)}>
-                                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                                </svg>
+                                <AimOutlined />
                               </Button>
                               <Button isIconOnly size="sm" variant="flat" title="编辑" onPress={() => handleEdit(tunnel)}>
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
-                                </svg>
+                                <EditOutlined />
                               </Button>
                               <Button isIconOnly size="sm" variant="flat" color="danger" title="删除" onPress={() => handleDelete(tunnel)}>
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 7h16M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m-8 0l1 13a1 1 0 001 1h6a1 1 0 001-1l1-13" />
-                                </svg>
+                                <DeleteOutlined />
                               </Button>
                             </div>
                           </TableCell>
@@ -555,7 +550,7 @@ export default function TunnelPage() {
           onOpenChange={setModalOpen}
           size="2xl"
         scrollBehavior="outside"
-        backdrop="blur"
+        backdrop="opaque"
         placement="center"
         >
           <ModalContent>
@@ -836,7 +831,7 @@ export default function TunnelPage() {
           onOpenChange={setDiagnosisModalOpen}
           size="2xl"
         scrollBehavior="outside"
-        backdrop="blur"
+        backdrop="opaque"
         placement="center"
         >
           <ModalContent>

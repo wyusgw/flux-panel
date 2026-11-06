@@ -457,7 +457,7 @@ td.probe-clickable:hover { text-decoration: underline; text-underline-offset: 2p
 .rail-drag-handle:active { cursor: grabbing; background: #f4f4f5; }
 .dark .rail-drag-handle:active { background: #27272a; }
 .rail-btn { display: flex; flex-direction: column; align-items: center; gap: 1px; width: 42px; padding: 5px 2px; border-radius: 8px; border: none; background: transparent; color: #52525b; font-size: 10px; line-height: 1; cursor: pointer; transition: background .15s, color .15s; }
-.rail-btn svg { width: 15px; height: 15px; }
+.rail-btn svg { width: 16px; height: 16px; }
 .rail-btn:hover:not(:disabled) { background: #f4f4f5; color: #18181b; }
 .rail-btn:disabled { opacity: .35; cursor: not-allowed; }
 .rail-btn-danger:hover:not(:disabled) { background: rgb(239 68 68 / 12%); color: #ef4444; }
@@ -585,3 +585,16 @@ html.theme-transparent [role="dialog"] {
 .management-page td.management-table-cell button.px-0[data-disabled="true"] {
   opacity: 0.45;
 }
+
+/* 弹窗统一：圆角 8px、24px 内边距，取消与确定两字按钮带字距 */
+section[role="dialog"] { border-radius: 8px; }
+html.dark:not(.theme-transparent) section[role="dialog"] { background-color: #1f1f1f; }
+section[role="dialog"] > header { padding: 20px 24px 12px; font-size: 16px; font-weight: 600; }
+section[role="dialog"] > footer { padding: 12px 24px 20px; gap: 8px; }
+.dialog-btn { height: 32px; min-width: 64px; font-size: 14px; font-weight: 400; letter-spacing: 0.2em; }
+.dialog-btn.border-medium { border-width: 1px; border-color: hsl(var(--heroui-default-300)); }
+/* 弹窗表单：标签加粗在上，控件 32px 高、细边框 */
+.dialog-form [data-slot="label"] { font-size: 14px; font-weight: 600; color: hsl(var(--heroui-foreground)); }
+.dialog-form [data-slot="input-wrapper"], .dialog-form button[data-slot="trigger"]:has([data-slot="selectorIcon"]) { border-width: 1px !important; border-color: hsl(var(--heroui-default-300)); border-radius: 6px; }
+.dialog-form [data-slot="input-wrapper"]:not(:has(textarea)), .dialog-form button[data-slot="trigger"]:has([data-slot="selectorIcon"]) { height: 32px; min-height: 32px; }
+.dialog-form [data-slot="input-wrapper"]:has(textarea) { height: auto; }

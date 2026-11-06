@@ -1,3 +1,4 @@
+import { ApiOutlined, CopyOutlined, KeyOutlined } from "@/components/ant-icons";
 import { useState, useEffect } from "react";
 import { ToolbarAddIcon } from "@/components/toolbar-icons";
 import { Card, CardBody, CardHeader } from "@heroui/card";
@@ -94,22 +95,15 @@ const parseEntryIps = (value?: string | null): string[] => {
 const joinEntryIps = (values: string[]): string => values.map(v => v.trim()).filter(Boolean).join(',');
 
 const DockIcon = ({ className }: { className?: string }) => (
-  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 010 5.656l-2.828 2.828a4 4 0 11-5.656-5.656l1.414-1.414M10.172 13.828a4 4 0 010-5.656l2.828-2.828a4 4 0 115.656 5.656l-1.414 1.414" />
-  </svg>
+  <ApiOutlined className={className} />
 );
 
 const KeyIcon = ({ className }: { className?: string }) => (
-  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17l-1 1-1 1H6v2H2v-4l4.257-4.257A6 6 0 1121 9z" />
-  </svg>
+  <KeyOutlined className={className} />
 );
 
 const IconCopy = () => (
-  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-    <rect x="9" y="9" width="12" height="12" rx="2" />
-    <path strokeLinecap="round" strokeLinejoin="round" d="M5 15H4a1 1 0 01-1-1V4a1 1 0 011-1h10a1 1 0 011 1v1" />
-  </svg>
+  <CopyOutlined />
 );
 
 export default function SingleTunnelPage() {
@@ -457,13 +451,13 @@ export default function SingleTunnelPage() {
                           </DropdownMenu>
                         </Dropdown>
                         <Button isIconOnly size="sm" variant="flat" onPress={() => handleEdit(group)} title="编辑">
-                          <EditIcon className="w-4 h-4" />
+                          <EditIcon />
                         </Button>
                         <Button isIconOnly size="sm" variant="flat" onPress={() => handleResetSecret(group)} title="重置 Token">
-                          <KeyIcon className="w-4 h-4" />
+                          <KeyIcon />
                         </Button>
                         <Button isIconOnly size="sm" variant="flat" color="danger" onPress={() => handleDelete(group)} title="删除">
-                          <DeleteIcon className="w-4 h-4" />
+                          <DeleteIcon />
                         </Button>
                       </div>
                     </TableCell>
@@ -476,7 +470,7 @@ export default function SingleTunnelPage() {
           </CardBody>
       </Card>
 
-      <Modal isOpen={modalOpen} onOpenChange={setModalOpen} size="lg" scrollBehavior="outside" backdrop="blur" placement="center">
+      <Modal isOpen={modalOpen} onOpenChange={setModalOpen} size="lg" scrollBehavior="outside" backdrop="opaque" placement="center">
         <ModalContent>
           {(onClose) => (
             <>
@@ -534,7 +528,7 @@ export default function SingleTunnelPage() {
                             onPress={() => setForm(prev => ({ ...prev, entryIps: prev.entryIps.filter((_, i) => i !== index) }))}
                             title="删除这一行"
                           >
-                            <DeleteIcon className="w-4 h-4" />
+                            <DeleteIcon />
                           </Button>
                         </div>
                       ))}
@@ -612,7 +606,7 @@ export default function SingleTunnelPage() {
         </ModalContent>
       </Modal>
 
-      <Modal isOpen={offlineModalOpen} onOpenChange={setOfflineModalOpen} size="lg" scrollBehavior="outside" backdrop="blur" placement="center">
+      <Modal isOpen={offlineModalOpen} onOpenChange={setOfflineModalOpen} size="lg" scrollBehavior="outside" backdrop="opaque" placement="center">
         <ModalContent>
           {(onClose) => (
             <>
@@ -696,7 +690,7 @@ export default function SingleTunnelPage() {
         }}
         size="lg"
         scrollBehavior="outside"
-        backdrop="blur"
+        backdrop="opaque"
         placement="center"
       >
         <ModalContent>

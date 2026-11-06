@@ -1,3 +1,4 @@
+import { FilterFilled } from "@/components/ant-icons";
 import type { ReactNode, SyntheticEvent } from "react";
 import { Button } from "@heroui/button";
 import { Checkbox, CheckboxGroup } from "@heroui/checkbox";
@@ -17,7 +18,7 @@ export const HEADER_TABLE_CLASS_NAMES = {
 };
 
 const FilterIcon = () => (
-  <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 4h17a.75.75 0 01.57 1.24L14.5 13v6.25a.75.75 0 01-1.14.64l-3-1.8a.75.75 0 01-.36-.64V13L2.93 5.24A.75.75 0 013.5 4z" /></svg>
+  <FilterFilled />
 );
 
 // 表头里的控件不能触发所在列的排序，弹出层的事件也会沿 React 树冒泡到表头，所以统一在这里拦住

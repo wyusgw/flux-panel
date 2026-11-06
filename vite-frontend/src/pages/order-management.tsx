@@ -1,3 +1,4 @@
+import { DeleteOutlined } from "@/components/ant-icons";
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { ToolbarAddIcon, ToolbarDeleteIcon } from "@/components/toolbar-icons";
 import { Card, CardBody, CardHeader } from "@heroui/card";
@@ -83,9 +84,7 @@ const STATUS_OPTIONS = [
 const getStatusDisplay = (status: number) => STATUS_OPTIONS.find(o => o.status === status) || STATUS_OPTIONS[0];
 
 const IconDelete = () => (
-  <svg className="w-4 h-4" fill="none" viewBox="0 0 20 20" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.6} d="M4 6h12M8 6V4.5A1.5 1.5 0 019.5 3h1A1.5 1.5 0 0112 4.5V6m-6 0v9.5A1.5 1.5 0 007.5 17h5a1.5 1.5 0 001.5-1.5V6M8.5 9.5v4M11.5 9.5v4" />
-  </svg>
+  <DeleteOutlined />
 );
 
 export default function OrderManagementPage() {
@@ -339,7 +338,7 @@ export default function OrderManagementPage() {
           </CardBody>
       </Card>
 
-      <Modal isOpen={manualModalOpen} onOpenChange={setManualModalOpen} size="lg" scrollBehavior="outside" backdrop="blur" placement="center">
+      <Modal isOpen={manualModalOpen} onOpenChange={setManualModalOpen} size="lg" scrollBehavior="outside" backdrop="opaque" placement="center">
         <ModalContent>
           {(onClose) => (
             <>

@@ -1,3 +1,4 @@
+import { useFixedTitle } from "@/hooks/use-fixed-title";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
@@ -10,9 +11,9 @@ export default function NodeConfigPage() {
   const [pretty, setPretty] = useState(false);
   const rawId = searchParams.get("id");
   const nodeId = Number(rawId);
+  useFixedTitle(`节点配置 #${rawId ?? ""}`);
 
   useEffect(() => {
-    document.title = `节点配置 #${rawId ?? ""}`;
     if (!Number.isInteger(nodeId) || nodeId <= 0) {
       setResponse({ code: -1, msg: "缺少有效的节点 ID", data: null });
       return;

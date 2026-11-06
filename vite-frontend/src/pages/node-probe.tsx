@@ -1,3 +1,4 @@
+import { useFixedTitle } from "@/hooks/use-fixed-title";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
@@ -192,6 +193,8 @@ const NodeRow = memo(function NodeRow({ node, regionCode, detailHandlers }: Node
 export default function NodeProbePage() {
   const navigate = useNavigate();
   const admin = isAdmin();
+  // 浏览器标题：用户名 身份@当前访问的地址或域名
+  useFixedTitle(`${localStorage.getItem('name') || ''} ${admin ? '管理员' : '普通用户'}@${window.location.host}`);
   // 管理员专用：临时切换成普通用户视角预览节点状态页，不影响实际权限
   const [viewAsUser, setViewAsUser] = useState(false);
   const effectiveAdmin = admin && !viewAsUser;

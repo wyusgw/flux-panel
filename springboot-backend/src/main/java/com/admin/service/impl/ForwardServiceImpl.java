@@ -15,6 +15,7 @@ import com.admin.entity.*;
 import com.admin.mapper.ForwardMapper;
 import com.admin.service.*;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.alibaba.fastjson.JSONObject;
 import lombok.Data;
@@ -1755,7 +1756,48 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         if (nodeInfo.isHasError()) {
             return R.err(nodeInfo.getErrorMessage());
         }
-        return updateGostServices(forward, tunnel, null, nodeInfo, userTunnel);
+        boolean paused = Objects.equals(forward.getStatus(), FORWARD_STATUS_PAUSED);
+        R pushResult = updateGostServices(forward, tunnel, null, nodeInfo, userTunnel);
+        if (!paused) {
+            return pushResult;
+        }
+        return keepPausedAfterPush(forward, tunnel, buildServiceName(forward.getId(), forward.getUserId(), userTunnel), pushResult);
+    }
+
+    /**
+     * 节点更新配置时会关闭旧服务再启动新服务，暂停状态随之丢失。已暂停的规则仍要同步配置，
+     * 否则恢复时用的是旧配置，所以推送后立刻重新暂停；任何一步失败都返回错误，由队列继续重试。
+     */
+    R keepPausedAfterPush(Forward forward, Tunnel tunnel, String serviceName, R pushResult) {
+        if (pushResult.getCode() != 0) {
+            // 推送失败时规则被标成了异常，不还原的话下次重试就不再重新暂停，规则会恢复运行
+            forward.setStatus(FORWARD_STATUS_PAUSED);
+            restorePausedStatus(forward.getId());
+            return pushResult;
+        }
+        GostDto pauseResult = pauseOnNode(tunnel.getInNodeId(), serviceName);
+        if (!isGostOperationSuccess(pauseResult)) {
+            return R.err("重新暂停服务失败：" + pauseResult.getMsg());
+        }
+        if (tunnel.getType() == TUNNEL_TYPE_TUNNEL_FORWARD) {
+            GostDto remoteResult = pauseRemoteOnNode(tunnel.getOutNodeId(), serviceName);
+            if (!isGostOperationSuccess(remoteResult)) {
+                return R.err("重新暂停远端服务失败：" + remoteResult.getMsg());
+            }
+        }
+        return pushResult;
+    }
+
+    void restorePausedStatus(Long forwardId) {
+        this.update(null, new UpdateWrapper<Forward>().eq("id", forwardId).set("status", FORWARD_STATUS_PAUSED));
+    }
+
+    GostDto pauseOnNode(Long nodeId, String serviceName) {
+        return GostUtil.PauseService(nodeId, serviceName);
+    }
+
+    GostDto pauseRemoteOnNode(Long nodeId, String serviceName) {
+        return GostUtil.PauseRemoteService(nodeId, serviceName);
     }
 
 

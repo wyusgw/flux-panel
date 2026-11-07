@@ -3,6 +3,7 @@ package com.admin.controller;
 import com.admin.common.aop.LogAnnotation;
 import com.admin.common.dto.FlowDto;
 import com.admin.common.dto.GostConfigDto;
+import com.admin.common.dto.GostDto;
 import com.admin.common.lang.R;
 import com.admin.common.task.CheckGostConfigAsync;
 import com.admin.common.utils.AESCrypto;
@@ -357,17 +358,52 @@ public class FlowController extends BaseController {
         pauseService(forwardList, name);
     }
 
-    public void pauseService(List<Forward> forwardList, String name) {
+    /**
+     * 暂停一批规则。reportedName 是触发这次检查的上报服务名，只属于其中一条规则；
+     * 其余规则要用各自的服务名，否则后台显示已暂停，节点上实际还在转发。
+     */
+    public void pauseService(List<Forward> forwardList, String reportedName) {
         for (Forward forward : forwardList) {
-            Tunnel tunnel = tunnelResolver.resolveTunnel(forward);
-            if (tunnel != null){
-                GostUtil.PauseService(tunnel.getInNodeId(), name);
-                if (tunnel.getType() == 2){
-                    GostUtil.PauseRemoteService(tunnel.getOutNodeId(), name);
-                }
+            if (!shouldPause(forward, reportedName)) {
+                continue;
             }
-            forward.setStatus(0);
-            forwardService.updateById(forward);
+            Tunnel tunnel = tunnelResolver.resolveTunnel(forward);
+            if (tunnel != null) {
+                pauseOnNodes(tunnel, pauseServiceName(forward, reportedName));
+            }
+            // 只改状态：写回整个对象会用旧值覆盖其他请求刚累加的流量
+            forwardService.update(null, new UpdateWrapper<Forward>().eq("id", forward.getId()).set("status", 0));
+        }
+    }
+
+    private static boolean isReportedForward(Forward forward, String reportedName) {
+        return reportedName != null && reportedName.startsWith(forward.getId() + "_");
+    }
+
+    /** 已暂停的规则不用重复发送；但正在上报流量的规则说明节点上还在运行，即使后台显示已暂停也要再停一次 */
+    static boolean shouldPause(Forward forward, String reportedName) {
+        return isReportedForward(forward, reportedName) || !Objects.equals(forward.getStatus(), 0);
+    }
+
+    /** 上报的规则直接用节点上真实的服务名，其他规则按创建时的规则拼出服务名 */
+    private String pauseServiceName(Forward forward, String reportedName) {
+        if (isReportedForward(forward, reportedName)) {
+            return reportedName;
+        }
+        UserTunnel userTunnel = tunnelResolver.resolveUserTunnel(forward.getUserId(), forward);
+        return tunnelResolver.buildServiceName(forward.getId(), forward.getUserId(), userTunnel != null ? userTunnel.getId() : null);
+    }
+
+    void pauseOnNodes(Tunnel tunnel, String serviceName) {
+        GostDto result = GostUtil.PauseService(tunnel.getInNodeId(), serviceName);
+        if (!Objects.equals(result.getMsg(), "OK")) {
+            log.warn("暂停节点 {} 上的服务 {} 失败: {}", tunnel.getInNodeId(), serviceName, result.getMsg());
+        }
+        if (tunnel.getType() == 2) {
+            GostDto remoteResult = GostUtil.PauseRemoteService(tunnel.getOutNodeId(), serviceName);
+            if (!Objects.equals(remoteResult.getMsg(), "OK")) {
+                log.warn("暂停节点 {} 上的远端服务 {} 失败: {}", tunnel.getOutNodeId(), serviceName, remoteResult.getMsg());
+            }
         }
     }
 

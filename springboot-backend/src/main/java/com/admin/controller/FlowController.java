@@ -270,7 +270,10 @@ public class FlowController extends BaseController {
 
         // 7. 检查和服务暂停操作
         if (Objects.equals(userTunnelId, DEFAULT_USER_TUNNEL_ID)) {
-            // 管理员转发：完全跳过限额检查
+            // 查不到隧道授权：管理员转发完全跳过限额检查；普通用户（如撤销授权时规则没删掉）仍要检查账号额度
+            if (!isAdminOwner(userService.getById(userId))) {
+                checkUserRelatedLimits(userId, name);
+            }
         } else if (Objects.equals(userTunnelId, DEVICE_GROUP_USER_TUNNEL_ID)) {
             // 设备组模式的普通用户转发：没有真实UserTunnel行可查，仅检查账号自身额度
             checkUserRelatedLimits(userId, name);
@@ -298,6 +301,11 @@ public class FlowController extends BaseController {
             return false;
         }
         return reportingNodeId.equals(tunnel.getInNodeId()) || reportingNodeId.equals(tunnel.getOutNodeId());
+    }
+
+    /** 只有规则所有者确实是管理员才能跳过限额，查不到用户时不算 */
+    static boolean isAdminOwner(User owner) {
+        return owner != null && Integer.valueOf(0).equals(owner.getRoleId());
     }
 
     private void checkUserRelatedLimits(String userId, String name) {

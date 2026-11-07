@@ -98,6 +98,18 @@ class FlowPauseTest {
     }
 
     @Test
+    void onlyRealAdminOwnersSkipLimits() {
+        com.admin.entity.User admin = new com.admin.entity.User();
+        admin.setRoleId(0);
+        com.admin.entity.User normal = new com.admin.entity.User();
+        normal.setRoleId(1);
+        assertTrue(FlowController.isAdminOwner(admin));
+        assertFalse(FlowController.isAdminOwner(normal));
+        assertFalse(FlowController.isAdminOwner(new com.admin.entity.User()));
+        assertFalse(FlowController.isAdminOwner(null));
+    }
+
+    @Test
     void errorStatusRuleIsStillPaused() {
         assertTrue(FlowController.shouldPause(forward(2L, -1), "1_5_-1"));
     }

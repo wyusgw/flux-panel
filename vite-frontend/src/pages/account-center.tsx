@@ -111,7 +111,7 @@ const ModePicker = ({
   options: { value: number; label: string }[];
   onChange: (value: number) => void;
 }) => (
-  <div role="radiogroup" className="inline-flex rounded-small border-1 border-default-300 overflow-hidden">
+  <div role="radiogroup" className="flex w-full sm:inline-flex sm:w-auto rounded-small border-1 border-default-300 overflow-hidden">
     {options.map((opt, index) => (
       <button
         key={opt.value}
@@ -119,7 +119,7 @@ const ModePicker = ({
         role="radio"
         aria-checked={value === opt.value}
         onClick={() => onChange(opt.value)}
-        className={`h-8 px-3.5 text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary ${index > 0 ? 'border-l-1 border-default-300' : ''} ${value === opt.value ? 'bg-primary text-primary-foreground' : 'text-foreground hover:bg-default-100'}`}
+        className={`h-8 min-w-0 flex-1 sm:flex-none px-1 sm:px-3.5 whitespace-nowrap text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary ${index > 0 ? 'border-l-1 border-default-300' : ''} ${value === opt.value ? 'bg-primary text-primary-foreground' : 'text-foreground hover:bg-default-100'}`}
       >
         {opt.label}
       </button>
@@ -138,8 +138,8 @@ const NotifyCard = ({ title, children }: { title: ReactNode; children: ReactNode
 );
 
 const NotifyRow = ({ label, children }: { label: string; children: ReactNode }) => (
-  <div className="flex items-center gap-3">
-    <span className="w-14 flex-shrink-0 text-sm text-foreground">{label}</span>
+  <div className="flex items-center gap-2 sm:gap-3">
+    <span className="w-8 sm:w-14 flex-shrink-0 text-sm text-foreground">{label}</span>
     <div className="flex-1 min-w-0">{children}</div>
   </div>
 );
@@ -630,8 +630,8 @@ export default function AccountCenterPage() {
       {/* 推送设置弹窗 */}
       <Modal isOpen={isPushOpen} onOpenChange={onPushOpenChange} placement="center" backdrop="opaque" classNames={{ base: 'max-w-[600px] overflow-visible' }}>
         <ModalContent>
-          <ModalHeader className="pb-3">推送设置</ModalHeader>
-          <ModalBody className="py-0">
+          <ModalHeader className="!px-4 sm:!px-6 pb-3">推送设置</ModalHeader>
+          <ModalBody className="px-4 sm:px-6 py-0">
             <div className="rounded-medium border-1 border-default-200">
               <button
                 type="button"
@@ -643,7 +643,7 @@ export default function AccountCenterPage() {
                 <span>通道: Telegram</span>
               </button>
               {pushChannelOpen && (
-                <div className="p-4 space-y-3.5">
+                <div className="p-3 sm:p-4 space-y-3.5">
                   {isAdminUser ? (
                     <>
                       <NotifyCard title="收款信息">
@@ -694,7 +694,7 @@ export default function AccountCenterPage() {
               )}
             </div>
           </ModalBody>
-          <ModalFooter className="pt-3">
+          <ModalFooter className="!px-4 sm:!px-6 pt-3">
             <Button size="sm" variant="bordered" className={OUTLINE_BUTTON} onPress={() => onPushOpenChange()}>取 消</Button>
             <Button size="sm" color="primary" className="text-sm font-normal" isLoading={pushSaving} onPress={handleSavePushSettings}>确 定</Button>
           </ModalFooter>

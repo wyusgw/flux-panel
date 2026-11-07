@@ -544,12 +544,20 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         if (resetFlowDto.getType() == 1){ // 清零账号流量
             User user = this.getById(resetFlowDto.getId());
             if (user == null) return R.err(ERROR_USER_NOT_FOUND);
+            // 和修改、删除用户一致：管理员账号只有全权限管理员能操作
+            if (Integer.valueOf(ADMIN_ROLE_ID).equals(user.getRoleId()) && !isCurrentFullAdmin()) {
+                return R.err(403, ERROR_NEED_FULL_ADMIN);
+            }
             user.setInFlow(0L);
             user.setOutFlow(0L);
             this.updateById(user);
         }else { // 清零隧道流量
             UserTunnel tunnel = userTunnelService.getById(resetFlowDto.getId());
             if (tunnel == null) return R.err("隧道不存在");
+            User owner = this.getById(tunnel.getUserId());
+            if (owner != null && Integer.valueOf(ADMIN_ROLE_ID).equals(owner.getRoleId()) && !isCurrentFullAdmin()) {
+                return R.err(403, ERROR_NEED_FULL_ADMIN);
+            }
             tunnel.setInFlow(0L);
             tunnel.setOutFlow(0L);
             userTunnelService.updateById(tunnel);

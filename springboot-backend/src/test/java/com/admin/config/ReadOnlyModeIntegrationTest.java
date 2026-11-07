@@ -165,4 +165,45 @@ class ReadOnlyModeIntegrationTest {
     void anonymousCannotReachProtectedEndpoints() throws Exception {
         mvc.perform(post("/api/v1/node/list")).andExpect(jsonPath("$.code").value(401));
     }
+
+    private String limitedAdmin(String pages) {
+        User user = new User();
+        user.setId(7L);
+        user.setUser("limited");
+        user.setRoleId(0);
+        user.setStatus(1);
+        user.setDemoMode(0);
+        user.setMenuPermissions(pages);
+        org.mockito.Mockito.when(userMapper.selectById(org.mockito.ArgumentMatchers.any())).thenReturn(user);
+        return JwtUtil.generateToken(user);
+    }
+
+    /** 同一个接口换任何写法，受限管理员都不能绕过页面权限 */
+    @Test
+    void limitedAdminCannotBypassPagePermissionWithPathTricks() throws Exception {
+        String token = limitedAdmin("forward");
+        for (String path : new String[]{"/api/v1/config/update", "/api/v1/config/update/", "/api/v1/config/update;a=1",
+                "/api/v1/config/updat%65", "/api/v1/config/update;a=1/", "/api/v1//config/update"}) {
+            mvc.perform(post(java.net.URI.create(path)).header("Authorization", token))
+                    .andExpect(jsonPath("$.code").value(403));
+        }
+    }
+
+    @Test
+    void limitedAdminWithThePageCanStillUseTheEndpoint() throws Exception {
+        String token = limitedAdmin("config");
+        for (String path : new String[]{"/api/v1/config/update", "/api/v1/config/update/"}) {
+            mvc.perform(post(path).header("Authorization", token))
+                    .andExpect(jsonPath("$.code").value(0));
+        }
+    }
+
+    @Test
+    void demoAccountStaysBlockedWithPathTricks() throws Exception {
+        String token = login(0, 1);
+        for (String path : new String[]{"/api/v1/config/update", "/api/v1/config/update/", "/api/v1/config/updat%65"}) {
+            mvc.perform(post(java.net.URI.create(path)).header("Authorization", token))
+                    .andExpect(jsonPath("$.code").value(403));
+        }
+    }
 }

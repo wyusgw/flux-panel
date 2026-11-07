@@ -1,6 +1,7 @@
 package com.admin.controller;
 
 import com.admin.common.annotation.RequireRole;
+import com.admin.common.utils.JwtUtil;
 import com.admin.common.lang.R;
 import com.admin.common.utils.DemoArea;
 import com.admin.entity.User;
@@ -37,6 +38,9 @@ public class DemoController {
     @RequireRole
     @PostMapping("/permission")
     public R permission(@RequestBody Map<String, Object> params) {
+        if (!isFullAdmin()) {
+            return R.err(403, "只有全权限管理员可以管理演示账号");
+        }
         User user = demoUser(params);
         if (user == null) {
             return R.err("演示账号不存在");
@@ -65,6 +69,9 @@ public class DemoController {
     @PostMapping("/updatePermission")
     @SuppressWarnings("unchecked")
     public R updatePermission(@RequestBody Map<String, Object> params) {
+        if (!isFullAdmin()) {
+            return R.err(403, "只有全权限管理员可以管理演示账号");
+        }
         User user = demoUser(params);
         if (user == null) {
             return R.err("演示账号不存在");
@@ -85,6 +92,9 @@ public class DemoController {
     @RequireRole
     @PostMapping("/restore")
     public R restore(@RequestBody Map<String, Object> params) {
+        if (!isFullAdmin()) {
+            return R.err(403, "只有全权限管理员可以管理演示账号");
+        }
         User user = demoUser(params);
         if (user == null) {
             return R.err("演示账号不存在");
@@ -96,12 +106,21 @@ public class DemoController {
     @RequireRole
     @PostMapping("/commit")
     public R commit(@RequestBody Map<String, Object> params) {
+        if (!isFullAdmin()) {
+            return R.err(403, "只有全权限管理员可以管理演示账号");
+        }
         User user = demoUser(params);
         if (user == null) {
             return R.err("演示账号不存在");
         }
         demoChangeService.commit(user.getId());
         return R.ok();
+    }
+
+    /** 演示账号的可编辑范围和改动提交只给全权限管理员，与页面权限分配一致，否则受限管理员能借演示账号扩大自己的权限 */
+    private boolean isFullAdmin() {
+        User me = userService.getById(JwtUtil.getUserIdFromToken());
+        return me != null && Integer.valueOf(0).equals(me.getRoleId()) && me.getMenuPermissions() == null;
     }
 
     private User demoUser(Map<String, Object> params) {

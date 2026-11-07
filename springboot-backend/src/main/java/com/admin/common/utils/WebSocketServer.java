@@ -13,6 +13,8 @@ import com.admin.service.TaskQueueService;
 import com.admin.service.NodeService;
 import com.admin.service.NodeTrafficCycleService;
 import com.admin.service.ViteConfigService;
+import com.admin.entity.User;
+import com.admin.mapper.UserMapper;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
@@ -43,6 +45,9 @@ public class WebSocketServer extends TextWebSocketHandler {
 
     @Resource
     NodeService nodeService;
+
+    @Resource
+    UserMapper userMapper;
 
     @Resource
     NotificationUtil notificationUtil;
@@ -613,6 +618,42 @@ public class WebSocketServer extends TextWebSocketHandler {
         for (WebSocketSession session : activeSessions) {
             if (canSeeNode(session, nodeId)) {
                 sendToUser(session, message);
+            }
+        }
+    }
+
+    /**
+     * 网页连接是否可以继续：账号要存在且没被管理员禁用，角色和演示状态要和连接时一致，规则与 HTTP 的 ReadOnlyInterceptor 相同。
+     * 到期停用的账号可以登录续费，不在此列。
+     */
+    public static boolean canKeepUserSession(User user, Integer roleId, boolean demo) {
+        if (user == null || User.disabledByAdmin(user)) {
+            return false;
+        }
+        boolean demoAccount = Integer.valueOf(1).equals(user.getDemoMode());
+        if (demo) {
+            return demoAccount && Objects.equals(user.getRoleId(), roleId);
+        }
+        return !Integer.valueOf(0).equals(roleId) || (Integer.valueOf(0).equals(user.getRoleId()) && !demoAccount);
+    }
+
+    /** 连接建立后可以开很久，账号被封禁或取消管理员后要主动断开；断开后前端重连，握手时按最新状态判断 */
+    @Scheduled(fixedRate = 60000)
+    public void revalidateUserSessions() {
+        for (WebSocketSession session : activeSessions) {
+            try {
+                Object id = session.getAttributes().get("id");
+                Object roleId = session.getAttributes().get("roleId");
+                boolean demo = Boolean.TRUE.equals(session.getAttributes().get("demo"));
+                User user = id == null ? null : userMapper.selectById(Integer.valueOf(id.toString()));
+                if (!canKeepUserSession(user, roleId instanceof Integer ? (Integer) roleId : null, demo)) {
+                    log.info("账号状态已变化，断开网页连接，sessionId: {}", session.getId());
+                    session.close(CloseStatus.POLICY_VIOLATION);
+                    cleanupSession(session);
+                }
+            } catch (Exception e) {
+                // 查询失败时不断开，下一轮再判断，避免数据库抖动把所有人踢下线
+                log.warn("复查网页连接失败: {}", e.getMessage());
             }
         }
     }

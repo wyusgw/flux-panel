@@ -20,6 +20,8 @@ import com.admin.service.ViteConfigService;
 import java.net.InetAddress;
 import java.util.Arrays;
 import java.util.Collections;
+import com.admin.entity.ForwardGroup;
+import com.admin.service.ForwardGroupService;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
@@ -107,6 +109,10 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
     @Lazy
     private ViteConfigService viteConfigService;
 
+    @Resource
+    @Lazy
+    private ForwardGroupService forwardGroupService;
+
     /**
      * 端口分配 -> 落库 这段临界区的互斥锁：避免并发创建/更新转发规则时，
      * 两个请求都在对方尚未提交端口占用记录前查到"端口空闲"，进而对同一物理端口
@@ -155,6 +161,10 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         }
         if (tunnel.getStatus() != TUNNEL_STATUS_ACTIVE) {
             return R.err("隧道已禁用，无法创建转发");
+        }
+        String groupError = forwardGroupError(currentUser, forwardDto.getGroupId(), null);
+        if (groupError != null) {
+            return R.err(RULE_SERVICE_BLOCKED_CODE, groupError);
         }
         String targetBlocked = forwardTargetBlockReason(currentUser, forwardDto.getRemoteAddr(), tunnel);
         if (targetBlocked != null) {
@@ -297,6 +307,10 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         }
         if (tunnel.getStatus() != TUNNEL_STATUS_ACTIVE) {
             return R.err("隧道已禁用，无法更新转发");
+        }
+        String groupError = forwardGroupError(currentUser, forwardUpdateDto.getGroupId(), existForward.getGroupId());
+        if (groupError != null) {
+            return R.err(RULE_SERVICE_BLOCKED_CODE, groupError);
         }
         String targetBlocked = forwardTargetBlockReason(currentUser, forwardUpdateDto.getRemoteAddr(), tunnel);
         if (targetBlocked != null) {
@@ -1049,6 +1063,15 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         }
 
         return UserPermissionResult.success(null, userTunnel);
+    }
+
+    /** 普通用户只能把规则放进自己的分组；分组没变时不检查，不影响编辑已有规则 */
+    String forwardGroupError(UserInfo currentUser, Long groupId, Long currentGroupId) {
+        if (currentUser.getRoleId() == ADMIN_ROLE_ID || groupId == null || groupId <= 0 || groupId.equals(currentGroupId)) {
+            return null;
+        }
+        ForwardGroup group = forwardGroupService.getById(groupId);
+        return group != null && Objects.equals(group.getUserId(), currentUser.getUserId()) ? null : "分组不存在";
     }
 
     /**

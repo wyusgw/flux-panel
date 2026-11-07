@@ -155,6 +155,36 @@ class ForwardEditKeepsStateTest {
         verify(service, never()).restorePausedStatus(eq(7L));
     }
 
+    private String groupError(int roleId, Long groupId, Long currentGroupId) throws Exception {
+        com.admin.service.ForwardGroupService groups = mock(com.admin.service.ForwardGroupService.class);
+        com.admin.entity.ForwardGroup own = new com.admin.entity.ForwardGroup();
+        own.setUserId(5);
+        com.admin.entity.ForwardGroup other = new com.admin.entity.ForwardGroup();
+        other.setUserId(6);
+        org.mockito.Mockito.when(groups.getById(1L)).thenReturn(own);
+        org.mockito.Mockito.when(groups.getById(2L)).thenReturn(other);
+        ReflectionTestUtils.setField(service, "forwardGroupService", groups);
+        Class<?> infoClass = Class.forName("com.admin.service.impl.ForwardServiceImpl$UserInfo");
+        java.lang.reflect.Constructor<?> constructor = infoClass.getDeclaredConstructor(Integer.class, Integer.class, String.class);
+        constructor.setAccessible(true);
+        Object info = constructor.newInstance(5, roleId, "u");
+        java.lang.reflect.Method method = ForwardServiceImpl.class.getDeclaredMethod("forwardGroupError", infoClass, Long.class, Long.class);
+        method.setAccessible(true);
+        return (String) method.invoke(service, info, groupId, currentGroupId);
+    }
+
+    @Test
+    void userCanOnlyPutRulesIntoTheirOwnGroup() throws Exception {
+        assertEquals(null, groupError(1, 1L, null));
+        assertEquals("分组不存在", groupError(1, 2L, null));
+        assertEquals("分组不存在", groupError(1, 99L, null));
+        assertEquals(null, groupError(1, null, null));
+        assertEquals(null, groupError(1, 0L, null));
+        // 分组没变不检查，已有规则照常编辑；管理员不受限
+        assertEquals(null, groupError(1, 2L, 2L));
+        assertEquals(null, groupError(0, 2L, null));
+    }
+
     @Test
     void tunnelSyncCopiesEveryRuleSetting() {
         Forward forward = new Forward();

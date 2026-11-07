@@ -139,11 +139,12 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         }
 
         // 1.0.1 规则归属者没有套餐、流量用完或账号到期时不能创建规则；提前检查，避免先提示没有隧道权限
-        if (effectiveUser.getRoleId() != ADMIN_ROLE_ID) {
-            String blockReason = ruleServiceBlockReason(userService.getById(effectiveUser.getUserId()), System.currentTimeMillis());
-            if (blockReason != null) {
-                return R.err(RULE_SERVICE_BLOCKED_CODE, blockReason);
-            }
+        User ruleOwner = userService.getById(effectiveUser.getUserId());
+        String blockReason = effectiveUser.getRoleId() == ADMIN_ROLE_ID
+                ? adminFlowBlockReason(ruleOwner)
+                : ruleServiceBlockReason(ruleOwner, System.currentTimeMillis());
+        if (blockReason != null) {
+            return R.err(RULE_SERVICE_BLOCKED_CODE, blockReason);
         }
 
         // 1.1 校验隧道选择方式：显式隧道 或 入口/出口设备组，二选一（沿用发起请求者本人的身份校验，
@@ -273,6 +274,19 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
 
     @Override
     public R updateForward(ForwardUpdateDto forwardUpdateDto) {
+        return updateForward(forwardUpdateDto, false);
+    }
+
+    @Override
+    public R syncForwardForTunnel(ForwardUpdateDto forwardUpdateDto) {
+        return updateForward(forwardUpdateDto, true);
+    }
+
+    /**
+     * @param tunnelSync 隧道配置变化时系统重新同步规则，不是用户在编辑：
+     *                   管理员流量用完也要同步，否则节点上的配置和隧道对不上
+     */
+    private R updateForward(ForwardUpdateDto forwardUpdateDto, boolean tunnelSync) {
         // 1. 获取当前用户信息
         UserInfo currentUser = getCurrentUserInfo();
         if (currentUser.getRoleId() != ADMIN_ROLE_ID) {
@@ -298,6 +312,15 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         Forward existForward = validateForwardExists(forwardUpdateDto.getId(), currentUser);
         if (existForward == null) {
             return R.err("转发不存在");
+        }
+
+        // 管理员编辑自己的规则受流量限制；编辑别人的规则按原来的做法不拦
+        if (!tunnelSync && currentUser.getRoleId() == ADMIN_ROLE_ID
+                && Objects.equals(currentUser.getUserId(), existForward.getUserId())) {
+            String adminBlockReason = adminFlowBlockReason(userService.getById(currentUser.getUserId()));
+            if (adminBlockReason != null) {
+                return R.err(RULE_SERVICE_BLOCKED_CODE, adminBlockReason);
+            }
         }
 
         // 3. 检查隧道是否存在和可用
@@ -556,6 +579,14 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         if (targetStatus == FORWARD_STATUS_ACTIVE) {
             if (tunnel.getStatus() != TUNNEL_STATUS_ACTIVE) {
                 return R.err("隧道已禁用，无法恢复服务");
+            }
+
+            // 管理员恢复自己的规则只看流量，不要求套餐
+            if (currentUser.getRoleId() == ADMIN_ROLE_ID && Objects.equals(currentUser.getUserId(), forward.getUserId())) {
+                String adminBlockReason = adminFlowBlockReason(userService.getById(currentUser.getUserId()));
+                if (adminBlockReason != null) {
+                    return R.err(RULE_SERVICE_BLOCKED_CODE, adminBlockReason);
+                }
             }
 
             // 普通用户需要检查流量和账户状态
@@ -1095,11 +1126,15 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
 
     /**
      * 规则归属者当前能否使用转发服务，不能时返回原因，能用时返回 null。
-     * 无套餐按「没有流量配额」判断：管理员在用户管理里手动设置了流量的无套餐用户仍可使用。
+     * 没有套餐就不能使用，管理员在用户管理里手动设置的流量和规则数不算套餐。
      */
     static String ruleServiceBlockReason(User user, long now) {
         if (user == null) {
             return "用户不存在";
+        }
+        // 放在到期判断前面：新注册用户的到期时间就是注册时刻，没买过套餐不该提示「已到期」
+        if (user.getPackageId() == null) {
+            return "用户未购买套餐";
         }
         if (user.getExpTime() != null && user.getExpTime() <= now) {
             return "当前账号已到期";
@@ -1107,12 +1142,21 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         if (Integer.valueOf(0).equals(user.getStatus())) {
             return "用户已被禁用";
         }
-        long flowLimit = user.getFlow() == null ? 0L : user.getFlow();
-        if (flowLimit <= 0) {
-            return user.getPackageId() == null ? "用户未购买套餐" : "用户流量已用完";
+        return isFlowExhausted(user) ? "用户流量已用完" : null;
+    }
+
+    /** 管理员只受流量限制：默认的管理员账号没有套餐，要求套餐的话新装的面板连规则都建不了 */
+    static String adminFlowBlockReason(User user) {
+        if (user == null) {
+            return "用户不存在";
         }
+        return isFlowExhausted(user) ? "用户流量已用完" : null;
+    }
+
+    private static boolean isFlowExhausted(User user) {
+        long flowLimit = user.getFlow() == null ? 0L : user.getFlow();
         long used = (user.getInFlow() == null ? 0L : user.getInFlow()) + (user.getOutFlow() == null ? 0L : user.getOutFlow());
-        return used >= flowLimit * BYTES_TO_GB ? "用户流量已用完" : null;
+        return flowLimit <= 0 || used >= flowLimit * BYTES_TO_GB;
     }
 
     /**

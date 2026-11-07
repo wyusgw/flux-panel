@@ -28,8 +28,13 @@ class RuleServiceBlockTest {
     }
 
     @Test
-    void noPackageWithManualQuotaIsAllowed() {
-        assertNull(ForwardServiceImpl.ruleServiceBlockReason(user(null, 10L, 0L, 0L, null), NOW));
+    void noPackageIsBlockedEvenWithManualQuota() {
+        assertEquals("用户未购买套餐", ForwardServiceImpl.ruleServiceBlockReason(user(null, 10L, 0L, 0L, null), NOW));
+    }
+
+    @Test
+    void newlyRegisteredUserIsToldToBuyAPackageNotThatTheyExpired() {
+        assertEquals("用户未购买套餐", ForwardServiceImpl.ruleServiceBlockReason(user(null, 0L, 0L, 0L, NOW), NOW));
     }
 
     @Test

@@ -100,7 +100,7 @@ export function GroupManageDrawer<T extends { id: number; name: string }>({
               </div>
 
               <div>
-                <FieldLabel>{editing ? '编辑分组' : '新增分组'}</FieldLabel>
+                <FieldLabel>{editing ? '更新分组' : '新增分组'}</FieldLabel>
                 <Input
                   aria-label="分组名称" size="sm" autoComplete="off" variant="bordered"
                   placeholder="请输入分组名称"
@@ -108,9 +108,9 @@ export function GroupManageDrawer<T extends { id: number; name: string }>({
                   onChange={(e) => onNameInputChange(e.target.value)}
                 />
                 <div className="mt-3 flex items-center gap-2">
-                  <PopConfirm title={editing ? '确定保存?' : '确定添加?'} onConfirm={onSubmit}>
+                  <PopConfirm title={editing ? '确定更新?' : '确定添加?'} onConfirm={onSubmit}>
                     <Button size="sm" color="primary" isLoading={submitting}>
-                      {editing ? '保 存' : '添 加'}
+                      {editing ? '更 新' : '添 加'}
                     </Button>
                   </PopConfirm>
                   {editing && (

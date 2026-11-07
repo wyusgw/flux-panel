@@ -43,7 +43,7 @@ public class WebSocketInterceptor extends HttpSessionHandshakeInterceptor {
         String socks = serverHttpRequest.getServletRequest().getParameter("socks");
         String ss = serverHttpRequest.getServletRequest().getParameter("ss");
         if (Objects.equals(type, "1")) {
-            System.out.println("type: " + type + " - version: " + version + " - secret: " + secret + " - IP: " + getClientIp(request));
+            System.out.println("type: " + type + " - version: " + version + " - IP: " + getClientIp(request));
             Node node = nodeService.getOne(new QueryWrapper<Node>().eq("secret", secret));
             if (node == null) {
                 log.info("节点验证失败：未找到匹配的secret");

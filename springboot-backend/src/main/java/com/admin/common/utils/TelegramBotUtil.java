@@ -39,7 +39,7 @@ public class TelegramBotUtil {
                 return json.getJSONObject("result").getString("username");
             }
         } catch (Exception e) {
-            log.warn("Telegram getMe 校验失败: {}", e.getMessage());
+            log.warn("Telegram getMe 校验失败: {}", LogSanitizer.maskBotToken(e.getMessage()));
         }
         return null;
     }
@@ -68,7 +68,7 @@ public class TelegramBotUtil {
             JSONObject json = JSONObject.parseObject(resp);
             return json != null && json.getBooleanValue("ok");
         } catch (Exception e) {
-            log.warn("Telegram 消息发送失败: {}", e.getMessage());
+            log.warn("Telegram 消息发送失败: {}", LogSanitizer.maskBotToken(e.getMessage()));
             return false;
         }
     }
@@ -93,7 +93,7 @@ public class TelegramBotUtil {
                 if (u != null) result.add(u);
             }
         } catch (Exception e) {
-            log.warn("Telegram getUpdates 失败: {}", e.getMessage());
+            log.warn("Telegram getUpdates 失败: {}", LogSanitizer.maskBotToken(e.getMessage()));
         }
         return result;
     }
@@ -132,7 +132,7 @@ public class TelegramBotUtil {
             }
             return ok;
         } catch (Exception e) {
-            log.warn("Telegram setWebhook 异常: {}", e.getMessage());
+            log.warn("Telegram setWebhook 异常: {}", LogSanitizer.maskBotToken(e.getMessage()));
             return false;
         }
     }
@@ -151,7 +151,7 @@ public class TelegramBotUtil {
             }
             return ok;
         } catch (Exception e) {
-            log.warn("Telegram deleteWebhook 异常: {}", e.getMessage());
+            log.warn("Telegram deleteWebhook 异常: {}", LogSanitizer.maskBotToken(e.getMessage()));
             return false;
         }
     }

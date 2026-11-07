@@ -1,11 +1,10 @@
 package com.admin.common.aop;
 
 
-import cn.hutool.core.util.ArrayUtil;
 import com.admin.common.utils.JwtUtil;
-import com.alibaba.fastjson.JSON;
 import com.admin.common.utils.HttpContextUtils;
 import com.admin.common.utils.IpUtils;
+import com.admin.common.utils.LogSanitizer;
 import lombok.extern.slf4j.Slf4j;
 import org.aspectj.lang.JoinPoint;
 import org.aspectj.lang.annotation.*;
@@ -13,10 +12,11 @@ import org.aspectj.lang.reflect.CodeSignature;
 import org.aspectj.lang.reflect.MethodSignature;
 import org.springframework.stereotype.Component;
 
+import javax.servlet.ServletRequest;
+import javax.servlet.ServletResponse;
 import javax.servlet.http.HttpServletRequest;
 import java.lang.reflect.Method;
-import java.util.Arrays;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 @Component
@@ -74,7 +74,7 @@ public class LogAspect {
         String requestParams = getRequestParams(joinPoint);
         
         // 获取返回参数
-        String responseParams = returnValue != null ? JSON.toJSONString(returnValue) : "无返回值";
+        String responseParams = returnValue != null ? LogSanitizer.toSafeJson(returnValue) : "无返回值";
         
         // 合并为一条完整的日志信息
         String logMessage = String.format(
@@ -149,43 +149,19 @@ public class LogAspect {
     private String getRequestParams(JoinPoint joinPoint) {
         try {
             Object[] args = joinPoint.getArgs();
-            if (args.length == 0) {
-                return "无参数";
-            } else if (args[0] != null && args[0].toString().contains("SecurityContextHolderAwareRequestWrapper")) {
-                return JSON.toJSONString(Arrays.toString(ArrayUtil.remove(args, 0)));
-            } else {
-                // 检查是否只有一个参数且已经是JSON字符串格式
-                if (args.length == 1 && args[0] != null) {
-                    // 如果参数本身就是字符串且是JSON格式，直接返回
-                    if (args[0] instanceof String && ((String) args[0]).startsWith("{") && ((String) args[0]).endsWith("}")) {
-                        return (String) args[0];
-                    }
-                    
-                    // 如果参数是普通对象，直接序列化
-                    try {
-                        return JSON.toJSONString(args[0]);
-                    } catch (Exception e) {
-                        // 如果序列化失败，再尝试使用参数名映射
-                        Map<String, Object> map = new HashMap<>();
-                        String[] names = ((CodeSignature) joinPoint.getSignature()).getParameterNames();
-                        if (names != null) {
-                            map.put(names[0], args[0]);
-                            return JSON.toJSONString(map);
-                        }
-                        return JSON.toJSONString(args[0]);
-                    }
-                } else {
-                    // 多个参数时，使用参数名映射
-                    Map<String, Object> map = new HashMap<>();
-                    String[] names = ((CodeSignature) joinPoint.getSignature()).getParameterNames();
-                    if (names != null) {
-                        for (int i = 0; i < names.length; i++) {
-                            map.put(names[i], args[i]);
-                        }
-                    }
-                    return JSON.toJSONString(map);
+            String[] names = ((CodeSignature) joinPoint.getSignature()).getParameterNames();
+            Map<String, Object> params = new LinkedHashMap<>();
+            for (int i = 0; i < args.length; i++) {
+                // 请求和响应对象不是业务参数，序列化还可能带出请求头
+                if (args[i] instanceof ServletRequest || args[i] instanceof ServletResponse) {
+                    continue;
                 }
+                params.put(names != null && i < names.length ? names[i] : "arg" + i, args[i]);
             }
+            if (params.isEmpty()) {
+                return "无参数";
+            }
+            return LogSanitizer.toSafeJson(params.size() == 1 ? params.values().iterator().next() : params);
         } catch (Exception e) {
             return "获取参数失败: " + e.getMessage();
         }

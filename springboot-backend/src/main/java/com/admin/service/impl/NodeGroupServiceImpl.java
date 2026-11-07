@@ -43,6 +43,16 @@ public class NodeGroupServiceImpl extends ServiceImpl<NodeGroupMapper, NodeGroup
         NodeGroup nodeGroup = new NodeGroup();
         BeanUtils.copyProperties(nodeGroupDto, nodeGroup);
 
+        // 自定义 ID：必须是正数且没被占用，不传则由数据库自动生成
+        if (nodeGroup.getId() != null) {
+            if (nodeGroup.getId() <= 0) {
+                return R.err("节点组 ID 必须大于 0");
+            }
+            if (this.getById(nodeGroup.getId()) != null) {
+                return R.err("节点组 ID 已存在");
+            }
+        }
+
         long currentTime = System.currentTimeMillis();
         nodeGroup.setCreatedTime(currentTime);
         nodeGroup.setUpdatedTime(currentTime);
@@ -51,7 +61,7 @@ public class NodeGroupServiceImpl extends ServiceImpl<NodeGroupMapper, NodeGroup
             nodeGroup.setSort(0);
         }
 
-        boolean result = this.save(nodeGroup);
+        boolean result = nodeGroup.getId() != null ? baseMapper.insertWithId(nodeGroup) > 0 : this.save(nodeGroup);
         return result ? R.ok() : R.err(ERROR_CREATE_FAILED);
     }
 

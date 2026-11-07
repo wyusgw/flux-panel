@@ -336,9 +336,8 @@ export default function DeviceGroupPage() {
       } else if (form.chainHops.some(hop => !hop.targetDeviceGroupId)) {
         newErrors.chainHops = '每一跳都必须选择出口设备组';
       }
-    } else {
+    } else if (form.direction !== 'monitor') {
       if (!form.serverIp.trim()) newErrors.serverIp = '请输入服务器 IP 或域名';
-      if (!form.entryIps.some(ip => ip.trim())) newErrors.entryIp = '请至少输入一个入口 IP 或域名';
       if (!parsePortRange(portRangeText)) newErrors.portRange = '端口范围格式应为「起始-结束」，如 2000-65535，且在 1-65535 之间、起始不大于结束';
     }
     if (form.ratio < 0) newErrors.ratio = '流量倍率不能小于0';
@@ -375,7 +374,8 @@ export default function DeviceGroupPage() {
       }
 
       let nodeId = form.nodeId;
-      const joinedEntryIp = joinEntryIps(form.entryIps);
+      // 连接地址留空时默认使用服务器地址
+      const joinedEntryIp = joinEntryIps(form.entryIps) || form.serverIp.trim();
       const nodeData = { name: form.name, ip: joinedEntryIp, serverIp: form.serverIp, portSta: form.portSta, portEnd: form.portEnd, nodeGroupIds: form.nodeGroupIds };
       if (nodeId) {
         // 编辑已有设备组，或补全一个已存在但尚未建立设备组的节点，都是更新同一个节点记录
@@ -810,14 +810,15 @@ export default function DeviceGroupPage() {
                     <>
                   {form.direction !== 'chain' && (
                     <>
+                      {form.direction !== 'monitor' && (
+                        <>
                       <Input labelPlacement="outside-top" size="sm" autoComplete="off" label="服务器 IP / 域名" placeholder="例如：203.0.113.10 或 node.example.com" value={form.serverIp} onChange={(e) => setForm(prev => ({ ...prev, serverIp: e.target.value }))} isInvalid={!!errors.serverIp} errorMessage={errors.serverIp} variant="bordered" />
 
                       <Textarea labelPlacement="outside-top" size="sm" autoComplete="off" variant="bordered" disableAutosize rows={3}
-                        label={<HelpTooltip content="用户连接使用的 IP 或域名，一行一个，数量不限">连接地址</HelpTooltip>}
+                        label={<HelpTooltip content="用户连接使用的 IP 或域名，一行一个，数量不限；留空时默认使用服务器 IP / 域名">连接地址</HelpTooltip>}
+                        placeholder="留空默认使用服务器 IP / 域名"
                         value={form.entryIps.join('\n')}
                         onChange={(e) => setForm(prev => ({ ...prev, entryIps: e.target.value.split('\n') }))}
-                        isInvalid={!!errors.entryIp}
-                        errorMessage={errors.entryIp}
                         classNames={{ input: 'resize-y min-h-[4.5rem]' }}
                       />
 
@@ -837,6 +838,8 @@ export default function DeviceGroupPage() {
                         errorMessage={errors.portRange}
                         variant="bordered"
                       />
+                        </>
+                      )}
 
                       <Select listboxProps={{ emptyContent: <EmptyState compact /> }} labelPlacement="outside-top"
                         size="sm"

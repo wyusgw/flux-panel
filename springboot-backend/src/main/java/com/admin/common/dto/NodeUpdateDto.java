@@ -17,10 +17,10 @@ public class NodeUpdateDto {
     @NotBlank(message = "节点名称不能为空")
     private String name;
 
-    @NotBlank(message = "入口IP不能为空")
+    /** 连接地址，留空时默认使用 serverIp */
     private String ip;
 
-    @NotBlank(message = "服务器ip不能为空")
+    /** 仅监控设备可以留空，其他类型在 NodeServiceImpl、DeviceGroupServiceImpl 中按设备组类型校验 */
     private String serverIp;
 
     @NotNull(message = "起始端口不能为空")

@@ -98,6 +98,9 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
             if (node == null) {
                 return R.err(ERROR_NODE_NOT_FOUND);
             }
+            if (NodeServiceImpl.isAddressMissing(dto.getDirection(), node.getServerIp())) {
+                return R.err(NodeServiceImpl.ERROR_ADDRESS_REQUIRED);
+            }
         }
 
         DeviceGroup group = new DeviceGroup();
@@ -368,6 +371,9 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
             Node node = nodeService.getById(dto.getNodeId());
             if (node == null) {
                 return R.err(ERROR_NODE_NOT_FOUND);
+            }
+            if (NodeServiceImpl.isAddressMissing(dto.getDirection(), node.getServerIp())) {
+                return R.err(NodeServiceImpl.ERROR_ADDRESS_REQUIRED);
             }
         }
 

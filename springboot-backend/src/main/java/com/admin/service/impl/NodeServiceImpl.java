@@ -72,6 +72,7 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
     private static final String ERROR_UPDATE_MSG = "节点更新失败";
     private static final String ERROR_DELETE_MSG = "节点删除失败";
     private static final String ERROR_NODE_NOT_FOUND = "节点不存在";
+    static final String ERROR_ADDRESS_REQUIRED = "除仅监控外，设备必须填写服务器 IP / 域名";
     
     /** 隧道使用检查相关消息 */
     private static final String ERROR_IN_NODE_IN_USE = "该节点还有 %d 个隧道作为入口节点在使用，请先删除相关隧道";
@@ -211,6 +212,16 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
             return R.err(ERROR_NODE_NOT_FOUND);
         }
 
+        // 服务器地址不再由 DTO 强制必填：只有节点下的设备组全部是仅监控时才允许留空
+        if (StrUtil.isBlank(nodeUpdateDto.getServerIp())) {
+            List<DeviceGroup> groups = deviceGroupMapper.selectList(new QueryWrapper<DeviceGroup>().eq("node_id", node.getId()));
+            boolean required = groups.stream().anyMatch(group ->
+                    isAddressMissing(group.getDirection(), nodeUpdateDto.getServerIp()));
+            if (required) {
+                return R.err(ERROR_ADDRESS_REQUIRED);
+            }
+        }
+
         //1.1 如果节点在线 且传入更新的 http/tls/socks 任意一项与数据库不一致，则通过 WS 通知节点更新设置
         boolean online = node.getStatus() != null && node.getStatus() == 1;
         Integer newHttp = nodeUpdateDto.getHttp();
@@ -334,6 +345,9 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
     private Node buildNewNode(NodeDto nodeDto) {
         Node node = new Node();
         BeanUtils.copyProperties(nodeDto, node);
+        // 仅监控设备没有地址；server_ip 列不允许 NULL，统一存空字符串
+        node.setServerIp(StrUtil.nullToEmpty(node.getServerIp()));
+        node.setIp(StrUtil.nullToEmpty(resolveEntryIp(node.getIp(), node.getServerIp())));
         
         // 验证端口范围
         validatePortRange(node.getPortSta(), node.getPortEnd());
@@ -350,6 +364,16 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
         return node;
     }
 
+    /** 除仅监控外，设备组所在节点都必须有服务器地址；direction 为空的旧数据按入口处理 */
+    static boolean isAddressMissing(String direction, String serverIp) {
+        return !"monitor".equals(direction) && StrUtil.isBlank(serverIp);
+    }
+
+    /** 连接地址留空时默认使用服务器地址 */
+    static String resolveEntryIp(String ip, String serverIp) {
+        return StrUtil.isBlank(ip) ? serverIp : ip;
+    }
+
     /**
      * 构建节点更新对象
      * 
@@ -360,7 +384,7 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
         Node node = new Node();
         node.setId(nodeUpdateDto.getId());
         node.setName(nodeUpdateDto.getName());
-        node.setIp(nodeUpdateDto.getIp());
+        node.setIp(resolveEntryIp(nodeUpdateDto.getIp(), nodeUpdateDto.getServerIp()));
         node.setServerIp(nodeUpdateDto.getServerIp());
         node.setPortSta(nodeUpdateDto.getPortSta());
         node.setPortEnd(nodeUpdateDto.getPortEnd());

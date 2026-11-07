@@ -15,6 +15,7 @@ import { showInfoDialog } from '@/components/error-dialog';
 import { HelpTooltip } from '@/components/help-tooltip';
 import { ToastWarningIcon } from '@/components/toast-icons';
 import { getCachedConfigs } from '@/config/site';
+import { copyText } from '@/utils/clipboard';
 import { safeLogout } from '@/utils/logout';
 import {
   getUserPackageInfo,
@@ -395,6 +396,15 @@ export default function AccountCenterPage() {
     }
   };
 
+  const handleCopyGeneratedPassword = async () => {
+    const success = await copyText(generatedPassword);
+    if (success) {
+      toast.success('已复制');
+    } else {
+      toast.error('复制失败');
+    }
+  };
+
   const handleGeneratedConfirm = () => {
     onGeneratedOpenChange();
     safeLogout();
@@ -587,7 +597,7 @@ export default function AccountCenterPage() {
               <p className="mt-2.5 pl-2.5 border-l-[3px] border-default-200 text-sm text-default-600">如果您的密码已泄漏，可以在这里重置。用户名留空则不修改。重置操作会强制下线您在其他地方的登录。</p>
             </div>
             <div className="space-y-6 max-w-[530px]">
-              <Input autoComplete="off" placeholder="新用户名（选填）" value={newUsername} onChange={(e) => setNewUsername(e.target.value)} variant="bordered" size="sm" classNames={THIN_INPUT} startContent={<UserFieldIcon />} />
+              <Input autoComplete="off" placeholder="新用户名(选填)" value={newUsername} onChange={(e) => setNewUsername(e.target.value)} variant="bordered" size="sm" classNames={THIN_INPUT} startContent={<UserFieldIcon />} />
               <Input autoComplete="off" type="password" placeholder="当前密码" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} variant="bordered" size="sm" classNames={THIN_INPUT} startContent={<LockIcon />} />
               <Input autoComplete="off" type="password" placeholder="新密码，留空随机生成。" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} variant="bordered" size="sm" classNames={THIN_INPUT} startContent={<LockIcon />} />
               <Input autoComplete="off" type="password" placeholder="确认新密码" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} variant="bordered" size="sm" classNames={THIN_INPUT} startContent={<LockIcon />} />
@@ -621,8 +631,8 @@ export default function AccountCenterPage() {
             )}
           </ModalBody>
           <ModalFooter>
-            <Button size="sm" variant="bordered" onPress={() => onBindOpenChange()}>关闭</Button>
-            <Button size="sm" color="primary" isDisabled={bindChecking} onPress={handleRefreshBindStatus}>刷新状态</Button>
+            <Button size="sm" variant="bordered" className={OUTLINE_BUTTON} onPress={() => onBindOpenChange()}>关闭</Button>
+            <Button size="sm" color="primary" className="text-sm font-normal" isDisabled={bindChecking} onPress={handleRefreshBindStatus}>刷新状态</Button>
           </ModalFooter>
         </ModalContent>
       </Modal>
@@ -702,16 +712,24 @@ export default function AccountCenterPage() {
       </Modal>
 
       {/* 随机生成密码展示 */}
-      <Modal isOpen={isGeneratedOpen} onOpenChange={() => {}} isDismissable={false} size="sm" placement="center" backdrop="opaque">
+      <Modal isOpen={isGeneratedOpen} onOpenChange={() => {}} isDismissable={false} hideCloseButton size="sm" placement="center" backdrop="opaque">
         <ModalContent>
           <ModalHeader>密码重置成功</ModalHeader>
           <ModalBody className="space-y-3 text-sm">
-            <p className="text-default-600">您的新密码为（仅显示一次，请妥善保存）：</p>
-            <div className="px-3 py-2 rounded-medium bg-default-100 font-mono text-center text-base select-all">{generatedPassword}</div>
+            <p className="text-default-600">您的新密码为:</p>
+            <button
+              type="button"
+              title="点击复制"
+              aria-label="复制新密码"
+              onClick={handleCopyGeneratedPassword}
+              className="w-full px-3 py-2 rounded-medium bg-default-100 hover:bg-default-200 font-mono text-center text-base break-all transition-colors cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            >
+              {generatedPassword}
+            </button>
             <p className="text-xs text-default-500">请使用新密码重新登录。</p>
           </ModalBody>
           <ModalFooter>
-            <Button size="sm" color="primary" className="w-full" onPress={handleGeneratedConfirm}>我已保存，重新登录</Button>
+            <Button size="sm" color="primary" className="w-full text-sm font-normal" onPress={handleGeneratedConfirm}>我已保存，重新登录</Button>
           </ModalFooter>
         </ModalContent>
       </Modal>

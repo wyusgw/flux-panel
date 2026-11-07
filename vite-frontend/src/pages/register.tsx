@@ -185,7 +185,7 @@ export default function RegisterPage() {
                 {invitePolicy !== 'disabled' && (
                   <Input autoComplete="off"
                     size="sm"
-                    placeholder={invitePolicy === 'required' ? '邀请码' : '邀请码（选填）'}
+                    placeholder={invitePolicy === 'required' ? '邀请码' : '邀请码(选填)'}
                     value={form.inviteCode}
                     onChange={(e) => handleInputChange('inviteCode', e.target.value)}
                     onKeyDown={handleKeyPress}

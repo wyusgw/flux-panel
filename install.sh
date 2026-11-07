@@ -16,10 +16,44 @@ get_architecture() {
     esac
 }
 
-# 构建下载地址
+# 发布时由 CI 替换成实际版本和节点程序的校验值；直接从源码运行时保持占位符，不做校验
+RELEASE_TAG="__RELEASE_TAG__"
+GOST_SHA256_AMD64="__GOST_SHA256_AMD64__"
+GOST_SHA256_ARM64="__GOST_SHA256_ARM64__"
+
+# 构建下载地址：校验值只对应这个版本，所以要固定版本，不能用 latest
 build_download_url() {
     local ARCH=$(get_architecture)
-    echo "https://github.com/wyusgw/flux-panel/releases/latest/download/gost-${ARCH}"
+    if [[ "$RELEASE_TAG" == __* ]]; then
+        echo "https://github.com/wyusgw/flux-panel/releases/latest/download/gost-${ARCH}"
+    else
+        echo "https://github.com/wyusgw/flux-panel/releases/download/${RELEASE_TAG}/gost-${ARCH}"
+    fi
+}
+
+# 校验下载的节点程序：程序可能来自第三方加速镜像，且以 root 运行，不一致就不能使用
+verify_download() {
+  local file="$1"
+  local expected
+  case "$(get_architecture)" in
+    arm64) expected="$GOST_SHA256_ARM64" ;;
+    *) expected="$GOST_SHA256_AMD64" ;;
+  esac
+  if [[ "$expected" == __* ]]; then
+    echo "警告：当前脚本没有校验值，跳过校验。"
+    return 0
+  fi
+  if ! command -v sha256sum >/dev/null 2>&1; then
+    echo "缺少 sha256sum，无法校验下载的文件。"
+    return 1
+  fi
+  local actual
+  actual=$(sha256sum "$file" | awk '{print $1}')
+  if [[ "$actual" != "$expected" ]]; then
+    echo "校验失败，已丢弃该文件。"
+    return 1
+  fi
+  return 0
 }
 
 # GitHub 加速镜像列表，按顺序依次尝试，全部失败则回退到 GitHub 原始地址
@@ -44,7 +78,10 @@ download_with_fallback() {
 
   for url in "${candidates[@]}"; do
     echo "尝试从以下地址下载: $url"
-    curl -fL "$url" -o "$output" && [[ -s "$output" ]] && return 0
+    if curl -fL "$url" -o "$output" && [[ -s "$output" ]] && verify_download "$output"; then
+      return 0
+    fi
+    rm -f "$output"
   done
   return 1
 }

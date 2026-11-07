@@ -189,6 +189,13 @@ export default function OrderManagementPage() {
     setDeleteModalOpen(true);
   };
 
+  // 已支付的充值订单不能再改（余额不会退回）；已取消的要先改回待支付，才能标记已支付并加值
+  const statusDisabledKeys = (order: OrderItem) => {
+    if (order.type === 'recharge' && order.orderStatus === 1) return STATUS_OPTIONS.map((opt) => String(opt.status));
+    if (order.type === 'recharge' && order.orderStatus === 2) return ['2', '1'];
+    return [String(order.orderStatus)];
+  };
+
   const requestStatusChange = (order: OrderItem, status: number) => {
     if (status === order.orderStatus) return;
     setStatusChangeTarget({ order, status });
@@ -305,7 +312,7 @@ export default function OrderManagementPage() {
                           </DropdownTrigger>
                           <DropdownMenu
                             aria-label="更改订单状态"
-                            disabledKeys={[String(order.orderStatus)]}
+                            disabledKeys={statusDisabledKeys(order)}
                             onAction={(key) => requestStatusChange(order, Number(key))}
                           >
                             {STATUS_OPTIONS.map((opt) => (

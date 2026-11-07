@@ -64,6 +64,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     private static final int USER_ROLE_ID = 1;         // 普通用户角色ID
     
     /** 用户状态常量 */
+    private static final java.security.SecureRandom TELEGRAM_BIND_RANDOM = new java.security.SecureRandom();
     private static final int USER_STATUS_ACTIVE = 1;   // 用户启用状态
     private static final int USER_STATUS_DISABLED = 0; // 用户停用状态
     
@@ -668,7 +669,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
             return R.err(currentUser.getErrorMessage());
         }
 
-        String code = RandomUtil.randomNumbers(6);
+        String code = generateTelegramBindCode();
         long now = System.currentTimeMillis();
 
         boolean result = this.update(new UpdateWrapper<User>()
@@ -684,6 +685,16 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         data.put("code", code);
         data.put("botUsername", getConfigValue("telegram_bot_username"));
         return R.ok(data);
+    }
+
+    /**
+     * 绑定码由安全随机数生成，16 位十六进制（64 位）。机器人不限制尝试次数，
+     * 原来的 6 位数字在有效期内可以被猜中，把别人的账号绑到自己的 Telegram 上接收通知。
+     */
+    static String generateTelegramBindCode() {
+        byte[] bytes = new byte[8];
+        TELEGRAM_BIND_RANDOM.nextBytes(bytes);
+        return java.util.HexFormat.of().formatHex(bytes);
     }
 
     /**

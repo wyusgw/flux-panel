@@ -505,19 +505,33 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
             return R.err("订单不存在");
         }
 
-        // 充值订单由待支付改为已支付：委托给充值服务，与网关回调走相同的原子更新+钱包加值逻辑
-        if (ORDER_TYPE_RECHARGE.equals(order.getType())
-                && orderStatus == ORDER_STATUS_PAID
-                && order.getOrderStatus() != null && order.getOrderStatus() == ORDER_STATUS_PENDING) {
-            return rechargeService.markOrderPaidManually(id);
+        if (ORDER_TYPE_RECHARGE.equals(order.getType())) {
+            Integer current = order.getOrderStatus();
+            // 已支付的充值订单不能改回：余额不会退回，之后再标记已支付或网关重发通知都会再加一次钱
+            if (current != null && current == ORDER_STATUS_PAID && orderStatus != ORDER_STATUS_PAID) {
+                return R.err("已支付的充值订单不能修改状态");
+            }
+            if (orderStatus == ORDER_STATUS_PAID) {
+                // 待支付改为已支付：委托给充值服务，与网关回调走相同的原子更新+钱包加值逻辑
+                if (current != null && current == ORDER_STATUS_PENDING) {
+                    return rechargeService.markOrderPaidManually(id);
+                }
+                // 其他状态直接改成已支付不会给钱包加值，订单和余额就对不上了
+                if (current == null || current != ORDER_STATUS_PAID) {
+                    return R.err("已取消的充值订单请先改回待支付，再标记为已支付");
+                }
+            }
         }
 
-        Order update = new Order();
-        update.setId(id);
-        update.setOrderStatus(orderStatus);
-        update.setUpdatedTime(System.currentTimeMillis());
-        boolean result = this.updateById(update);
-        return result ? R.ok("状态已更新") : R.err("更新失败");
+        // 只在状态没变时更新：否则网关回调刚把订单改成已支付，这里又会用旧判断把它改回去
+        UpdateWrapper<Order> update = new UpdateWrapper<Order>().eq("id", id)
+                .set("order_status", orderStatus)
+                .set("updated_time", System.currentTimeMillis());
+        if (order.getOrderStatus() != null) {
+            update.eq("order_status", order.getOrderStatus());
+        }
+        boolean result = this.update(update);
+        return result ? R.ok("状态已更新") : R.err("订单状态已变化，请刷新后重试");
     }
 
     private String generateOrderNo() {

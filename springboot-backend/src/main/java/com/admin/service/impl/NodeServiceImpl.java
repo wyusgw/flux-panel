@@ -86,6 +86,13 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
 
     // ========== 依赖注入 ==========
     
+    /** 发布版本和该版本 install.sh 的校验值，由发布流程写入镜像 */
+    @Value("${RELEASE_TAG:}")
+    private String releaseTag;
+
+    @Value("${NODE_INSTALL_SHA256:}")
+    private String installScriptSha256;
+
     @Resource
     private TunnelMapper tunnelMapper;
 
@@ -613,6 +620,11 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
         return buildInstallCommand(node);
     }
 
+    /** 这两个值会被拼进管理员复制执行的 shell 命令，格式不对就当作没有 */
+    static boolean isValidInstallPin(String tag, String sha256) {
+        return tag != null && tag.matches("[A-Za-z0-9._-]+") && sha256 != null && sha256.matches("[0-9a-f]{64}");
+    }
+
     /**
      * 构建节点安装命令
      *
@@ -631,7 +643,11 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
         // 处理服务器地址，如果是IPv6需要添加方括号
         String processedServerAddr = processServerAddress(serverAddr);
 
-        String scriptUrl = "https://github.com/wyusgw/flux-panel/releases/latest/download/install.sh";
+        // 发布时写入了版本和校验值就固定到这个版本并校验脚本；开发环境没有这些值时沿用 latest，不校验
+        boolean verified = isValidInstallPin(releaseTag, installScriptSha256);
+        String scriptUrl = verified
+                ? "https://github.com/wyusgw/flux-panel/releases/download/" + releaseTag + "/install.sh"
+                : "https://github.com/wyusgw/flux-panel/releases/latest/download/install.sh";
         // 自动探测路线：依次尝试多个加速镜像下载安装脚本，全部失败则回退到 GitHub 原始地址，
         // 适合大陆网络访问 GitHub 受限的服务器
         String[] mirrorPrefixes = {
@@ -639,7 +655,9 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
                 "https://gh-proxy.com/",
                 "https://ghproxy.net/"
         };
-        String chmodAndRun = "chmod +x ./install.sh && ./install.sh"
+        // 脚本可能来自第三方加速镜像，面板命令是唯一可信的起点：校验不通过就不会执行脚本
+        String verifyScript = verified ? "echo \"" + installScriptSha256 + "  ./install.sh\" | sha256sum -c - && " : "";
+        String chmodAndRun = verifyScript + "chmod +x ./install.sh && ./install.sh"
                 + " -a " + processedServerAddr   // 服务器地址
                 + " -s " + node.getSecret();     // 节点密钥
 

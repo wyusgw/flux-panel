@@ -248,13 +248,15 @@ public class RechargeServiceImpl extends ServiceImpl<OrderMapper, Order> impleme
         if (user == null) {
             return false;
         }
-        BigDecimal balance = user.getWalletBalance() != null ? user.getWalletBalance() : BigDecimal.ZERO;
-        BigDecimal newBalance = balance.add(order.getAmount());
-        User updateUser = new User();
-        updateUser.setId(user.getId());
-        updateUser.setWalletBalance(newBalance);
-        updateUser.setUpdatedTime(now);
-        userService.updateById(updateUser);
+        // 原子加值：写回读到的余额会覆盖同时发生的购买或其他充值
+        boolean credited = userService.update(null, new UpdateWrapper<User>()
+                .eq("id", user.getId())
+                .setSql("wallet_balance = wallet_balance + " + order.getAmount().toPlainString())
+                .set("updated_time", now));
+        if (!credited) {
+            return false;
+        }
+        BigDecimal newBalance = userService.getById(user.getId()).getWalletBalance();
 
         notificationUtil.notifyPaymentSuccess(user, order.getAmount(), newBalance);
         return true;

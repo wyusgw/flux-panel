@@ -3,7 +3,10 @@ package com.admin.config;
 
 import com.admin.common.utils.IpUtils;
 import com.admin.common.utils.JwtUtil;
+import com.admin.common.utils.WebSocketServer;
 import com.admin.entity.Node;
+import com.admin.entity.User;
+import com.admin.mapper.UserMapper;
 import com.admin.service.NodeService;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import lombok.extern.slf4j.Slf4j;
@@ -27,6 +30,9 @@ public class WebSocketInterceptor extends HttpSessionHandshakeInterceptor {
     @Resource
     NodeService nodeService;
 
+    @Resource
+    UserMapper userMapper;
+
     @Override
     public void afterHandshake(ServerHttpRequest request, ServerHttpResponse response, WebSocketHandler wsHandler, Exception ex) {
 
@@ -43,7 +49,7 @@ public class WebSocketInterceptor extends HttpSessionHandshakeInterceptor {
         String socks = serverHttpRequest.getServletRequest().getParameter("socks");
         String ss = serverHttpRequest.getServletRequest().getParameter("ss");
         if (Objects.equals(type, "1")) {
-            System.out.println("type: " + type + " - version: " + version + " - secret: " + secret + " - IP: " + getClientIp(request));
+            System.out.println("type: " + type + " - version: " + version + " - IP: " + getClientIp(request));
             Node node = nodeService.getOne(new QueryWrapper<Node>().eq("secret", secret));
             if (node == null) {
                 log.info("节点验证失败：未找到匹配的secret");
@@ -64,8 +70,15 @@ public class WebSocketInterceptor extends HttpSessionHandshakeInterceptor {
         }else {
             boolean b = JwtUtil.validateToken(secret);
             if (!b) return false;
+            // 这里不经过 HTTP 拦截器，要自己回数据库核对：取消管理员、封禁或删除后，旧令牌不能继续接收节点信息
+            User user = userMapper.selectById(JwtUtil.getUserIdFromToken(secret));
+            boolean demo = JwtUtil.isDemoToken(secret);
+            if (!WebSocketServer.canKeepUserSession(user, JwtUtil.getRoleIdFromToken(secret), demo)) {
+                return false;
+            }
             attributes.put("id", JwtUtil.getUserIdFromToken(secret));
-            attributes.put("demo", JwtUtil.isDemoToken(secret));
+            attributes.put("roleId", user.getRoleId());
+            attributes.put("demo", demo);
         }
         attributes.put("type", type);
         return true;

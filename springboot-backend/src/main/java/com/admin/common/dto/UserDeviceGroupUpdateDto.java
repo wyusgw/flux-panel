@@ -25,7 +25,7 @@ public class UserDeviceGroupUpdateDto {
     @NotBlank(message = "服务器 IP / 域名不能为空")
     private String serverIp;
 
-    @NotBlank(message = "入口 IP / 域名不能为空")
+    /** 留空时默认使用 serverIp */
     private String entryIp;
 
     private Integer portSta;
@@ -41,6 +41,4 @@ public class UserDeviceGroupUpdateDto {
      * 所属单端组ID（可为空，表示不分组）
      */
     private Long singleTunnelGroupId;
-
-    private boolean shared;
 }

@@ -13,6 +13,12 @@ public interface NodeTrafficCycleService extends IService<NodeTrafficCycle> {
      */
     NodeTrafficCycle record(Long nodeId, long rawUp, long rawDown);
 
+    /** 节点当前周期已用的上传加下载字节数，还没有记录或已进入新周期时为 0 */
+    long usedBytes(Long nodeId);
+
+    /** 清零节点当前周期的累计流量，只影响展示，和用户的计费流量无关 */
+    void clear(Long nodeId);
+
     /** 当前配置的每月重置日（站点设置 node_traffic_reset_day），默认 1，范围 1-31 */
     int getResetDay();
 

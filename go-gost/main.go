@@ -119,9 +119,12 @@ func main() {
 	log := xlogger.NewLogger()
 	logger.SetDefault(log)
 
-	wsReporter := socket.StartWebSocketReporterWithConfig(config.Addr, config.Secret, config.Http, config.Tls, config.Socks, config.Ss, "1.2.5")
+	wsReporter := socket.StartWebSocketReporterWithConfig(config.Addr, config.Secret, config.Http, config.Tls, config.Socks, config.Ss, "1.2.6")
 	defer wsReporter.Stop()
 	service.SetHTTPReportURL(config.Addr, config.Secret)
+	if err := service.SetReportProxy(config.Proxy); err != nil {
+		fmt.Printf("代理配置无效，上报将直连面板: %v\n", err)
+	}
 
 	p := &program{}
 	if err := svc.Run(p); err != nil {

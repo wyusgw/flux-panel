@@ -14,7 +14,16 @@ import com.admin.common.utils.WebSocketServer;
 import com.admin.entity.*;
 import com.admin.mapper.ForwardMapper;
 import com.admin.service.*;
+import com.admin.common.utils.ForwardTargetPolicy;
+import com.admin.entity.ViteConfig;
+import com.admin.service.ViteConfigService;
+import java.net.InetAddress;
+import java.util.Arrays;
+import java.util.Collections;
+import com.admin.entity.ForwardGroup;
+import com.admin.service.ForwardGroupService;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.alibaba.fastjson.JSONObject;
 import lombok.Data;
@@ -53,11 +62,16 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
     private static final int TUNNEL_TYPE_PORT_FORWARD = 1;
     private static final int TUNNEL_TYPE_TUNNEL_FORWARD = 2;
     private static final int FORWARD_STATUS_ACTIVE = 1;
+    /** hide_in_probe：对所有用户隐藏 */
+    private static final int HIDE_FROM_ALL_USERS = 2;
     private static final int FORWARD_STATUS_PAUSED = 0;
     private static final int FORWARD_STATUS_ERROR = -1;
     private static final int TUNNEL_STATUS_ACTIVE = 1;
 
     private static final long BYTES_TO_GB = 1024L * 1024L * 1024L;
+    /** 无套餐、流量用完、账号到期导致不能创建或修改规则时返回的状态码 */
+    private static final int RULE_SERVICE_BLOCKED_CODE = 403;
+    private static final String TUNNEL_GRANT_EXPIRED = "隧道权限已到期";
 
     @Resource
     @Lazy
@@ -92,6 +106,14 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
     @Lazy
     private TaskQueueService taskQueueService;
 
+    @Resource
+    @Lazy
+    private ViteConfigService viteConfigService;
+
+    @Resource
+    @Lazy
+    private ForwardGroupService forwardGroupService;
+
     /**
      * 端口分配 -> 落库 这段临界区的互斥锁：避免并发创建/更新转发规则时，
      * 两个请求都在对方尚未提交端口占用记录前查到"端口空闲"，进而对同一物理端口
@@ -117,6 +139,15 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             effectiveUser = new UserInfo(targetUser.getId().intValue(), targetUser.getRoleId(), targetUser.getUser());
         }
 
+        // 1.0.1 规则归属者没有套餐、流量用完或账号到期时不能创建规则；提前检查，避免先提示没有隧道权限
+        User ruleOwner = userService.getById(effectiveUser.getUserId());
+        String blockReason = effectiveUser.getRoleId() == ADMIN_ROLE_ID
+                ? adminBlockReason(ruleOwner, System.currentTimeMillis())
+                : ruleServiceBlockReason(ruleOwner, System.currentTimeMillis());
+        if (blockReason != null) {
+            return R.err(RULE_SERVICE_BLOCKED_CODE, blockReason);
+        }
+
         // 1.1 校验隧道选择方式：显式隧道 或 入口/出口设备组，二选一（沿用发起请求者本人的身份校验，
         // 管理员可自由选择任意设备组，不受目标用户所在用户组限制）
         R modeCheck = validateDeviceGroupSelection(forwardDto.getTunnelId(), forwardDto.getInDeviceGroupId(),
@@ -133,9 +164,20 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         if (tunnel.getStatus() != TUNNEL_STATUS_ACTIVE) {
             return R.err("隧道已禁用，无法创建转发");
         }
+        String groupError = forwardGroupError(currentUser, forwardDto.getGroupId(), null);
+        if (groupError != null) {
+            return R.err(RULE_SERVICE_BLOCKED_CODE, groupError);
+        }
+        String targetBlocked = forwardTargetBlockReason(currentUser, forwardDto.getRemoteAddr(), tunnel);
+        if (targetBlocked != null) {
+            return R.err(RULE_SERVICE_BLOCKED_CODE, targetBlocked);
+        }
 
         // 3. 权限和限制检查（按规则归属者 effectiveUser 校验，管理员创建自己的规则时两者相同）
         UserTunnel userTunnel = tunnelResolver.resolveUserTunnel(effectiveUser.getUserId(), forwardDto.getTunnelId(), forwardDto.getInDeviceGroupId());
+        if (effectiveUser.getRoleId() != ADMIN_ROLE_ID && isTunnelGrantExpired(userTunnel, System.currentTimeMillis())) {
+            return R.err(RULE_SERVICE_BLOCKED_CODE, TUNNEL_GRANT_EXPIRED);
+        }
         UserPermissionResult permissionResult = checkUserPermissions(effectiveUser, tunnel, userTunnel, null);
         if (permissionResult.isHasError()) {
             return R.err(permissionResult.getErrorMessage());
@@ -236,12 +278,31 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
 
     @Override
     public R updateForward(ForwardUpdateDto forwardUpdateDto) {
+        return updateForward(forwardUpdateDto, false);
+    }
+
+    @Override
+    public R syncForwardForTunnel(ForwardUpdateDto forwardUpdateDto) {
+        return updateForward(forwardUpdateDto, true);
+    }
+
+    /**
+     * @param tunnelSync 隧道配置变化时系统重新同步规则，不是用户在编辑：
+     *                   管理员流量用完也要同步，否则节点上的配置和隧道对不上
+     */
+    private R updateForward(ForwardUpdateDto forwardUpdateDto, boolean tunnelSync) {
         // 1. 获取当前用户信息
         UserInfo currentUser = getCurrentUserInfo();
         if (currentUser.getRoleId() != ADMIN_ROLE_ID) {
             User user = userService.getById(currentUser.getUserId());
             if (user == null) return R.err("用户不存在");
             if (user.getStatus() == 0) return R.err("用户已到期或被禁用");
+            // 更新成功后规则会被设为运行中并重新下发，不拦截的话流量用完被暂停的规则改一下就恢复了。
+            // 只拦普通用户本人：隧道变更时 TunnelServiceImpl 会以管理员身份批量同步规则，不能被个别用户卡住
+            String blockReason = ruleServiceBlockReason(user, System.currentTimeMillis());
+            if (blockReason != null) {
+                return R.err(RULE_SERVICE_BLOCKED_CODE, blockReason);
+            }
         }
 
         // 1.1 校验隧道选择方式：显式隧道 或 入口/出口设备组，二选一
@@ -257,6 +318,15 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             return R.err("转发不存在");
         }
 
+        // 管理员编辑自己的规则受到期和流量限制；编辑别人的规则按原来的做法不拦
+        if (!tunnelSync && currentUser.getRoleId() == ADMIN_ROLE_ID
+                && Objects.equals(currentUser.getUserId(), existForward.getUserId())) {
+            String adminBlockReason = adminBlockReason(userService.getById(currentUser.getUserId()), System.currentTimeMillis());
+            if (adminBlockReason != null) {
+                return R.err(RULE_SERVICE_BLOCKED_CODE, adminBlockReason);
+            }
+        }
+
         // 3. 检查隧道是否存在和可用
         Tunnel tunnel = tunnelResolver.resolveTunnel(forwardUpdateDto.getTunnelId(), forwardUpdateDto.getInDeviceGroupId(), forwardUpdateDto.getOutDeviceGroupId());
         if (tunnel == null) {
@@ -264,6 +334,14 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         }
         if (tunnel.getStatus() != TUNNEL_STATUS_ACTIVE) {
             return R.err("隧道已禁用，无法更新转发");
+        }
+        String groupError = forwardGroupError(currentUser, forwardUpdateDto.getGroupId(), existForward.getGroupId());
+        if (groupError != null) {
+            return R.err(RULE_SERVICE_BLOCKED_CODE, groupError);
+        }
+        String targetBlocked = forwardTargetBlockReason(currentUser, forwardUpdateDto.getRemoteAddr(), tunnel);
+        if (targetBlocked != null) {
+            return R.err(RULE_SERVICE_BLOCKED_CODE, targetBlocked);
         }
         boolean tunnelChanged = isTunnelChanged(existForward, forwardUpdateDto);
 
@@ -274,6 +352,10 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             userTunnel = tunnelResolver.resolveUserTunnel(existForward.getUserId(), forwardUpdateDto.getTunnelId(), forwardUpdateDto.getInDeviceGroupId());
         } else {
             userTunnel = tunnelResolver.resolveUserTunnel(currentUser.getUserId(), forwardUpdateDto.getTunnelId(), forwardUpdateDto.getInDeviceGroupId());
+        }
+
+        if (currentUser.getRoleId() != ADMIN_ROLE_ID && isTunnelGrantExpired(userTunnel, System.currentTimeMillis())) {
+            return R.err(RULE_SERVICE_BLOCKED_CODE, TUNNEL_GRANT_EXPIRED);
         }
 
         // 5. 检查权限和限制
@@ -343,27 +425,53 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
                 gostResult = updateGostServices(updatedForward, tunnel, permissionResult != null ? permissionResult.getLimiter() : null, nodeInfo, userTunnel);
             }
 
-            if (gostResult.getCode() != 0) {
-                if (isNodeOfflineFailure(gostResult)) {
-                    // 节点当前离线：更新内容正常保存，只是暂时无法把配置推送到节点，不应因此阻止保存。
-                    // 隧道未发生变化的情况下才登记重试队列（隧道变更+离线的场景更复杂，暂不自动重试，走原有手动兜底）。
-                    log.warn("转发 {} 更新成功，但目标节点当前离线，配置暂未同步：{}", updatedForward.getId(), gostResult.getMsg());
-                    updatedForward.setStatus(1);
-                    boolean savedOffline = this.updateById(updatedForward);
-                    if (savedOffline && !tunnelChanged) {
-                        enqueueForwardSyncTask(updatedForward, tunnel, gostResult.getMsg());
-                    }
-                    return savedOffline
-                            ? okWithMsg("端口转发已更新，但目标节点当前离线，已加入同步重试队列，节点上线后会自动补推配置")
-                            : R.err("端口转发更新失败");
-                }
-                return gostResult;
-            }
-            updatedForward.setStatus(1);
-            // 9. 保存更新
-            boolean result = this.updateById(updatedForward);
-            return result ? R.ok("端口转发更新成功") : R.err("端口转发更新失败");
+            String serviceName = buildServiceName(updatedForward.getId(), updatedForward.getUserId(), userTunnel);
+            return saveUpdatedForward(updatedForward, existForward, tunnel, tunnelChanged, serviceName, gostResult);
         }
+    }
+
+    /**
+     * 配置推送后保存规则。编辑不改变运行状态：已暂停的规则保存后仍然暂停，否则修改规则或隧道会让
+     * 流量用完、账号到期和用户自己暂停的规则恢复运行；其余规则保存后为运行中。
+     */
+    R saveUpdatedForward(Forward updatedForward, Forward existForward, Tunnel tunnel, boolean tunnelChanged, String serviceName, R gostResult) {
+        boolean wasPaused = Objects.equals(existForward.getStatus(), FORWARD_STATUS_PAUSED);
+        int statusAfterSave = wasPaused ? FORWARD_STATUS_PAUSED : FORWARD_STATUS_ACTIVE;
+
+        if (gostResult.getCode() != 0) {
+            if (isNodeOfflineFailure(gostResult)) {
+                // 节点当前离线：更新内容正常保存，只是暂时无法把配置推送到节点，不应因此阻止保存。
+                // 隧道未发生变化的情况下才登记重试队列（隧道变更+离线的场景更复杂，暂不自动重试，走原有手动兜底）。
+                log.warn("转发 {} 更新成功，但目标节点当前离线，配置暂未同步：{}", updatedForward.getId(), gostResult.getMsg());
+                updatedForward.setStatus(statusAfterSave);
+                boolean savedOffline = this.updateById(updatedForward);
+                if (savedOffline && !tunnelChanged) {
+                    enqueueForwardSyncTask(updatedForward, tunnel, gostResult.getMsg());
+                }
+                return savedOffline
+                        ? okWithMsg("端口转发已更新，但目标节点当前离线，已加入同步重试队列，节点上线后会自动补推配置")
+                        : R.err("端口转发更新失败");
+            }
+            return wasPaused ? keepPausedAfterPush(updatedForward, tunnel, serviceName, gostResult) : gostResult;
+        }
+
+        updatedForward.setStatus(statusAfterSave);
+        if (wasPaused) {
+            R pauseResult = keepPausedAfterPush(updatedForward, tunnel, serviceName, gostResult);
+            if (pauseResult.getCode() != 0) {
+                // 配置已经推送成功，修改要保存；服务可能已经启动，交给队列重新推送并暂停
+                log.warn("转发 {} 更新后重新暂停失败：{}", updatedForward.getId(), pauseResult.getMsg());
+                boolean savedPaused = this.updateById(updatedForward);
+                if (savedPaused) {
+                    enqueueForwardSyncTask(updatedForward, tunnel, pauseResult.getMsg());
+                }
+                return savedPaused
+                        ? okWithMsg("端口转发已更新，但暂停服务未成功（节点可能离线），已加入同步重试队列")
+                        : R.err("端口转发更新失败");
+            }
+        }
+        boolean result = this.updateById(updatedForward);
+        return result ? R.ok("端口转发更新成功") : R.err("端口转发更新失败");
     }
 
     @Override
@@ -479,6 +587,14 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         if (targetStatus == FORWARD_STATUS_ACTIVE) {
             if (tunnel.getStatus() != TUNNEL_STATUS_ACTIVE) {
                 return R.err("隧道已禁用，无法恢复服务");
+            }
+
+            // 管理员恢复自己的规则看到期和流量，不要求套餐
+            if (currentUser.getRoleId() == ADMIN_ROLE_ID && Objects.equals(currentUser.getUserId(), forward.getUserId())) {
+                String adminBlockReason = adminBlockReason(userService.getById(currentUser.getUserId()), System.currentTimeMillis());
+                if (adminBlockReason != null) {
+                    return R.err(RULE_SERVICE_BLOCKED_CODE, adminBlockReason);
+                }
             }
 
             // 普通用户需要检查流量和账户状态
@@ -891,6 +1007,11 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             }
         }
 
+        String typeError = deviceGroupTypeError(inGroup, outGroup);
+        if (typeError != null) {
+            return R.err(typeError);
+        }
+
         if (currentUser.getRoleId() != ADMIN_ROLE_ID) {
             R visibilityCheck = checkDeviceGroupVisibility(inGroup, currentUser.getUserId());
             if (visibilityCheck.getCode() != 0) {
@@ -908,18 +1029,34 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
     }
 
     /**
+     * 设备组类型决定了节点的用途：仅监控的节点不转发流量（可能没有地址），入口和出口也不能互换。
+     * 前端只列出匹配的设备组，这里防止绕过前端。没有类型的旧数据按入口处理。
+     */
+    static String deviceGroupTypeError(DeviceGroup inGroup, DeviceGroup outGroup) {
+        String inDirection = inGroup.getDirection() == null ? "inbound" : inGroup.getDirection();
+        if (!"inbound".equals(inDirection) && !"both".equals(inDirection)) {
+            return "设备组「" + inGroup.getName() + "」不能作为入口使用";
+        }
+        if (outGroup != null && !"outbound".equals(outGroup.getDirection()) && !"both".equals(outGroup.getDirection())) {
+            return "设备组「" + outGroup.getName() + "」不能作为出口使用";
+        }
+        return null;
+    }
+
+    /**
      * 校验普通用户是否有权限使用该设备组：
-     * 单端隧道用户自建设备组（ownerUserId 非空）——拥有者本人始终可用，其余用户仅当该设备组标记为公开共享才可用；
+     * 单端隧道用户自建设备组（ownerUserId 非空）——只有拥有者本人可用；
      * 管理员建立的设备组——未绑定用户组则所有人可用，否则需与自身用户组一致
      */
     private R checkDeviceGroupVisibility(DeviceGroup group, Integer userId) {
+        if (group.getOwnerUserId() != null && group.getOwnerUserId().equals(userId.longValue())) {
+            return R.ok();
+        }
+        // 对所有用户隐藏的设备组不会出现在普通用户的列表里，知道 ID 也不能用
+        if (Integer.valueOf(HIDE_FROM_ALL_USERS).equals(group.getHideInProbe())) {
+            return R.err("无权限使用设备组：" + group.getName());
+        }
         if (group.getOwnerUserId() != null) {
-            if (group.getOwnerUserId().equals(userId.longValue())) {
-                return R.ok();
-            }
-            if (group.getShared() != null && group.getShared() == 1) {
-                return R.ok();
-            }
             return R.err("无权限使用设备组：" + group.getName());
         }
         List<Long> allowedUserGroupIds = deviceGroupService.getUserGroupIds(group.getId());
@@ -943,10 +1080,8 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
 
         // 获取用户信息（流量/到期时间/转发数量等额度统一由账号自身的套餐控制，
         // 不再额外维护一套隧道级别的额度——避免账号层与隧道层两套限制重复配置、互相打架）
+        // 账号到期、无套餐、流量用完已由 ruleServiceBlockReason 在创建和更新入口拦截
         User userInfo = userService.getById(currentUser.getUserId());
-        if (userInfo.getExpTime() != null && userInfo.getExpTime() <= System.currentTimeMillis()) {
-            return UserPermissionResult.error("当前账号已到期");
-        }
 
         // 检查用户隧道权限
         if (userTunnel == null) {
@@ -957,11 +1092,6 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             return UserPermissionResult.error("隧道被禁用");
         }
 
-        // 流量限制检查
-        if (userInfo.getFlow() <= 0) {
-            return UserPermissionResult.error("用户总流量已用完");
-        }
-
         // 转发数量限制检查
         R quotaCheckResult = checkForwardQuota(currentUser.getUserId(), userInfo, excludeForwardId);
         if (quotaCheckResult.getCode() != 0) {
@@ -969,6 +1099,80 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         }
 
         return UserPermissionResult.success(null, userTunnel);
+    }
+
+    /** 普通用户只能把规则放进自己的分组；分组没变时不检查，不影响编辑已有规则 */
+    String forwardGroupError(UserInfo currentUser, Long groupId, Long currentGroupId) {
+        if (currentUser.getRoleId() == ADMIN_ROLE_ID || groupId == null || groupId <= 0 || groupId.equals(currentGroupId)) {
+            return null;
+        }
+        ForwardGroup group = forwardGroupService.getById(groupId);
+        return group != null && Objects.equals(group.getUserId(), currentUser.getUserId()) ? null : "分组不存在";
+    }
+
+    /**
+     * 普通用户的转发目标限制，见 {@link ForwardTargetPolicy}。管理员不受限；用户自己的节点也不受限，
+     * 在自建节点上转发到本机服务是单端隧道的正常用法。真正去连目标的是隧道转发的出口节点、端口转发的入口节点。
+     */
+    private String forwardTargetBlockReason(UserInfo currentUser, String remoteAddr, Tunnel tunnel) {
+        if (currentUser.getRoleId() == ADMIN_ROLE_ID) {
+            return null;
+        }
+        Long dialNodeId = tunnel.getType() != null && tunnel.getType() == TUNNEL_TYPE_TUNNEL_FORWARD && tunnel.getOutNodeId() != null
+                ? tunnel.getOutNodeId() : tunnel.getInNodeId();
+        long ownedGroups = deviceGroupService.count(new QueryWrapper<DeviceGroup>()
+                .eq("node_id", dialNodeId).eq("owner_user_id", currentUser.getUserId()));
+        if (ownedGroups > 0) {
+            return null;
+        }
+        ViteConfig allowPrivate = viteConfigService.getOne(new QueryWrapper<ViteConfig>().eq("name", ForwardTargetPolicy.CONFIG_ALLOW_PRIVATE));
+        Node dialNode = nodeService.getNodeById(dialNodeId);
+        List<String> nodeAddrs = dialNode == null ? Collections.emptyList() : Arrays.asList(dialNode.getServerIp(), dialNode.getIp());
+        return ForwardTargetPolicy.checkRemoteAddrs(remoteAddr,
+                allowPrivate != null && "true".equals(allowPrivate.getValue()), nodeAddrs, InetAddress::getAllByName);
+    }
+
+    /**
+     * 规则归属者当前能否使用转发服务，不能时返回原因，能用时返回 null。
+     * 没有套餐就不能使用，管理员在用户管理里手动设置的流量和规则数不算套餐。
+     */
+    static String ruleServiceBlockReason(User user, long now) {
+        if (user == null) {
+            return "用户不存在";
+        }
+        // 放在到期判断前面：新注册用户的到期时间就是注册时刻，没买过套餐不该提示「已到期」
+        if (user.getPackageId() == null) {
+            return "用户未购买套餐";
+        }
+        if (user.getExpTime() != null && user.getExpTime() <= now) {
+            return "当前账号已到期";
+        }
+        if (Integer.valueOf(0).equals(user.getStatus())) {
+            return "用户已被禁用";
+        }
+        return isFlowExhausted(user) ? "用户流量已用完" : null;
+    }
+
+    /** 管理员受到期和流量限制，但不要求套餐：默认的管理员账号没有套餐，要求套餐的话新装的面板连规则都建不了 */
+    static String adminBlockReason(User user, long now) {
+        if (user == null) {
+            return "用户不存在";
+        }
+        if (user.getExpTime() != null && user.getExpTime() <= now) {
+            return "当前账号已到期";
+        }
+        return isFlowExhausted(user) ? "用户流量已用完" : null;
+    }
+
+    /** 隧道授权有自己的到期时间；状态要等每天 0 点的任务才改，所以到期当天只看状态拦不住 */
+    static boolean isTunnelGrantExpired(UserTunnel userTunnel, long now) {
+        return userTunnel != null && userTunnel.getExpTime() != null && userTunnel.getExpTime() <= now;
+    }
+
+    private static boolean isFlowExhausted(User user) {
+        long flowLimit = user.getFlow() == null ? 0L : user.getFlow();
+        long used = (user.getInFlow() == null ? 0L : user.getInFlow()) + (user.getOutFlow() == null ? 0L : user.getOutFlow());
+        return flowLimit <= 0 || used >= flowLimit * BYTES_TO_GB;
     }
 
     /**
@@ -991,19 +1195,17 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
      * 检查用户流量限制
      */
     private R checkUserFlowLimits(Integer userId, Forward forward) {
-        User userInfo = userService.getById(userId);
-        if (userInfo.getExpTime() != null && userInfo.getExpTime() <= System.currentTimeMillis()) {
-            return R.err("当前账号已到期");
+        String blockReason = ruleServiceBlockReason(userService.getById(userId), System.currentTimeMillis());
+        if (blockReason != null) {
+            return R.err(RULE_SERVICE_BLOCKED_CODE, blockReason);
         }
 
         UserTunnel userTunnel = tunnelResolver.resolveUserTunnel(userId, forward);
         if (userTunnel == null) {
             return R.err("你没有该隧道权限");
         }
-
-        // 检查用户总流量限制（账号级别，套餐决定的总量上限）
-        if (userInfo.getFlow() * BYTES_TO_GB <= userInfo.getInFlow() + userInfo.getOutFlow()) {
-            return R.err("用户总流量已用完，无法恢复服务");
+        if (isTunnelGrantExpired(userTunnel, System.currentTimeMillis())) {
+            return R.err(RULE_SERVICE_BLOCKED_CODE, TUNNEL_GRANT_EXPIRED);
         }
 
         return R.ok();
@@ -1070,6 +1272,8 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
     private Forward updateForwardEntity(ForwardUpdateDto forwardUpdateDto, Forward existForward, Tunnel tunnel) {
         Forward forward = new Forward();
         BeanUtils.copyProperties(forwardUpdateDto, forward);
+        // 归属不能由请求决定：否则普通用户改掉 userId 就能把规则转给别人，流量也计到对方账上
+        forward.setUserId(existForward.getUserId());
 
         // 处理端口分配逻辑
         boolean tunnelChanged = isTunnelSelectionChanged(existForward.getTunnelId(), existForward.getInDeviceGroupId(), existForward.getOutDeviceGroupId(),
@@ -1729,7 +1933,48 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         if (nodeInfo.isHasError()) {
             return R.err(nodeInfo.getErrorMessage());
         }
-        return updateGostServices(forward, tunnel, null, nodeInfo, userTunnel);
+        boolean paused = Objects.equals(forward.getStatus(), FORWARD_STATUS_PAUSED);
+        R pushResult = updateGostServices(forward, tunnel, null, nodeInfo, userTunnel);
+        if (!paused) {
+            return pushResult;
+        }
+        return keepPausedAfterPush(forward, tunnel, buildServiceName(forward.getId(), forward.getUserId(), userTunnel), pushResult);
+    }
+
+    /**
+     * 节点更新配置时会关闭旧服务再启动新服务，暂停状态随之丢失。已暂停的规则仍要同步配置，
+     * 否则恢复时用的是旧配置，所以推送后立刻重新暂停；任何一步失败都返回错误，由队列继续重试。
+     */
+    R keepPausedAfterPush(Forward forward, Tunnel tunnel, String serviceName, R pushResult) {
+        if (pushResult.getCode() != 0) {
+            // 推送失败时规则被标成了异常，不还原的话下次重试就不再重新暂停，规则会恢复运行
+            forward.setStatus(FORWARD_STATUS_PAUSED);
+            restorePausedStatus(forward.getId());
+            return pushResult;
+        }
+        GostDto pauseResult = pauseOnNode(tunnel.getInNodeId(), serviceName);
+        if (!isGostOperationSuccess(pauseResult)) {
+            return R.err("重新暂停服务失败：" + pauseResult.getMsg());
+        }
+        if (tunnel.getType() == TUNNEL_TYPE_TUNNEL_FORWARD) {
+            GostDto remoteResult = pauseRemoteOnNode(tunnel.getOutNodeId(), serviceName);
+            if (!isGostOperationSuccess(remoteResult)) {
+                return R.err("重新暂停远端服务失败：" + remoteResult.getMsg());
+            }
+        }
+        return pushResult;
+    }
+
+    void restorePausedStatus(Long forwardId) {
+        this.update(null, new UpdateWrapper<Forward>().eq("id", forwardId).set("status", FORWARD_STATUS_PAUSED));
+    }
+
+    GostDto pauseOnNode(Long nodeId, String serviceName) {
+        return GostUtil.PauseService(nodeId, serviceName);
+    }
+
+    GostDto pauseRemoteOnNode(Long nodeId, String serviceName) {
+        return GostUtil.PauseRemoteService(nodeId, serviceName);
     }
 
 

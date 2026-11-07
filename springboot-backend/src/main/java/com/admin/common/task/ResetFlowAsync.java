@@ -229,6 +229,7 @@ public class ResetFlowAsync {
                 forwardService.updateById(forward);
             }
             user.setStatus(0);
+            user.setDisableReason(User.DISABLE_REASON_EXPIRED);
             userService.updateById(user);
         }
     }

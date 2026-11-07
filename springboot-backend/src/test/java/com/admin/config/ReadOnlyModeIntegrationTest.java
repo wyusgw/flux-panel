@@ -92,9 +92,9 @@ class ReadOnlyModeIntegrationTest {
             factory.registerSingleton("demoChangeService", mock(com.admin.service.DemoChangeService.class));
             factory.registerSingleton("jdbcTemplate", mock(org.springframework.jdbc.core.JdbcTemplate.class));
         });
-        context.register(WebMvcConfig.class, GlobalExceptionHandler.class, DemoMaskAdvice.class, com.admin.common.interceptor.DemoWriteGuard.class, StubController.class);
+        context.register(WebMvcConfig.class, GlobalExceptionHandler.class, DemoMaskAdvice.class, com.admin.common.interceptor.HttpStatusAdvice.class, com.admin.common.interceptor.DemoWriteGuard.class, StubController.class);
         context.refresh();
-        mvc = MockMvcBuilders.webAppContextSetup(context).build();
+        mvc = MockMvcBuilders.webAppContextSetup(context).addFilters(new com.admin.common.interceptor.LoginRequiredFilter()).build();
     }
 
     private String login(int roleId, int demoMode) {
@@ -132,7 +132,7 @@ class ReadOnlyModeIntegrationTest {
     @Test
     void demoAdminWriteIsRejectedWithCode403() throws Exception {
         mvc.perform(post("/api/v1/config/update").header("Authorization", login(0, 1)))
-                .andExpect(status().isOk())
+                .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value(403))
                 .andExpect(jsonPath("$.msg").value("禁止编辑"));
     }
@@ -158,11 +158,97 @@ class ReadOnlyModeIntegrationTest {
 
     @Test
     void loginStaysOpen() throws Exception {
-        mvc.perform(post("/api/v1/user/login")).andExpect(jsonPath("$.code").value(0));
+        mvc.perform(post("/api/v1/user/login")).andExpect(status().isOk()).andExpect(jsonPath("$.code").value(0));
     }
 
     @Test
     void anonymousCannotReachProtectedEndpoints() throws Exception {
-        mvc.perform(post("/api/v1/node/list")).andExpect(jsonPath("$.code").value(401));
+        mvc.perform(post("/api/v1/node/list"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(403))
+                .andExpect(jsonPath("$.msg").value("Not logged in"));
+    }
+
+    /** GET / POST、接口是否存在、路径怎么写，没带 Token 都是 403 Not logged in */
+    @Test
+    void withoutTokenEveryMethodAndPathGetsNotLoggedIn() throws Exception {
+        for (String path : new String[]{"/api/v1/node/list", "/api/v1/nothing/here", "/api/v1/node/list/",
+                "/api/v1/node/list;a=1", "/api/v1//node/list"}) {
+            for (org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder builder : new org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder[]{
+                    org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(java.net.URI.create(path)),
+                    post(java.net.URI.create(path))}) {
+                mvc.perform(builder)
+                        .andExpect(status().isForbidden())
+                        .andExpect(jsonPath("$.code").value(403))
+                        .andExpect(jsonPath("$.msg").value("Not logged in"));
+            }
+        }
+    }
+
+    /** 带了 Token（哪怕方法不对）不算未登录：GET 访问 POST 接口仍是 405 */
+    @Test
+    void withTokenWrongMethodIs405() throws Exception {
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/v1/node/list").header("Authorization", login(0, 0)))
+                .andExpect(status().isMethodNotAllowed());
+    }
+
+    /** 登录等公开接口不要求 Token，也不会被过滤器拦住 */
+    @Test
+    void publicEndpointsStayOpenWithoutToken() throws Exception {
+        mvc.perform(post("/api/v1/user/login")).andExpect(status().isOk());
+        mvc.perform(post("/api/v1/captcha/check")).andExpect(status().is(org.hamcrest.Matchers.not(403)));
+    }
+
+    /** 预检请求不带 Token，过滤器要放行给后面的跨域处理 */
+    @Test
+    void preflightPassesThroughTheFilter() throws Exception {
+        org.springframework.mock.web.MockHttpServletRequest request = new org.springframework.mock.web.MockHttpServletRequest("OPTIONS", "/api/v1/node/list");
+        request.setRequestURI("/api/v1/node/list");
+        org.springframework.mock.web.MockHttpServletResponse response = new org.springframework.mock.web.MockHttpServletResponse();
+        org.springframework.mock.web.MockFilterChain chain = new org.springframework.mock.web.MockFilterChain();
+        new com.admin.common.interceptor.LoginRequiredFilter().doFilter(request, response, chain);
+        org.junit.jupiter.api.Assertions.assertNotNull(chain.getRequest());
+        org.junit.jupiter.api.Assertions.assertEquals(200, response.getStatus());
+    }
+
+    private String limitedAdmin(String pages) {
+        User user = new User();
+        user.setId(7L);
+        user.setUser("limited");
+        user.setRoleId(0);
+        user.setStatus(1);
+        user.setDemoMode(0);
+        user.setMenuPermissions(pages);
+        org.mockito.Mockito.when(userMapper.selectById(org.mockito.ArgumentMatchers.any())).thenReturn(user);
+        return JwtUtil.generateToken(user);
+    }
+
+    /** 同一个接口换任何写法，受限管理员都不能绕过页面权限 */
+    @Test
+    void limitedAdminCannotBypassPagePermissionWithPathTricks() throws Exception {
+        String token = limitedAdmin("forward");
+        for (String path : new String[]{"/api/v1/config/update", "/api/v1/config/update/", "/api/v1/config/update;a=1",
+                "/api/v1/config/updat%65", "/api/v1/config/update;a=1/", "/api/v1//config/update"}) {
+            mvc.perform(post(java.net.URI.create(path)).header("Authorization", token))
+                    .andExpect(jsonPath("$.code").value(403));
+        }
+    }
+
+    @Test
+    void limitedAdminWithThePageCanStillUseTheEndpoint() throws Exception {
+        String token = limitedAdmin("config");
+        for (String path : new String[]{"/api/v1/config/update", "/api/v1/config/update/"}) {
+            mvc.perform(post(path).header("Authorization", token))
+                    .andExpect(jsonPath("$.code").value(0));
+        }
+    }
+
+    @Test
+    void demoAccountStaysBlockedWithPathTricks() throws Exception {
+        String token = login(0, 1);
+        for (String path : new String[]{"/api/v1/config/update", "/api/v1/config/update/", "/api/v1/config/updat%65"}) {
+            mvc.perform(post(java.net.URI.create(path)).header("Authorization", token))
+                    .andExpect(jsonPath("$.code").value(403));
+        }
     }
 }

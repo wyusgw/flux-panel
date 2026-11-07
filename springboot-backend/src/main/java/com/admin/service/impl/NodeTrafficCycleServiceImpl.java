@@ -79,6 +79,34 @@ public class NodeTrafficCycleServiceImpl extends ServiceImpl<NodeTrafficCycleMap
         }
     }
 
+    @Override
+    public long usedBytes(Long nodeId) {
+        NodeTrafficCycle state = states.computeIfAbsent(nodeId, this::loadOrCreate);
+        synchronized (state) {
+            long cycleStart = currentCycleStart(System.currentTimeMillis(), getResetDay(), getResetTime());
+            if (state.getCycleStart() == null || state.getCycleStart() < cycleStart) {
+                return 0L;
+            }
+            return state.getUpBytes() + state.getDownBytes();
+        }
+    }
+
+    @Override
+    public void clear(Long nodeId) {
+        NodeTrafficCycle state = states.computeIfAbsent(nodeId, this::loadOrCreate);
+        synchronized (state) {
+            // 从没上报过就没有可清的，也不能落库：周期起点不允许为空
+            if (state.getCycleStart() == null) {
+                return;
+            }
+            // 只清累计值，网卡计数基准要保留，否则下次上报会把整个网卡计数都算成增量
+            state.setUpBytes(0L);
+            state.setDownBytes(0L);
+            state.setUpdatedTime(System.currentTimeMillis());
+            dirty.add(nodeId);
+        }
+    }
+
     private NodeTrafficCycle loadOrCreate(Long nodeId) {
         NodeTrafficCycle saved = this.getOne(new QueryWrapper<NodeTrafficCycle>().eq("node_id", nodeId));
         if (saved != null) {

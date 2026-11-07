@@ -98,14 +98,42 @@ jobs:
           tag: ${{ env.TAG }}
           overwrite: true
 
-      - name: Collect node install scripts
-        if: matrix.arch == 'amd64'
+  # 校验链：面板命令校验 install.sh，install.sh 校验节点程序。要等两个架构的程序都上传后才能算出校验值
+  publish-node-scripts:
+    name: Publish Node Install Scripts
+    needs: build-gost
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    outputs:
+      install_sha256: ${{ steps.pin.outputs.install_sha256 }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TAG }}
+
+      - name: Write release version and checksums into install.sh
+        id: pin
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          mkdir -p ./release-node-scripts
-          cp ./install.sh ./offline.sh ./release-node-scripts/
+          set -euo pipefail
+          [[ "$TAG" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "tag 格式不支持: $TAG"; exit 1; }
+          mkdir -p ./release-node-scripts ./release-assets
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --clobber -D ./release-assets -p 'gost-amd64' -p 'gost-arm64'
+          AMD64_SHA=$(sha256sum ./release-assets/gost-amd64 | awk '{print $1}')
+          ARM64_SHA=$(sha256sum ./release-assets/gost-arm64 | awk '{print $1}')
+          sed -e "s/__RELEASE_TAG__/$TAG/" -e "s/__GOST_SHA256_AMD64__/$AMD64_SHA/" -e "s/__GOST_SHA256_ARM64__/$ARM64_SHA/" \
+            ./install.sh > ./release-node-scripts/install.sh
+          if grep -q '__RELEASE_TAG__\|__GOST_SHA256_' ./release-node-scripts/install.sh; then
+            echo "install.sh 里还有没替换的占位符"
+            exit 1
+          fi
+          cp ./offline.sh ./release-node-scripts/
+          echo "install_sha256=$(sha256sum ./release-node-scripts/install.sh | awk '{print $1}')" >> "$GITHUB_OUTPUT"
 
       - name: Upload node install scripts to the Release
-        if: matrix.arch == 'amd64'
         uses: svenstaro/upload-release-action@29e53e917877a24fad85510ded594ab3c9ca12de # v2.11.5
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
@@ -151,6 +179,7 @@ jobs:
 
   build-java:
     name: Build & Push Spring Boot Backend
+    needs: publish-node-scripts
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
@@ -189,11 +218,14 @@ jobs:
       - name: Build and push Java Docker images
         env:
           DOCKER_USER: ${{ secrets.DOCKER_HUB_USERNAME }}
+          NODE_INSTALL_SHA256: ${{ needs.publish-node-scripts.outputs.install_sha256 }}
         run: |
           VERSION="$TAG"
           docker buildx build \
             --platform linux/amd64,linux/arm64 \
             --push \
+            --build-arg RELEASE_TAG="$TAG" \
+            --build-arg NODE_INSTALL_SHA256="$NODE_INSTALL_SHA256" \
             -t ${DOCKER_USER}/springboot-backend:latest \
             -t ${DOCKER_USER}/springboot-backend:${VERSION} \
             ./springboot-backend

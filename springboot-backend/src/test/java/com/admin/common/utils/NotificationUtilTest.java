@@ -42,11 +42,14 @@ class NotificationUtilTest {
     private final DeviceGroupService deviceGroupService = mock(DeviceGroupService.class);
     private final ViteConfigService configService = mock(ViteConfigService.class);
     private final TaskQueueService queue = mock(TaskQueueService.class);
+    private final com.admin.service.NodeService nodeService = mock(com.admin.service.NodeService.class);
     private final NotificationUtil notification = new NotificationUtil();
 
     @BeforeEach
     void setUp() {
         ReflectionTestUtils.setField(notification, "userService", userService);
+        ReflectionTestUtils.setField(notification, "nodeService", nodeService);
+        when(nodeService.getVisibleNodeIds(any())).thenReturn(java.util.Collections.singleton(1L));
         ReflectionTestUtils.setField(notification, "deviceGroupService", deviceGroupService);
         ReflectionTestUtils.setField(notification, "viteConfigService", configService);
         ReflectionTestUtils.setField(notification, "taskQueueService", queue);
@@ -118,6 +121,25 @@ class NotificationUtilTest {
         List<JSONObject> messages = sent();
         assertTrue(messages.get(0).getString("text").contains("[管理员通知]"));
         assertFalse(messages.get(1).getString("text").contains("[管理员通知]"));
+    }
+
+    @Test
+    void userDoesNotHearAboutNodesTheyCannotSee() {
+        when(nodeService.getVisibleNodeIds(any())).thenReturn(java.util.Collections.singleton(99L));
+
+        deviceOffline(user(1, "alice", 1, "100"));
+
+        assertEquals(0, sent().size());
+    }
+
+    @Test
+    void lookupFailureSendsNothingToThatUserButAdminsStillHear() {
+        when(nodeService.getVisibleNodeIds(any())).thenThrow(new RuntimeException("db down"));
+
+        deviceOffline(user(1, "alice", 1, "100"), user(2, "root", 0, "200"));
+
+        assertEquals(1, sent().size());
+        assertTrue(sent().get(0).getString("text").contains("管理员通知"));
     }
 
     @Test

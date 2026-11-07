@@ -188,6 +188,13 @@ const CONFIG_ITEMS: ConfigItem[] = [
     type: 'switch'
   },
   {
+    key: 'allow_private_forward_target',
+    section: 'basic',
+    label: '允许转发到内网地址',
+    description: '开启后普通用户可以把规则转发到内网地址，也可以诊断内网地址。回环和节点自身地址始终不允许，管理员和用户自己的节点不受限',
+    type: 'switch'
+  },
+  {
     key: 'looking_glass_hide_ip',
     section: 'basic',
     label: '诊断结果隐藏 IP',
@@ -260,8 +267,8 @@ const CONFIG_ITEMS: ConfigItem[] = [
     key: 'site_announcement',
     section: 'announcement',
     label: '站点公告',
-    placeholder: '请输入站点公告内容，将显示在用户首页',
-    description: '显示在所有用户首页的公告内容，留空则不显示',
+    placeholder: '以 < 开头则显示为 HTML',
+    description: '显示在所有用户首页的公告内容，以 < 开头时按 HTML 显示（会过滤脚本和表单等不安全的内容），否则按纯文本原样换行显示，留空则不显示',
     type: 'textarea'
   },
   {

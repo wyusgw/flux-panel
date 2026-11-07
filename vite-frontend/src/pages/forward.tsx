@@ -1,6 +1,6 @@
 import { TipButton } from "@/components/tip-button";
 import { RuleSearchModal, EMPTY_RULE_SEARCH, countRuleSearch, matchRuleSearch } from "@/components/rule-search-modal";
-import { AimOutlined, BarChartOutlined, CheckSquareOutlined, CloseOutlined, CopyOutlined, DeleteOutlined, DownloadOutlined, EditOutlined, FileAddOutlined, FilterFilled, FireOutlined, FolderAddOutlined, InfoCircleOutlined, PauseCircleOutlined, PlayCircleOutlined, SearchOutlined, SettingOutlined } from "@/components/ant-icons";
+import { AimOutlined, BarChartOutlined, CheckSquareOutlined, CopyOutlined, DeleteOutlined, DownloadOutlined, EditOutlined, FileAddOutlined, FilterFilled, FireOutlined, FolderAddOutlined, InfoCircleOutlined, PauseCircleOutlined, PlayCircleOutlined, SearchOutlined, SettingOutlined } from "@/components/ant-icons";
 import { useState, useEffect, useRef } from "react";
 import { useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import { Card, CardBody, CardHeader } from "@heroui/card";
@@ -26,6 +26,7 @@ import { showApiFailure } from "@/components/error-dialog";
 import { nextSort, SortableHeader } from "@/components/table-sort";
 import { ToastWarningIcon } from "@/components/toast-icons";
 import { HelpTooltip } from "@/components/help-tooltip";
+import { GroupManageDrawer } from "@/components/group-manage-drawer";
 import { DiagnosisResultItem, DispatchStats, DiagnosisLeg, DiagnosisPanelFeedback } from "@/components/tcp-ping-diagnosis";
 
 import {
@@ -2465,8 +2466,7 @@ export default function ForwardPage() {
           </ModalContent>
         </Modal>
 
-        {/* 分组管理侧栏：从右侧滑出，整列高度，不遮挡的部分点击空白处关闭 */}
-        <Modal
+        <GroupManageDrawer
           isOpen={groupManageModalOpen}
           onOpenChange={(open) => {
             setGroupManageModalOpen(open);
@@ -2475,79 +2475,17 @@ export default function ForwardPage() {
               setGroupEditingId(null);
             }
           }}
-          hideCloseButton
-          scrollBehavior="inside"
-          backdrop="opaque"
-          radius="none"
-          classNames={{
-            wrapper: 'justify-end items-stretch',
-            base: 'm-0 h-full max-h-full w-[380px] max-w-full rounded-none',
-          }}
-          motionProps={{
-            variants: {
-              enter: { x: 0, opacity: 1, transition: { duration: 0.25, ease: 'easeOut' } },
-              exit: { x: 80, opacity: 0, transition: { duration: 0.18, ease: 'easeIn' } },
-            },
-            initial: { x: 80, opacity: 0 },
-          }}
-        >
-          <ModalContent>
-            {(onClose) => (
-              <>
-                <ModalHeader className="flex items-center gap-3 px-5 py-4 border-b border-default-100">
-                  <button type="button" aria-label="关闭" onClick={onClose} className="inline-flex items-center justify-center text-default-500 hover:text-foreground transition-colors">
-                    <CloseOutlined className="w-4 h-4" />
-                  </button>
-                  <h2 className="text-base font-semibold">分组管理</h2>
-                </ModalHeader>
-                <ModalBody className="px-5 py-5 gap-5">
-                  <div className="rounded-medium border border-default-200 overflow-hidden">
-                    <div className="px-4 py-3 border-b border-default-200 text-sm font-semibold">现有分组列表</div>
-                    {scopedForwardGroups.length === 0 ? (
-                      <div className="py-6"><EmptyState compact /></div>
-                    ) : (
-                      <div className="max-h-72 overflow-y-auto divide-y divide-default-100">
-                        {scopedForwardGroups.map(group => (
-                          <div key={group.id} className="flex items-center justify-between gap-2 px-4 py-2.5">
-                            <span className="text-sm text-foreground min-w-0 truncate">{group.name}（{group.ruleCount} 条规则）</span>
-                            <div className="flex gap-1 flex-shrink-0">
-                              <Button size="sm" variant="light" onPress={() => handleEditGroupStart(group)}>编辑</Button>
-                              <Button size="sm" variant="light" color="danger" onPress={() => handleDeleteGroup(group)}>删除</Button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  <div>
-                    <FieldLabel>{groupEditingId ? '编辑分组' : '新增分组'}</FieldLabel>
-                    <Input
-                      aria-label="分组名称" size="sm" autoComplete="off" variant="bordered"
-                      placeholder="请输入分组名称"
-                      value={groupNameInput}
-                      onChange={(e) => setGroupNameInput(e.target.value)}
-                    />
-                    <div className="mt-3 flex items-center gap-2">
-                      <Button size="sm" color="primary" onPress={handleCreateGroup} isLoading={groupSubmitLoading}>
-                        {groupEditingId ? '保 存' : '添 加'}
-                      </Button>
-                      {groupEditingId && (
-                        <Button size="sm" variant="light" onPress={() => { setGroupEditingId(null); setGroupNameInput(''); }}>
-                          取消
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-
-                  <p className="border-l-2 border-default-300 bg-default-50 dark:bg-default-100/30 px-3 py-2 text-xs leading-relaxed text-default-600">
-                    若您对项目进行了添加/删除操作，分组的项目数量可能不会及时更新。可以点击“刷新”按钮更新。
-                  </p>
-                </ModalBody>
-              </>
-            )}
-          </ModalContent>
-        </Modal>
+          groups={scopedForwardGroups}
+          count={(group) => group.ruleCount}
+          nameInput={groupNameInput}
+          onNameInputChange={setGroupNameInput}
+          editing={!!groupEditingId}
+          onCancelEdit={() => { setGroupEditingId(null); setGroupNameInput(''); }}
+          onSubmit={handleCreateGroup}
+          submitting={groupSubmitLoading}
+          onEdit={handleEditGroupStart}
+          onDelete={handleDeleteGroup}
+        />
       </div>
 
   );

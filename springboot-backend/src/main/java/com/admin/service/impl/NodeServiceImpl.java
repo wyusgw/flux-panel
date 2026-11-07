@@ -72,6 +72,7 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
     private static final String ERROR_UPDATE_MSG = "节点更新失败";
     private static final String ERROR_DELETE_MSG = "节点删除失败";
     private static final String ERROR_NODE_NOT_FOUND = "节点不存在";
+    static final String ERROR_ADDRESS_REQUIRED = "除仅监控外，设备必须填写服务器 IP / 域名";
     
     /** 隧道使用检查相关消息 */
     private static final String ERROR_IN_NODE_IN_USE = "该节点还有 %d 个隧道作为入口节点在使用，请先删除相关隧道";
@@ -85,6 +86,13 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
 
     // ========== 依赖注入 ==========
     
+    /** 发布版本和该版本 install.sh 的校验值，由发布流程写入镜像 */
+    @Value("${RELEASE_TAG:}")
+    private String releaseTag;
+
+    @Value("${NODE_INSTALL_SHA256:}")
+    private String installScriptSha256;
+
     @Resource
     private TunnelMapper tunnelMapper;
 
@@ -138,6 +146,50 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
      * 
      * @return 包含所有节点的响应对象
      */
+    /** 普通用户能看到的节点，与节点列表接口的范围一致 */
+    @Override
+    public Set<Long> getVisibleNodeIds(Integer userId) {
+        User user = userId != null ? userMapper.selectById(userId) : null;
+        if (user == null) {
+            return Collections.emptySet();
+        }
+
+        QueryWrapper<DeviceGroup> groupQuery = new QueryWrapper<DeviceGroup>()
+                .eq("hide_in_probe", 0);
+        Long userGroupId = user.getGroupId();
+        groupQuery.and(w -> {
+            w.and(w2 -> w2.isNull("owner_user_id"));
+            w.or().eq("owner_user_id", userId);
+        });
+        List<DeviceGroup> candidateGroups = deviceGroupMapper.selectList(groupQuery);
+
+        // 管理员建立的设备组（owner_user_id 为空）按其绑定的用户组列表过滤：
+        // 未绑定任何用户组表示对所有人可见，否则要求当前用户所在用户组在列表内；
+        // 单端隧道设备组（owner_user_id 非空）已经按拥有者过滤过，不受用户组限制
+        List<Long> adminGroupIds = candidateGroups.stream()
+                .filter(g -> g.getOwnerUserId() == null)
+                .map(DeviceGroup::getId)
+                .collect(Collectors.toList());
+        Map<Long, List<Long>> userGroupIdsByGroup = adminGroupIds.isEmpty() ? Collections.emptyMap()
+                : deviceGroupUserGroupRelationMapper.selectList(
+                        new QueryWrapper<DeviceGroupUserGroupRelation>().in("device_group_id", adminGroupIds))
+                    .stream()
+                    .collect(Collectors.groupingBy(DeviceGroupUserGroupRelation::getDeviceGroupId,
+                            Collectors.mapping(DeviceGroupUserGroupRelation::getUserGroupId, Collectors.toList())));
+
+        return candidateGroups.stream()
+                .filter(g -> {
+                    if (g.getOwnerUserId() != null) {
+                        return true;
+                    }
+                    List<Long> allowed = userGroupIdsByGroup.getOrDefault(g.getId(), Collections.emptyList());
+                    return allowed.isEmpty() || (userGroupId != null && allowed.contains(userGroupId));
+                })
+                .map(DeviceGroup::getNodeId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+    }
+
     @Override
     public R getAllNodes() {
         Integer roleId = JwtUtil.getRoleIdFromToken();
@@ -147,47 +199,7 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
         if (isAdmin) {
             nodeList = this.list();
         } else {
-            Integer userId = JwtUtil.getUserIdFromToken();
-            User user = userId != null ? userMapper.selectById(userId) : null;
-            if (user == null) {
-                return R.ok(Collections.emptyList());
-            }
-
-            QueryWrapper<DeviceGroup> groupQuery = new QueryWrapper<DeviceGroup>()
-                    .eq("hide_in_probe", 0);
-            Long userGroupId = user.getGroupId();
-            groupQuery.and(w -> {
-                w.and(w2 -> w2.isNull("owner_user_id"));
-                w.or().eq("owner_user_id", userId);
-                w.or(w2 -> w2.isNotNull("owner_user_id").eq("shared", 1));
-            });
-            List<DeviceGroup> candidateGroups = deviceGroupMapper.selectList(groupQuery);
-
-            // 管理员建立的设备组（owner_user_id 为空）按其绑定的用户组列表过滤：
-            // 未绑定任何用户组表示对所有人可见，否则要求当前用户所在用户组在列表内；
-            // 单端隧道设备组（owner_user_id 非空）已经按拥有者/共享条件过滤过，不受用户组限制
-            List<Long> adminGroupIds = candidateGroups.stream()
-                    .filter(g -> g.getOwnerUserId() == null)
-                    .map(DeviceGroup::getId)
-                    .collect(Collectors.toList());
-            Map<Long, List<Long>> userGroupIdsByGroup = adminGroupIds.isEmpty() ? Collections.emptyMap()
-                    : deviceGroupUserGroupRelationMapper.selectList(
-                            new QueryWrapper<DeviceGroupUserGroupRelation>().in("device_group_id", adminGroupIds))
-                        .stream()
-                        .collect(Collectors.groupingBy(DeviceGroupUserGroupRelation::getDeviceGroupId,
-                                Collectors.mapping(DeviceGroupUserGroupRelation::getUserGroupId, Collectors.toList())));
-
-            Set<Long> visibleNodeIds = candidateGroups.stream()
-                    .filter(g -> {
-                        if (g.getOwnerUserId() != null) {
-                            return true;
-                        }
-                        List<Long> allowed = userGroupIdsByGroup.getOrDefault(g.getId(), Collections.emptyList());
-                        return allowed.isEmpty() || (userGroupId != null && allowed.contains(userGroupId));
-                    })
-                    .map(DeviceGroup::getNodeId)
-                    .filter(Objects::nonNull)
-                    .collect(Collectors.toSet());
+            Set<Long> visibleNodeIds = getVisibleNodeIds(JwtUtil.getUserIdFromToken());
             nodeList = visibleNodeIds.isEmpty()
                     ? Collections.emptyList()
                     : this.list(new QueryWrapper<Node>().in("id", visibleNodeIds));
@@ -211,6 +223,16 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
             return R.err(ERROR_NODE_NOT_FOUND);
         }
 
+        // 服务器地址不再由 DTO 强制必填：只有节点下的设备组全部是仅监控时才允许留空
+        if (StrUtil.isBlank(nodeUpdateDto.getServerIp())) {
+            List<DeviceGroup> groups = deviceGroupMapper.selectList(new QueryWrapper<DeviceGroup>().eq("node_id", node.getId()));
+            boolean required = groups.stream().anyMatch(group ->
+                    isAddressMissing(group.getDirection(), nodeUpdateDto.getServerIp()));
+            if (required) {
+                return R.err(ERROR_ADDRESS_REQUIRED);
+            }
+        }
+
         //1.1 如果节点在线 且传入更新的 http/tls/socks 任意一项与数据库不一致，则通过 WS 通知节点更新设置
         boolean online = node.getStatus() != null && node.getStatus() == 1;
         Integer newHttp = nodeUpdateDto.getHttp();
@@ -230,6 +252,29 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
             }
             if (!supportsSsBlock(node.getVersion())) {
                 return R.err("节点版本过低，请先更新节点后再开启屏蔽 Shadowsocks");
+            }
+        }
+
+        // 代理：null 表示不修改；空字符串表示改为直连
+        String newProxy = null;
+        if (nodeUpdateDto.getProxy() != null) {
+            newProxy = nodeUpdateDto.getProxy().trim();
+            String proxyError = validateProxy(newProxy);
+            if (proxyError != null) {
+                return R.err(proxyError);
+            }
+        }
+        boolean proxyChanged = newProxy != null && !newProxy.equals(StrUtil.nullToEmpty(node.getProxy()));
+        if (proxyChanged && online) {
+            if (!supportsProxy(node.getVersion())) {
+                return R.err("节点版本过低，请先更新节点后再设置代理");
+            }
+            // 节点会先通过新代理试连面板，连不上不会保存，也不会断开现有连接
+            JSONObject proxyReq = new JSONObject();
+            proxyReq.put("proxy", newProxy);
+            GostDto proxyResult = WebSocketServer.send_msg(node.getId(), proxyReq, "SetProxy");
+            if (!Objects.equals(proxyResult.getMsg(), "OK")) {
+                return R.err(proxyResult.getMsg());
             }
         }
 
@@ -334,6 +379,9 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
     private Node buildNewNode(NodeDto nodeDto) {
         Node node = new Node();
         BeanUtils.copyProperties(nodeDto, node);
+        // 仅监控设备没有地址；server_ip 列不允许 NULL，统一存空字符串
+        node.setServerIp(StrUtil.nullToEmpty(node.getServerIp()));
+        node.setIp(StrUtil.nullToEmpty(resolveEntryIp(node.getIp(), node.getServerIp())));
         
         // 验证端口范围
         validatePortRange(node.getPortSta(), node.getPortEnd());
@@ -350,6 +398,16 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
         return node;
     }
 
+    /** 除仅监控外，设备组所在节点都必须有服务器地址；direction 为空的旧数据按入口处理 */
+    static boolean isAddressMissing(String direction, String serverIp) {
+        return !"monitor".equals(direction) && StrUtil.isBlank(serverIp);
+    }
+
+    /** 连接地址留空时默认使用服务器地址 */
+    static String resolveEntryIp(String ip, String serverIp) {
+        return StrUtil.isBlank(ip) ? serverIp : ip;
+    }
+
     /**
      * 构建节点更新对象
      * 
@@ -360,7 +418,7 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
         Node node = new Node();
         node.setId(nodeUpdateDto.getId());
         node.setName(nodeUpdateDto.getName());
-        node.setIp(nodeUpdateDto.getIp());
+        node.setIp(resolveEntryIp(nodeUpdateDto.getIp(), nodeUpdateDto.getServerIp()));
         node.setServerIp(nodeUpdateDto.getServerIp());
         node.setPortSta(nodeUpdateDto.getPortSta());
         node.setPortEnd(nodeUpdateDto.getPortEnd());
@@ -368,6 +426,7 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
         node.setTls(nodeUpdateDto.getTls());
         node.setSocks(nodeUpdateDto.getSocks());
         node.setSs(nodeUpdateDto.getSs());
+        node.setProxy(nodeUpdateDto.getProxy() == null ? null : nodeUpdateDto.getProxy().trim());
         // 验证端口范围
         validatePortRange(node.getPortSta(), node.getPortEnd());
         
@@ -589,6 +648,11 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
         return buildInstallCommand(node);
     }
 
+    /** 这两个值会被拼进管理员复制执行的 shell 命令，格式不对就当作没有 */
+    static boolean isValidInstallPin(String tag, String sha256) {
+        return tag != null && tag.matches("[A-Za-z0-9._-]+") && sha256 != null && sha256.matches("[0-9a-f]{64}");
+    }
+
     /**
      * 构建节点安装命令
      *
@@ -607,7 +671,11 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
         // 处理服务器地址，如果是IPv6需要添加方括号
         String processedServerAddr = processServerAddress(serverAddr);
 
-        String scriptUrl = "https://github.com/wyusgw/flux-panel/releases/latest/download/install.sh";
+        // 发布时写入了版本和校验值就固定到这个版本并校验脚本；开发环境没有这些值时沿用 latest，不校验
+        boolean verified = isValidInstallPin(releaseTag, installScriptSha256);
+        String scriptUrl = verified
+                ? "https://github.com/wyusgw/flux-panel/releases/download/" + releaseTag + "/install.sh"
+                : "https://github.com/wyusgw/flux-panel/releases/latest/download/install.sh";
         // 自动探测路线：依次尝试多个加速镜像下载安装脚本，全部失败则回退到 GitHub 原始地址，
         // 适合大陆网络访问 GitHub 受限的服务器
         String[] mirrorPrefixes = {
@@ -615,9 +683,15 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
                 "https://gh-proxy.com/",
                 "https://ghproxy.net/"
         };
-        String chmodAndRun = "chmod +x ./install.sh && ./install.sh"
+        // 脚本可能来自第三方加速镜像，面板命令是唯一可信的起点：校验不通过就不会执行脚本
+        String verifyScript = verified ? "echo \"" + installScriptSha256 + "  ./install.sh\" | sha256sum -c - && " : "";
+        String chmodAndRun = verifyScript + "chmod +x ./install.sh && ./install.sh"
                 + " -a " + processedServerAddr   // 服务器地址
                 + " -s " + node.getSecret();     // 节点密钥
+        boolean hasProxy = StrUtil.isNotBlank(node.getProxy()) && validateProxy(node.getProxy().trim()) == null;
+        if (hasProxy) {
+            chmodAndRun += " -p \"" + node.getProxy().trim() + "\"";   // 节点连接面板的 SOCKS5 代理
+        }
 
         StringBuilder candidateUrls = new StringBuilder();
         for (String prefix : mirrorPrefixes) {
@@ -643,7 +717,8 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
 
         String offlineDir = "/tmp/flux-panel-offline";
         result.put("offlineCommand", "unzip -o offline.zip -d " + offlineDir
-                + " && bash " + offlineDir + "/offline.sh -a \"" + processedServerAddr + "\" -s \"" + node.getSecret() + "\"");
+                + " && bash " + offlineDir + "/offline.sh -a \"" + processedServerAddr + "\" -s \"" + node.getSecret() + "\""
+                + (hasProxy ? " -p \"" + node.getProxy().trim() + "\"" : ""));
 
         return R.ok(result);
     }
@@ -764,10 +839,35 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
 
     /** 节点程序从 1.2.5 开始支持屏蔽 Shadowsocks */
     static boolean supportsSsBlock(String version) {
+        return versionAtLeast(version, 1, 2, 5);
+    }
+
+    /** 1.2.6 起节点支持 SetProxy 命令 */
+    static boolean supportsProxy(String version) {
+        return versionAtLeast(version, 1, 2, 6);
+    }
+
+    /** 代理地址会拼进管理员复制执行的 shell 命令，只允许 socks5 和 ssh 且字符严格受限；返回错误信息，合法（含空）返回 null */
+    static String validateProxy(String proxy) {
+        if (proxy == null || proxy.isEmpty()) {
+            return null;
+        }
+        if (proxy.length() > 300 || !PROXY_PATTERN.matcher(proxy).matches()) {
+            return "代理地址格式不正确，应为 socks5://[用户名:密码@]主机:端口 或 ssh://用户名:密码@主机[:端口]，用户名和密码中的特殊字符需要先做 URL 编码";
+        }
+        return null;
+    }
+
+    private static final String PROXY_HOST = "(\\[[0-9A-Fa-f:.]+\\]|[A-Za-z0-9.\\-]+)";
+    private static final String PROXY_CRED = "[A-Za-z0-9._~%\\-]";
+    private static final java.util.regex.Pattern PROXY_PATTERN = java.util.regex.Pattern.compile(
+            "^(socks5h?://(" + PROXY_CRED + "*:" + PROXY_CRED + "*@)?" + PROXY_HOST + ":[0-9]{1,5}"
+                    + "|ssh://" + PROXY_CRED + "+:" + PROXY_CRED + "+@" + PROXY_HOST + "(:[0-9]{1,5})?)$");
+
+    private static boolean versionAtLeast(String version, int... minimum) {
         if (version == null) {
             return false;
         }
-        int[] minimum = {1, 2, 5};
         String[] parts = version.trim().split("\\.");
         try {
             for (int i = 0; i < minimum.length; i++) {

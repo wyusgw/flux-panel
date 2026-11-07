@@ -11,6 +11,8 @@ import com.admin.common.utils.GostUtil;
 import com.admin.common.utils.CaptchaProviderUtil;
 import com.admin.common.utils.HttpContextUtils;
 import com.admin.common.utils.JwtUtil;
+import com.admin.common.utils.HttpContextUtils;
+import com.admin.common.utils.LoginAttemptLimiter;
 import com.admin.common.utils.Md5Util;
 import com.admin.common.utils.NotificationUtil;
 import com.admin.common.utils.TunnelResolver;
@@ -64,6 +66,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     private static final int USER_ROLE_ID = 1;         // 普通用户角色ID
     
     /** 用户状态常量 */
+    private static final java.security.SecureRandom TELEGRAM_BIND_RANDOM = new java.security.SecureRandom();
     private static final int USER_STATUS_ACTIVE = 1;   // 用户启用状态
     private static final int USER_STATUS_DISABLED = 0; // 用户停用状态
     
@@ -144,6 +147,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     private ImageCaptchaApplication application;
 
     @Resource
+    private LoginAttemptLimiter loginAttemptLimiter;
+
+    @Resource
     @Lazy
     private UserGroupService userGroupService;
 
@@ -200,11 +206,20 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
 
 
 
-        // 2. 验证用户凭据
+        // 2. 验证用户凭据：先看尝试次数，超限时不再比对密码，避免继续猜测
+        String clientIp = LoginAttemptLimiter.clientIp(HttpContextUtils.getHttpServletRequest());
+        String attemptKey = loginAttemptKey(loginDto.getUsername());
+        if (loginAttemptLimiter.isBlocked(attemptKey, clientIp)) {
+            return R.err(429, LoginAttemptLimiter.TOO_MANY_ATTEMPTS);
+        }
         LoginValidationResult validationResult = validateUserCredentials(loginDto);
         if (validationResult.isHasError()) {
+            if (ERROR_LOGIN_CREDENTIALS.equals(validationResult.getErrorMessage())) {
+                loginAttemptLimiter.recordFailure(attemptKey, clientIp);
+            }
             return R.err(validationResult.getErrorMessage());
         }
+        loginAttemptLimiter.recordSuccess(attemptKey, clientIp);
 
         // 3. 生成令牌并返回用户信息
         User user = validationResult.getUser();
@@ -378,6 +393,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         User updateUser = buildUpdateUserEntity(userUpdateDto);
         updateUser.setRoleId(newRoleId);
         updateUser.setDemoMode(newDemoMode);
+        updateUser.setDisableReason(User.resolveDisableReason(beforeUpdate.getStatus(), beforeUpdate.getDisableReason(), newStatus));
         boolean result = this.updateById(updateUser);
 
         // 角色变了：两种角色能分配的页面不同，旧设置不再有意义，恢复为新角色的全部页面
@@ -528,12 +544,20 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         if (resetFlowDto.getType() == 1){ // 清零账号流量
             User user = this.getById(resetFlowDto.getId());
             if (user == null) return R.err(ERROR_USER_NOT_FOUND);
+            // 和修改、删除用户一致：管理员账号只有全权限管理员能操作
+            if (Integer.valueOf(ADMIN_ROLE_ID).equals(user.getRoleId()) && !isCurrentFullAdmin()) {
+                return R.err(403, ERROR_NEED_FULL_ADMIN);
+            }
             user.setInFlow(0L);
             user.setOutFlow(0L);
             this.updateById(user);
         }else { // 清零隧道流量
             UserTunnel tunnel = userTunnelService.getById(resetFlowDto.getId());
             if (tunnel == null) return R.err("隧道不存在");
+            User owner = this.getById(tunnel.getUserId());
+            if (owner != null && Integer.valueOf(ADMIN_ROLE_ID).equals(owner.getRoleId()) && !isCurrentFullAdmin()) {
+                return R.err(403, ERROR_NEED_FULL_ADMIN);
+            }
             tunnel.setInFlow(0L);
             tunnel.setOutFlow(0L);
             userTunnelService.updateById(tunnel);
@@ -667,7 +691,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
             return R.err(currentUser.getErrorMessage());
         }
 
-        String code = RandomUtil.randomNumbers(6);
+        String code = generateTelegramBindCode();
         long now = System.currentTimeMillis();
 
         boolean result = this.update(new UpdateWrapper<User>()
@@ -683,6 +707,16 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         data.put("code", code);
         data.put("botUsername", getConfigValue("telegram_bot_username"));
         return R.ok(data);
+    }
+
+    /**
+     * 绑定码由安全随机数生成，16 位十六进制（64 位）。机器人不限制尝试次数，
+     * 原来的 6 位数字在有效期内可以被猜中，把别人的账号绑到自己的 Telegram 上接收通知。
+     */
+    static String generateTelegramBindCode() {
+        byte[] bytes = new byte[8];
+        TELEGRAM_BIND_RANDOM.nextBytes(bytes);
+        return java.util.HexFormat.of().formatHex(bytes);
     }
 
     /**
@@ -747,11 +781,22 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
             return LoginValidationResult.error(ERROR_LOGIN_CREDENTIALS);
         }
         
-        if (user.getStatus() == USER_STATUS_DISABLED) {
+        // 因到期停用的账号允许登录，否则无法自助续费；规则相关操作仍由状态和额度校验拦截
+        if (user.getStatus() == USER_STATUS_DISABLED && !User.disabledByExpiry(user)) {
             return LoginValidationResult.error(ERROR_ACCOUNT_DISABLED);
         }
         
         return LoginValidationResult.success(user);
+    }
+
+    @Override
+    public String loginAttemptKey(String username) {
+        // 账号存在时用 ID，不管用什么写法都算同一个账号；用 LIMIT 1 是因为用户名没有唯一索引，重复记录不能让这里报错
+        User user = this.getOne(new QueryWrapper<User>().eq("user", username).last("LIMIT 1"));
+        if (user != null) {
+            return "id:" + user.getId();
+        }
+        return "name:" + (username == null ? "" : username.trim().toLowerCase(java.util.Locale.ROOT));
     }
 
     /**
@@ -803,6 +848,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         
         // 设置默认属性
         user.setStatus(userDto.getStatus() != null ? userDto.getStatus() : USER_STATUS_ACTIVE);
+        user.setDisableReason(User.resolveDisableReason(USER_STATUS_ACTIVE, User.DISABLE_REASON_NONE, user.getStatus()));
         user.setDemoMode(Boolean.TRUE.equals(userDto.getAdmin()) && isDemoRequested(userDto.getDemoMode()) ? DEMO_MODE_ON : DEMO_MODE_OFF);
         user.setRoleId(Boolean.TRUE.equals(userDto.getAdmin()) ? ADMIN_ROLE_ID : USER_ROLE_ID);
         

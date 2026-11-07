@@ -28,7 +28,7 @@ public class UserDeviceGroupDto {
     @NotBlank(message = "服务器 IP / 域名不能为空")
     private String serverIp;
 
-    @NotBlank(message = "入口 IP / 域名不能为空")
+    /** 留空时默认使用 serverIp */
     private String entryIp;
 
     private Integer portSta;
@@ -44,9 +44,4 @@ public class UserDeviceGroupDto {
      * 所属单端组ID（可为空，表示不分组）
      */
     private Long singleTunnelGroupId;
-
-    /**
-     * 是否开放给其他用户在添加转发规则时选用（false-仅自己可用，true-所有用户可用）
-     */
-    private boolean shared;
 }

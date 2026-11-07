@@ -17,6 +17,7 @@ import (
 
 	"github.com/go-gost/x/config"
 	"github.com/go-gost/x/internal/util/crypto"
+	"github.com/go-gost/x/internal/util/panelproxy"
 	"github.com/go-gost/x/service"
 	"github.com/gorilla/websocket"
 	"github.com/shirou/gopsutil/v3/cpu"
@@ -265,6 +266,7 @@ func (w *WebSocketReporter) connect() error {
 		Tls    int    `json:"tls"`
 		Socks  int    `json:"socks"`
 		Ss     int    `json:"ss"`
+		Proxy  string `json:"proxy"`
 	}
 
 	var cfg LocalConfig
@@ -281,8 +283,18 @@ func (w *WebSocketReporter) connect() error {
 		return fmt.Errorf("解析URL失败: %v", err)
 	}
 
-	dialer := websocket.DefaultDialer
+	// 复制一份，避免修改全局 DefaultDialer
+	dialer := *websocket.DefaultDialer
 	dialer.HandshakeTimeout = 10 * time.Second
+	// 配置了 proxy 时，通过 SOCKS5 代理连接面板
+	dialContext, err := panelproxy.DialContext(cfg.Proxy)
+	if err != nil {
+		return err
+	}
+	if dialContext != nil {
+		dialer.Proxy = nil
+		dialer.NetDialContext = dialContext
+	}
 
 	conn, _, err := dialer.Dial(u.String(), nil)
 	if err != nil {
@@ -711,6 +723,11 @@ func (w *WebSocketReporter) routeCommand(cmd CommandMessage) {
 		err = w.handleSetProtocol(cmd.Data)
 		response.Type = "SetProtocolResponse"
 
+	// 节点连接面板使用的代理
+	case "SetProxy":
+		err = w.handleSetProxy(cmd.Data)
+		response.Type = "SetProxyResponse"
+
 	default:
 		err = fmt.Errorf("未知命令类型: %s", cmd.Type)
 		response.Type = "UnknownCommandResponse"
@@ -1066,6 +1083,80 @@ func (w *WebSocketReporter) handleSetProtocol(data interface{}) error {
 	return nil
 }
 
+// handleSetProxy 设置节点连接面板使用的 SOCKS5 代理，空字符串表示直连。
+// 先通过新代理试连一次面板，连得上才保存，避免配错后节点再也连不上面板。
+func (w *WebSocketReporter) handleSetProxy(data interface{}) error {
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		return fmt.Errorf("序列化代理设置失败: %v", err)
+	}
+	var req struct {
+		Proxy string `json:"proxy"`
+	}
+	if err := json.Unmarshal(jsonData, &req); err != nil {
+		return fmt.Errorf("解析代理设置失败: %v", err)
+	}
+	req.Proxy = strings.TrimSpace(req.Proxy)
+
+	// 用独立的拨号器试连，不影响当前正在使用的连接
+	testDialer, err := panelproxy.New(req.Proxy)
+	if err != nil {
+		return err
+	}
+	if testDialer != nil {
+		defer testDialer.Close()
+		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+		defer cancel()
+		conn, err := testDialer.DialContext(ctx, "tcp", w.addr)
+		if err != nil {
+			return fmt.Errorf("通过代理连接面板失败: %v", err)
+		}
+		conn.Close()
+	}
+
+	if err := updateLocalConfigProxy(req.Proxy); err != nil {
+		return fmt.Errorf("写入config.json失败: %v", err)
+	}
+	if err := service.SetReportProxy(req.Proxy); err != nil {
+		return err
+	}
+
+	// 稍后断开当前连接，让节点按新代理重新连接面板；先让本次响应发出去
+	go func() {
+		time.Sleep(time.Second)
+		w.connMutex.Lock()
+		conn := w.conn
+		w.connMutex.Unlock()
+		if conn != nil {
+			conn.Close()
+		}
+	}()
+	return nil
+}
+
+// updateLocalConfigProxy 只更新 config.json 里的 proxy，其余字段原样保留
+func updateLocalConfigProxy(proxy string) error {
+	path := "config.json"
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	var raw map[string]interface{}
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return err
+	}
+	if proxy == "" {
+		delete(raw, "proxy")
+	} else {
+		raw["proxy"] = proxy
+	}
+	data, err := json.MarshalIndent(raw, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0644)
+}
+
 // updateLocalConfigJSON 将 http/tls/socks/ss 写入工作目录下的 config.json
 func updateLocalConfigJSON(httpVal int, tlsVal int, socksVal int, ssVal int) error {
 	path := "config.json"
@@ -1078,6 +1169,7 @@ func updateLocalConfigJSON(httpVal int, tlsVal int, socksVal int, ssVal int) err
 		Tls    int    `json:"tls"`
 		Socks  int    `json:"socks"`
 		Ss     int    `json:"ss"`
+		Proxy  string `json:"proxy"`
 	}
 
 	var cfg LocalConfig
@@ -1617,6 +1709,11 @@ func tcpPingHost(ip string, port int, count int, timeoutMs int) (float64, float6
 // isValidHostname 验证主机名格式
 func isValidHostname(hostname string) bool {
 	if len(hostname) == 0 || len(hostname) > 253 {
+		return false
+	}
+
+	// 诊断命令直接把主机名作为参数，-开头会被当成命令选项
+	if hostname[0] == '-' {
 		return false
 	}
 

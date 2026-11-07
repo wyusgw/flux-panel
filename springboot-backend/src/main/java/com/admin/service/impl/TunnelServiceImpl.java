@@ -219,17 +219,7 @@ public class TunnelServiceImpl extends ServiceImpl<TunnelMapper, Tunnel> impleme
             List<Forward> tunnel = forwardService.list(new QueryWrapper<Forward>().eq("tunnel_id", tunnelUpdateDto.getId()));
             if (!tunnel.isEmpty()) {
                 for (Forward forward : tunnel) {
-                    ForwardUpdateDto forwardUpdateDto = new ForwardUpdateDto();
-                    forwardUpdateDto.setId(forward.getId());
-                    forwardUpdateDto.setUserId(forward.getUserId());
-                    forwardUpdateDto.setName(forward.getName());
-                    forwardUpdateDto.setTunnelId(forward.getTunnelId());
-                    forwardUpdateDto.setRemoteAddr(forward.getRemoteAddr());
-                    forwardUpdateDto.setStrategy(forward.getStrategy());
-                    forwardUpdateDto.setWeights(forward.getWeights());
-                    forwardUpdateDto.setInPort(forward.getInPort());
-                    forwardUpdateDto.setInterfaceName(forward.getInterfaceName());
-                    R r = forwardService.updateForward(forwardUpdateDto);
+                    R r = forwardService.syncForwardForTunnel(toForwardUpdateDto(forward));
                     if (r.getCode() != 0){
                         err++;
                     }
@@ -241,6 +231,16 @@ public class TunnelServiceImpl extends ServiceImpl<TunnelMapper, Tunnel> impleme
             return R.err("隧道信息更新成功，但部分转发同步更新失败");
         }
         return R.ok("隧道更新成功");
+    }
+
+    /**
+     * 隧道配置变化时重新同步规则用：复制规则的全部配置。漏掉的字段（如连接数、IP 数、限速、Proxy Protocol）
+     * 按空值下发，节点上对应的限制就被删除了。
+     */
+    static ForwardUpdateDto toForwardUpdateDto(Forward forward) {
+        ForwardUpdateDto dto = new ForwardUpdateDto();
+        BeanUtils.copyProperties(forward, dto);
+        return dto;
     }
 
     /**

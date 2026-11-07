@@ -94,7 +94,7 @@ public final class MenuPermission {
         gate(new String[]{"userGroup"}, "userGroup/create", "userGroup/update", "userGroup/delete", "userGroup/batchDelete", "userGroup/reorder");
         gate(new String[]{"singleTunnel"}, "singleTunnelGroup/create", "singleTunnelGroup/delete", "singleTunnelGroup/list", "singleTunnelGroup/update",
                 "userDeviceGroup/create", "userDeviceGroup/delete", "userDeviceGroup/install", "userDeviceGroup/list",
-                "userDeviceGroup/resetSecret", "userDeviceGroup/update");
+                "userDeviceGroup/resetSecret", "userDeviceGroup/update", "userDeviceGroup/clearFlow");
         gate(new String[]{"lookingGlass"}, "lookingGlass/run");
         gate(new String[]{"adminDashboard"}, "dashboard/flowStats", "dashboard/nodeOnlineTrend");
         gate(new String[]{"adminDashboard", "orderManagement"}, "order/admin/list");

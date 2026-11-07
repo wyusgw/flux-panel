@@ -24,6 +24,7 @@ import javax.servlet.http.HttpServletRequest;
  */
 @Slf4j
 @ControllerAdvice
+@org.springframework.core.annotation.Order(1)
 public class DemoMaskAdvice implements ResponseBodyAdvice<Object> {
 
     private static final String OWN_PROFILE_PATH = "/api/v1/user/package";

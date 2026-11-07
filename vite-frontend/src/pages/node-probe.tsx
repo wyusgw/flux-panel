@@ -441,7 +441,7 @@ export default function NodeProbePage() {
         ) : visibleNodeGroups.length === 0 ? (
           <div className="probe-empty">
             <EmptyState className="pb-3" />
-            <p>{effectiveAdmin ? '暂无节点组数据，请前往"设备管理"将节点归入节点组后再查看' : '暂无可显示的节点'}</p>
+            {!effectiveAdmin && <p>暂无可显示的节点</p>}
           </div>
         ) : (
           <div className="probe-groups">

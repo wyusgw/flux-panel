@@ -17,10 +17,10 @@ public class NodeUpdateDto {
     @NotBlank(message = "节点名称不能为空")
     private String name;
 
-    @NotBlank(message = "入口IP不能为空")
+    /** 连接地址，留空时默认使用 serverIp */
     private String ip;
 
-    @NotBlank(message = "服务器ip不能为空")
+    /** 仅监控设备可以留空，其他类型在 NodeServiceImpl、DeviceGroupServiceImpl 中按设备组类型校验 */
     private String serverIp;
 
     @NotNull(message = "起始端口不能为空")
@@ -37,6 +37,9 @@ public class NodeUpdateDto {
     private Integer tls;
     private Integer socks;
     private Integer ss;
+
+    /** 节点连接面板使用的 SOCKS5 代理；不传（null）表示不修改，传空字符串表示改为直连 */
+    private String proxy;
 
     /** 该节点所属的节点组ID列表；不传（null）表示不修改现有归属，传空数组表示清空归属 */
     private List<Long> nodeGroupIds;

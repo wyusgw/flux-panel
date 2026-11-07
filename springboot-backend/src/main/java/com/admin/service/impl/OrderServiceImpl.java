@@ -18,12 +18,14 @@ import com.admin.service.impl.task.OrderPurchaseTaskHandler;
 import com.admin.entity.TaskQueue;
 import com.alibaba.fastjson.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -39,6 +41,7 @@ import java.util.concurrent.ThreadLocalRandom;
 public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements OrderService {
 
     private static final String ERROR_USER_NOT_FOUND = "用户不存在";
+    private static final String ERROR_ACCOUNT_DISABLED = "账号已被禁用，无法购买套餐";
     private static final String ERROR_PACKAGE_NOT_FOUND = "套餐不存在或已下架";
     private static final String ERROR_INSUFFICIENT_BALANCE = "钱包余额不足，请先充值";
     private static final String ORDER_TYPE_PACKAGE = "package";
@@ -72,6 +75,9 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
     @Autowired
     @Lazy
     private ForwardService forwardService;
+
+    @Autowired
+    private TransactionTemplate transactionTemplate;
 
     /** 提交订单后最多等多久拿结果，超过则返回「处理中」，由前端稍后刷新 */
     private static final long PURCHASE_WAIT_MS = 8000L;
@@ -155,8 +161,11 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
      * 提交前的业务预校验，规则与 purchasePackageForUser 一致（不消耗兑换码次数、不扣款）；通过返回 null
      */
     private R precheckPurchase(User user, Long packageId, String redeemCode) {
+        if (User.disabledByAdmin(user)) {
+            return R.err(ERROR_ACCOUNT_DISABLED);
+        }
         PackagePlan packagePlan = packagePlanService.getById(packageId);
-        if (packagePlan == null) {
+        if (packagePlan == null || !isPlanPurchasable(packagePlan, user, redeemCode)) {
             return R.err(ERROR_PACKAGE_NOT_FOUND);
         }
         BigDecimal price = packagePlan.getPrice() != null ? packagePlan.getPrice() : BigDecimal.ZERO;
@@ -176,14 +185,42 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
     }
 
     /**
+     * 隐藏套餐不能直接购买，否则知道 ID 就能买到内部或免费套餐。
+     * 兑换码（后面会校验是否对应这个套餐）和续费当前套餐不受限，否则兑换来的隐藏套餐无法续费。
+     */
+    static boolean isPlanPurchasable(PackagePlan plan, User user, String redeemCode) {
+        return !Integer.valueOf(1).equals(plan.getHidden())
+                || StringUtils.isNotBlank(redeemCode)
+                || Objects.equals(user.getPackageId(), plan.getId());
+    }
+
+    /**
      * 购买/续费套餐的核心逻辑，不依赖 JWT 上下文，供定时任务（如自动续费）等非请求场景直接调用。
      * HTTP 入口 purchasePackage 仅负责从 JWT 解析出 user 后委托到这里，逻辑完全一致。
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
     public R purchasePackageForUser(User user, Long packageId, String redeemCode) {
+        // 管理员禁用的账号付款后也恢复不了，不能扣款；手动购买和自动续费都经过这里
+        if (User.disabledByAdmin(user)) {
+            return R.err(ERROR_ACCOUNT_DISABLED);
+        }
+
         PackagePlan packagePlan = packagePlanService.getById(packageId);
         if (packagePlan == null) {
+            return R.err(ERROR_PACKAGE_NOT_FOUND);
+        }
+
+        // 锁住用户记录再读最新数据：传入的 user 是事务外查的，并发购买时余额和到期时间都已过期，
+        // 会出现只扣一次钱却买到两次，或扣两次钱却只延长一次
+        user = userService.getOne(new QueryWrapper<User>().eq("id", user.getId()).last("FOR UPDATE"));
+        if (user == null) {
+            return R.err(ERROR_USER_NOT_FOUND);
+        }
+        if (User.disabledByAdmin(user)) {
+            return R.err(ERROR_ACCOUNT_DISABLED);
+        }
+        if (!isPlanPurchasable(packagePlan, user, redeemCode)) {
             return R.err(ERROR_PACKAGE_NOT_FOUND);
         }
 
@@ -200,13 +237,16 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
                     .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
         }
 
-        BigDecimal balance = user.getWalletBalance() != null ? user.getWalletBalance() : BigDecimal.ZERO;
-
-        if (balance.compareTo(price) < 0) {
+        // 条件扣款：余额不足时更新不到记录。这是事务里第一次写入，失败时没有东西需要回滚
+        boolean debited = userService.update(null, new UpdateWrapper<User>()
+                .eq("id", user.getId())
+                .ge("wallet_balance", price)
+                .setSql("wallet_balance = wallet_balance - " + price.toPlainString()));
+        if (!debited) {
             return R.err(ERROR_INSUFFICIENT_BALANCE);
         }
 
-        // 所有校验通过后，才真正占用兑换码次数（原子扣减，失败说明被并发抢占）
+        // 所有校验通过后，才真正占用兑换码次数（原子扣减，失败说明被并发抢占，抛异常回滚扣款）
         String appliedCode = null;
         if (redeemCodeEntity != null) {
             if (!redeemCodeService.consumeRedeemCode(redeemCodeEntity.getId())) {
@@ -217,14 +257,17 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
 
         long currentTime = System.currentTimeMillis();
 
-        // 1. 扣减钱包余额
         User updateUser = new User();
         updateUser.setId(user.getId());
-        updateUser.setWalletBalance(balance.subtract(price));
 
-        // 2. 应用套餐：分配用户组、重置流量与转发数配额、延长/设置到期时间
+        // 应用套餐：分配用户组、重置流量与转发数配额、延长/设置到期时间
         updateUser.setGroupId(packagePlan.getGroupId());
         updateUser.setPackageId(packagePlan.getId());
+        // 因到期停用的账号购买后恢复；管理员禁用的账号不受影响。已暂停的规则由用户自己恢复
+        if (User.disabledByExpiry(user)) {
+            updateUser.setStatus(1);
+            updateUser.setDisableReason(User.DISABLE_REASON_NONE);
+        }
         Long planTraffic = packagePlan.getTraffic();
         updateUser.setFlow(planTraffic == null || planTraffic <= 0 ? UNLIMITED_FLOW : planTraffic);
         updateUser.setInFlow(0L);
@@ -257,7 +300,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
             forwardService.refreshLimitsAfterCommit(Collections.singletonList(user.getId().intValue()));
         }
 
-        // 3. 记录订单
+        // 记录订单
         Order order = new Order();
         order.setOrderNo(generateOrderNo());
         order.setUserId(user.getId());
@@ -309,12 +352,17 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
      * 兑换钱包余额：与套餐兑换/购买是完全独立的一条路径，不涉及套餐、用户组、到期时间，
      * 仅原子扣减兑换码剩余次数后为用户钱包加值，并记录一条订单方便对账。
      */
-    @Transactional(rollbackFor = Exception.class)
     private R redeemBalanceCode(RedeemCode redeemCodeEntity) {
         Integer userId = JwtUtil.getUserIdFromToken();
         if (userId == null) {
             return R.err("用户未登录或token无效");
         }
+        // 这里是同一个对象内部调用，方法上的 @Transactional 不生效，所以显式开事务；
+        // 也不能把事务加在 redeemCode 上：套餐兑换要等队列处理，事务不提交队列就拿不到任务
+        return transactionTemplate.execute(status -> applyBalanceCode(userId, redeemCodeEntity));
+    }
+
+    R applyBalanceCode(Integer userId, RedeemCode redeemCodeEntity) {
         User user = userService.getById(userId);
         if (user == null) {
             return R.err(ERROR_USER_NOT_FOUND);
@@ -332,13 +380,15 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         }
 
         long currentTime = System.currentTimeMillis();
-        BigDecimal balance = user.getWalletBalance() != null ? user.getWalletBalance() : BigDecimal.ZERO;
-        BigDecimal newBalance = balance.add(redeemCodeEntity.getAmount());
-        User updateUser = new User();
-        updateUser.setId(user.getId());
-        updateUser.setWalletBalance(newBalance);
-        updateUser.setUpdatedTime(currentTime);
-        userService.updateById(updateUser);
+        // 原子加值：写回读到的余额会覆盖同时发生的充值或购买
+        boolean credited = userService.update(null, new UpdateWrapper<User>()
+                .eq("id", user.getId())
+                .setSql("wallet_balance = wallet_balance + " + redeemCodeEntity.getAmount().toPlainString())
+                .set("updated_time", currentTime));
+        if (!credited) {
+            throw new RuntimeException("余额更新失败");
+        }
+        BigDecimal newBalance = userService.getById(user.getId()).getWalletBalance();
 
         Order order = new Order();
         order.setOrderNo(generateOrderNo());
@@ -455,19 +505,33 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
             return R.err("订单不存在");
         }
 
-        // 充值订单由待支付改为已支付：委托给充值服务，与网关回调走相同的原子更新+钱包加值逻辑
-        if (ORDER_TYPE_RECHARGE.equals(order.getType())
-                && orderStatus == ORDER_STATUS_PAID
-                && order.getOrderStatus() != null && order.getOrderStatus() == ORDER_STATUS_PENDING) {
-            return rechargeService.markOrderPaidManually(id);
+        if (ORDER_TYPE_RECHARGE.equals(order.getType())) {
+            Integer current = order.getOrderStatus();
+            // 已支付的充值订单不能改回：余额不会退回，之后再标记已支付或网关重发通知都会再加一次钱
+            if (current != null && current == ORDER_STATUS_PAID && orderStatus != ORDER_STATUS_PAID) {
+                return R.err("已支付的充值订单不能修改状态");
+            }
+            if (orderStatus == ORDER_STATUS_PAID) {
+                // 待支付改为已支付：委托给充值服务，与网关回调走相同的原子更新+钱包加值逻辑
+                if (current != null && current == ORDER_STATUS_PENDING) {
+                    return rechargeService.markOrderPaidManually(id);
+                }
+                // 其他状态直接改成已支付不会给钱包加值，订单和余额就对不上了
+                if (current == null || current != ORDER_STATUS_PAID) {
+                    return R.err("已取消的充值订单请先改回待支付，再标记为已支付");
+                }
+            }
         }
 
-        Order update = new Order();
-        update.setId(id);
-        update.setOrderStatus(orderStatus);
-        update.setUpdatedTime(System.currentTimeMillis());
-        boolean result = this.updateById(update);
-        return result ? R.ok("状态已更新") : R.err("更新失败");
+        // 只在状态没变时更新：否则网关回调刚把订单改成已支付，这里又会用旧判断把它改回去
+        UpdateWrapper<Order> update = new UpdateWrapper<Order>().eq("id", id)
+                .set("order_status", orderStatus)
+                .set("updated_time", System.currentTimeMillis());
+        if (order.getOrderStatus() != null) {
+            update.eq("order_status", order.getOrderStatus());
+        }
+        boolean result = this.update(update);
+        return result ? R.ok("状态已更新") : R.err("订单状态已变化，请刷新后重试");
     }
 
     private String generateOrderNo() {

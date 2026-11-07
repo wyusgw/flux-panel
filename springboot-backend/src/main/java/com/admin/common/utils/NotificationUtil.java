@@ -5,6 +5,7 @@ import com.admin.entity.Node;
 import com.admin.entity.User;
 import com.admin.entity.ViteConfig;
 import com.admin.service.DeviceGroupService;
+import com.admin.service.NodeService;
 import com.admin.service.TaskQueueService;
 import com.admin.service.TelegramSendLogService;
 import com.admin.service.UserService;
@@ -59,6 +60,10 @@ public class NotificationUtil {
 
     @Resource
     private DeviceGroupService deviceGroupService;
+
+    @Resource
+    @Lazy
+    private NodeService nodeService;
 
     @Resource
     private ViteConfigService viteConfigService;
@@ -119,11 +124,13 @@ public class NotificationUtil {
 
             // 管理员与普通用户一样只按各自的 notify_device_mode / 设备组范围过滤，
             // 不再无条件接收全部设备上下线通知（否则白名单/黑名单对管理员不生效）。
+            // 普通用户还要能看到这个节点，否则能借通知拿到隐藏节点和别人自建节点的名称和上下线时间。
             // 一个 Telegram 可以关联多个账号，同一条设备通知对它们内容完全相同，所以每个 Telegram 只发一条，并列出涉及的账号
             Map<String, List<User>> recipients = new LinkedHashMap<>();
             for (User candidate : candidates) {
                 if (isBlank(candidate.getTelegramChatId())) continue;
                 if (!shouldNotifyDevice(candidate, nodeGroupIds)) continue;
+                if (!canSeeNode(candidate, node.getId())) continue;
                 recipients.computeIfAbsent(candidate.getTelegramChatId(), chatId -> new ArrayList<>()).add(candidate);
             }
             for (Map.Entry<String, List<User>> recipient : recipients.entrySet()) {
@@ -226,6 +233,18 @@ public class NotificationUtil {
      * 白名单模式：命中所选设备组才通知；黑名单模式：命中所选设备组则不通知，其余都通知；
      * 全部接收模式：不看设备组，任何设备上下线都通知
      */
+    private boolean canSeeNode(User user, Long nodeId) {
+        if (Integer.valueOf(0).equals(user.getRoleId())) {
+            return true;
+        }
+        try {
+            return nodeService.getVisibleNodeIds(user.getId().intValue()).contains(nodeId);
+        } catch (Exception e) {
+            log.warn("查询用户 {} 可见节点失败: {}", user.getId(), e.getMessage());
+            return false;
+        }
+    }
+
     private boolean shouldNotifyDevice(User user, List<Long> nodeGroupIds) {
         Integer mode = user.getNotifyDeviceMode();
         if (mode == null || mode == 0) return false;

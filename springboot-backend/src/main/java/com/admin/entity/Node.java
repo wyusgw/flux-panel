@@ -44,6 +44,9 @@ public class Node extends BaseEntity {
     /** 是否屏蔽 Shadowsocks 等全加密协议：0 否，1 是 */
     private Integer ss;
 
+    /** 节点连接面板使用的 SOCKS5 代理（socks5://[user:pass@]host:port），为空表示直连 */
+    private String proxy;
+
     /** 该节点所属的节点组ID列表（多对多，非持久化字段，通过 node_group_relation 表维护） */
     @TableField(exist = false)
     private List<Long> nodeGroupIds;

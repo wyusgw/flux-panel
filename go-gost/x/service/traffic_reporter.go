@@ -12,12 +12,33 @@ import (
 	"github.com/go-gost/core/observer/stats"
 	"github.com/go-gost/x/config"
 	"github.com/go-gost/x/internal/util/crypto"
+	"github.com/go-gost/x/internal/util/panelproxy"
 	"github.com/go-gost/x/registry"
 )
 
 var httpReportURL string
 var configReportURL string
-var httpAESCrypto *crypto.AESCrypto // 新增：HTTP上报加密器
+var httpAESCrypto *crypto.AESCrypto   // 新增：HTTP上报加密器
+var reportTransport http.RoundTripper // 通过 SOCKS5 代理上报时使用，nil 表示直连
+
+// SetReportProxy 设置面板上报使用的 SOCKS5 代理，空字符串表示直连
+func SetReportProxy(raw string) error {
+	dialContext, err := panelproxy.DialContext(raw)
+	if err != nil {
+		return err
+	}
+	if dialContext == nil {
+		reportTransport = nil
+		return nil
+	}
+	reportTransport = &http.Transport{
+		DialContext:         dialContext,
+		MaxIdleConns:        2,
+		IdleConnTimeout:     30 * time.Second,
+		TLSHandshakeTimeout: 10 * time.Second,
+	}
+	return nil
+}
 
 // TrafficReportItem 流量报告项（压缩格式）
 type TrafficReportItem struct {
@@ -82,7 +103,8 @@ func sendTrafficReport(ctx context.Context, reportItems TrafficReportItem) (bool
 	req.Header.Set("User-Agent", "GOST-Traffic-Reporter/1.0")
 
 	client := &http.Client{
-		Timeout: 5 * time.Second,
+		Timeout:   5 * time.Second,
+		Transport: reportTransport,
 	}
 
 	resp, err := client.Do(req)
@@ -158,7 +180,8 @@ func sendConfigReport(ctx context.Context) (bool, error) {
 	req.Header.Set("User-Agent", "Config-Reporter/1.0")
 
 	client := &http.Client{
-		Timeout: 10 * time.Second, // 配置上报可以稍长一些
+		Timeout:   10 * time.Second, // 配置上报可以稍长一些
+		Transport: reportTransport,
 	}
 
 	resp, err := client.Do(req)

@@ -67,6 +67,20 @@ public class UserDeviceGroupController extends BaseController {
     }
 
     @LogAnnotation
+    @PostMapping("/clearFlow")
+    public R clearFlow(@RequestBody Map<String, Object> params) {
+        Integer userId = JwtUtil.getUserIdFromToken();
+        Object ids = params.get("ids");
+        if (!(ids instanceof java.util.List)) {
+            return R.err(400, "请选择要清空流量的设备");
+        }
+        java.util.List<Long> deviceIds = ((java.util.List<?>) ids).stream()
+                .map(id -> Long.valueOf(id.toString()))
+                .collect(java.util.stream.Collectors.toList());
+        return deviceGroupService.clearMyDeviceFlow(userId, deviceIds);
+    }
+
+    @LogAnnotation
     @PostMapping("/resetSecret")
     public R resetSecret(@RequestBody Map<String, Object> params) {
         Integer userId = JwtUtil.getUserIdFromToken();

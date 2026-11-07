@@ -9,6 +9,7 @@ import com.admin.service.DemoChangeService;
 import com.admin.common.utils.DemoArea;
 import com.admin.common.utils.MenuPermission;
 import org.springframework.web.servlet.HandlerInterceptor;
+import org.springframework.web.servlet.HandlerMapping;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
@@ -189,7 +190,8 @@ public class ReadOnlyInterceptor implements HandlerInterceptor {
         boolean demoToken = JwtUtil.isDemoToken(token);
         boolean adminToken = Integer.valueOf(ADMIN_ROLE).equals(JwtUtil.getRoleIdFromToken(token));
         // 普通用户调用不受页面权限限制的查询接口时不用查库
-        if (!demoToken && !adminToken && readPath && !MenuPermission.isGated(uri)) {
+        String route = routePattern(request);
+        if (!demoToken && !adminToken && readPath && !MenuPermission.isGated(route)) {
             return true;
         }
         User user = userMapper.selectById(JwtUtil.getUserIdFromToken(token));
@@ -207,7 +209,7 @@ public class ReadOnlyInterceptor implements HandlerInterceptor {
             throw new UnauthorizedException("无效的token或token已过期");
         }
         // 页面权限：没有分配对应页面的账号，接口同样拒绝，不只是隐藏菜单
-        if (user != null && !MenuPermission.allowsEndpoint(user.getMenuPermissions(), uri)) {
+        if (user != null && !MenuPermission.allowsEndpoint(user.getMenuPermissions(), route)) {
             throw new ReadOnlyException("没有访问权限");
         }
         // 受限管理员没有站点设置和推送通知页面时，配置接口不能给它返回密钥
@@ -226,6 +228,21 @@ public class ReadOnlyInterceptor implements HandlerInterceptor {
             throw new ReadOnlyException("禁止编辑");
         }
         return true;
+    }
+
+    /**
+     * 页面权限按实际匹配到的接口判断。原始地址可以换写法（末尾加 /、加 ;a=1、%65、多一个 /）到达同一个接口，
+     * 拿它查表会查不到，而查不到的接口不受页面权限限制。
+     * 演示账号的查询和修改接口仍按原始地址判断：查不到就拒绝，换写法只会被拦下。
+     */
+    static String routePattern(HttpServletRequest request) {
+        Object pattern = request.getAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE);
+        String route = pattern != null ? pattern.toString() : request.getRequestURI();
+        // 匹配末尾带 / 的地址时，部分路由匹配方式给出的模式也带 /，这样查权限表会查不到
+        while (route.length() > 1 && route.endsWith("/")) {
+            route = route.substring(0, route.length() - 1);
+        }
+        return route;
     }
 
     /** 只有分配了对应区域才放行，并在修改前记下相关表的内容 */

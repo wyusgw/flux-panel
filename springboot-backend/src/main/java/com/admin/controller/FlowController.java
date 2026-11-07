@@ -3,6 +3,7 @@ package com.admin.controller;
 import com.admin.common.aop.LogAnnotation;
 import com.admin.common.dto.FlowDto;
 import com.admin.common.dto.GostConfigDto;
+import com.admin.common.dto.GostDto;
 import com.admin.common.lang.R;
 import com.admin.common.task.CheckGostConfigAsync;
 import com.admin.common.utils.AESCrypto;
@@ -233,9 +234,24 @@ public class FlowController extends BaseController {
         }
         String forwardId = serviceIds[0];
         String userId = serviceIds[1];
-        String userTunnelId = serviceIds[2];
 
         Forward forward = forwardService.getById(forwardId);
+        Tunnel reportTunnel = forward != null ? tunnelResolver.resolveTunnel(forward) : null;
+        if (!isTrustedFlowReport(forward, reportTunnel, userId, reportingNodeId, flowDataList)) {
+            log.warn("节点 {} 的流量上报未通过校验，已忽略: {}", reportingNodeId, flowDataList);
+            // 规则已不在这个节点上（如节点离线时更换了隧道，旧服务没删掉），这些流量不计费，所以要让它停下，
+            // 否则就是一条免费的转发。命令只发给上报节点自己，伪造上报也影响不到别的节点
+            if (isStrayReport(forward, reportTunnel, userId, reportingNodeId)) {
+                pauseStrayService(reportingNodeId, buildServiceName(forwardId, userId, serviceIds[2]));
+            }
+            return SUCCESS_RESPONSE;
+        }
+
+        // 节点上真实的服务名（后面暂停服务要用）；是否检查限额、累加到哪条隧道授权以数据库为准，
+        // 不信任上报内容，否则把第三段写成 0 就能跳过限额
+        String name = buildServiceName(forwardId, userId, serviceIds[2]);
+        UserTunnel ownerTunnel = tunnelResolver.resolveUserTunnel(forward.getUserId(), forward);
+        String userTunnelId = ownerTunnel != null ? String.valueOf(ownerTunnel.getId()) : DEFAULT_USER_TUNNEL_ID;
 
         // 记录原始（不计流量倍率）流量到当日累计，供管理员仪表盘/"统计数据"弹窗展示；
         // 必须在 filterFlowData 按倍率改写 flowDataList 之前取值，否则拿到的就不是原始数据了
@@ -246,6 +262,11 @@ public class FlowController extends BaseController {
 
         //  处理流量倍率及单双向计算
         FlowDto flowStats = filterFlowData(flowDataList, forward, flowType);
+        // 超大数值按倍率换算后可能溢出成负数，会减少用户已用流量
+        if (flowStats.getD() < 0 || flowStats.getU() < 0) {
+            log.warn("节点 {} 上报的流量换算后溢出，已忽略: {}", reportingNodeId, flowDataList.getN());
+            return SUCCESS_RESPONSE;
+        }
 
         // 先更新所有流量统计 - 确保流量数据的一致性
         updateForwardFlow(forwardId, flowStats);
@@ -253,9 +274,11 @@ public class FlowController extends BaseController {
         updateUserTunnelFlow(userTunnelId, flowStats);
 
         // 7. 检查和服务暂停操作
-        String name = buildServiceName(forwardId, userId, userTunnelId);
         if (Objects.equals(userTunnelId, DEFAULT_USER_TUNNEL_ID)) {
-            // 管理员转发：完全跳过限额检查
+            // 查不到隧道授权：管理员转发完全跳过限额检查；普通用户（如撤销授权时规则没删掉）仍要检查账号额度
+            if (!isAdminOwner(userService.getById(userId))) {
+                checkUserRelatedLimits(userId, name);
+            }
         } else if (Objects.equals(userTunnelId, DEVICE_GROUP_USER_TUNNEL_ID)) {
             // 设备组模式的普通用户转发：没有真实UserTunnel行可查，仅检查账号自身额度
             checkUserRelatedLimits(userId, name);
@@ -266,6 +289,43 @@ public class FlowController extends BaseController {
         }
 
         return SUCCESS_RESPONSE;
+    }
+
+    /**
+     * 节点密钥只能证明上报来自某个节点，而普通用户也能拿到自建节点的密钥，所以还要确认：
+     * 规则属于服务名里的用户、上报节点是规则的入口节点、流量值不为负（负数会减少已用流量）。
+     * 出口节点的服务不上报流量（节点程序跳过了 _tls 服务的统计），不能接受它的上报，否则出口节点的所有者能多报别人的流量。
+     */
+    static boolean isTrustedFlowReport(Forward forward, Tunnel tunnel, String userId, Long reportingNodeId, FlowDto flow) {
+        if (forward == null || tunnel == null || reportingNodeId == null) {
+            return false;
+        }
+        if (flow.getU() == null || flow.getD() == null || flow.getU() < 0 || flow.getD() < 0) {
+            return false;
+        }
+        if (!Objects.equals(String.valueOf(forward.getUserId()), userId)) {
+            return false;
+        }
+        return reportingNodeId.equals(tunnel.getInNodeId());
+    }
+
+    /** 服务名对得上这条规则，但上报节点不是它的入口节点 */
+    static boolean isStrayReport(Forward forward, Tunnel tunnel, String userId, Long reportingNodeId) {
+        return forward != null && tunnel != null && reportingNodeId != null
+                && Objects.equals(String.valueOf(forward.getUserId()), userId)
+                && !reportingNodeId.equals(tunnel.getInNodeId());
+    }
+
+    void pauseStrayService(Long nodeId, String serviceName) {
+        GostDto result = GostUtil.PauseService(nodeId, serviceName);
+        if (!Objects.equals(result.getMsg(), "OK")) {
+            log.warn("暂停节点 {} 上残留的服务 {} 失败: {}", nodeId, serviceName, result.getMsg());
+        }
+    }
+
+    /** 只有规则所有者确实是管理员才能跳过限额，查不到用户时不算 */
+    static boolean isAdminOwner(User owner) {
+        return owner != null && Integer.valueOf(0).equals(owner.getRoleId());
     }
 
     private void checkUserRelatedLimits(String userId, String name) {
@@ -326,17 +386,52 @@ public class FlowController extends BaseController {
         pauseService(forwardList, name);
     }
 
-    public void pauseService(List<Forward> forwardList, String name) {
+    /**
+     * 暂停一批规则。reportedName 是触发这次检查的上报服务名，只属于其中一条规则；
+     * 其余规则要用各自的服务名，否则后台显示已暂停，节点上实际还在转发。
+     */
+    public void pauseService(List<Forward> forwardList, String reportedName) {
         for (Forward forward : forwardList) {
-            Tunnel tunnel = tunnelResolver.resolveTunnel(forward);
-            if (tunnel != null){
-                GostUtil.PauseService(tunnel.getInNodeId(), name);
-                if (tunnel.getType() == 2){
-                    GostUtil.PauseRemoteService(tunnel.getOutNodeId(), name);
-                }
+            if (!shouldPause(forward, reportedName)) {
+                continue;
             }
-            forward.setStatus(0);
-            forwardService.updateById(forward);
+            Tunnel tunnel = tunnelResolver.resolveTunnel(forward);
+            if (tunnel != null) {
+                pauseOnNodes(tunnel, pauseServiceName(forward, reportedName));
+            }
+            // 只改状态：写回整个对象会用旧值覆盖其他请求刚累加的流量
+            forwardService.update(null, new UpdateWrapper<Forward>().eq("id", forward.getId()).set("status", 0));
+        }
+    }
+
+    private static boolean isReportedForward(Forward forward, String reportedName) {
+        return reportedName != null && reportedName.startsWith(forward.getId() + "_");
+    }
+
+    /** 已暂停的规则不用重复发送；但正在上报流量的规则说明节点上还在运行，即使后台显示已暂停也要再停一次 */
+    static boolean shouldPause(Forward forward, String reportedName) {
+        return isReportedForward(forward, reportedName) || !Objects.equals(forward.getStatus(), 0);
+    }
+
+    /** 上报的规则直接用节点上真实的服务名，其他规则按创建时的规则拼出服务名 */
+    private String pauseServiceName(Forward forward, String reportedName) {
+        if (isReportedForward(forward, reportedName)) {
+            return reportedName;
+        }
+        UserTunnel userTunnel = tunnelResolver.resolveUserTunnel(forward.getUserId(), forward);
+        return tunnelResolver.buildServiceName(forward.getId(), forward.getUserId(), userTunnel != null ? userTunnel.getId() : null);
+    }
+
+    void pauseOnNodes(Tunnel tunnel, String serviceName) {
+        GostDto result = GostUtil.PauseService(tunnel.getInNodeId(), serviceName);
+        if (!Objects.equals(result.getMsg(), "OK")) {
+            log.warn("暂停节点 {} 上的服务 {} 失败: {}", tunnel.getInNodeId(), serviceName, result.getMsg());
+        }
+        if (tunnel.getType() == 2) {
+            GostDto remoteResult = GostUtil.PauseRemoteService(tunnel.getOutNodeId(), serviceName);
+            if (!Objects.equals(remoteResult.getMsg(), "OK")) {
+                log.warn("暂停节点 {} 上的远端服务 {} 失败: {}", tunnel.getOutNodeId(), serviceName, remoteResult.getMsg());
+            }
         }
     }
 

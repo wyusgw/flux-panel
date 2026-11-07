@@ -45,6 +45,16 @@ public class UserGroupServiceImpl extends ServiceImpl<UserGroupMapper, UserGroup
         UserGroup userGroup = new UserGroup();
         BeanUtils.copyProperties(userGroupDto, userGroup);
 
+        // 自定义 ID：必须是正数且没被占用，不传则由数据库自动生成
+        if (userGroup.getId() != null) {
+            if (userGroup.getId() <= 0) {
+                return R.err("用户组 ID 必须大于 0");
+            }
+            if (this.getById(userGroup.getId()) != null) {
+                return R.err("用户组 ID 已存在");
+            }
+        }
+
         long currentTime = System.currentTimeMillis();
         userGroup.setCreatedTime(currentTime);
         userGroup.setUpdatedTime(currentTime);
@@ -53,7 +63,7 @@ public class UserGroupServiceImpl extends ServiceImpl<UserGroupMapper, UserGroup
             userGroup.setSort(0);
         }
 
-        boolean result = this.save(userGroup);
+        boolean result = userGroup.getId() != null ? baseMapper.insertWithId(userGroup) > 0 : this.save(userGroup);
         return result ? R.ok() : R.err(ERROR_CREATE_FAILED);
     }
 

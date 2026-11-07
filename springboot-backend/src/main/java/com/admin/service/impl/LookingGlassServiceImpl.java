@@ -3,6 +3,7 @@ package com.admin.service.impl;
 import com.admin.common.dto.GostDto;
 import com.admin.common.dto.LookingGlassRequestDto;
 import com.admin.common.lang.R;
+import com.admin.common.utils.ForwardTargetPolicy;
 import com.admin.common.utils.WebSocketServer;
 import com.admin.entity.Node;
 import com.admin.entity.ViteConfig;
@@ -72,6 +73,16 @@ public class LookingGlassServiceImpl implements LookingGlassService {
         Node node = findVisibleNode(dto.getNodeId());
         if (node == null) {
             return R.err("节点不存在或无权限访问");
+        }
+
+        // 诊断同样不能用来探测节点本机和内网：TCP Ping 相当于端口扫描。-开头的地址还会被诊断命令当成参数
+        if (!isAdmin) {
+            ViteConfig allowPrivate = viteConfigService.getOne(new QueryWrapper<ViteConfig>().eq("name", ForwardTargetPolicy.CONFIG_ALLOW_PRIVATE));
+            String blocked = ForwardTargetPolicy.checkRemoteAddrs(rawTarget,
+                    allowPrivate != null && "true".equals(allowPrivate.getValue()), null, java.net.InetAddress::getAllByName);
+            if (blocked != null) {
+                return R.err(blocked.replace("不能转发到", "不能诊断"));
+            }
         }
 
         GostDto gostResult;

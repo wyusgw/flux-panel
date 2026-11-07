@@ -37,6 +37,9 @@ public interface ForwardService extends IService<Forward> {
      */
     R updateForward(ForwardUpdateDto forwardUpdateDto);
 
+    /** 隧道配置变化时系统重新同步规则：和 updateForward 相同，但管理员流量用完也要同步 */
+    R syncForwardForTunnel(ForwardUpdateDto forwardUpdateDto);
+
     /**
      * 删除端口转发
      * @param id 转发ID

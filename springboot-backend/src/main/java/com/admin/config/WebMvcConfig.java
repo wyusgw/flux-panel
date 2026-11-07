@@ -1,10 +1,13 @@
 package com.admin.config;
 
 import com.admin.common.interceptor.JwtInterceptor;
+import com.admin.common.interceptor.LoginRequiredFilter;
 import com.admin.common.interceptor.ReadOnlyInterceptor;
 import com.admin.mapper.UserMapper;
 import com.admin.service.DemoChangeService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
+import org.springframework.core.Ordered;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -39,10 +42,21 @@ public class WebMvcConfig implements WebMvcConfigurer {
     }
 
     @Bean
-    public CorsFilter corsFilter() {
+    public FilterRegistrationBean<CorsFilter> corsFilter() {
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", buildConfig());
-        return new CorsFilter(source);
+        FilterRegistrationBean<CorsFilter> registration = new FilterRegistrationBean<>(new CorsFilter(source));
+        // 跨域头要在最前面加上，未登录的 403 响应浏览器才读得到
+        registration.setOrder(Ordered.HIGHEST_PRECEDENCE);
+        return registration;
+    }
+
+    /** 没带 Token 访问需要登录的接口：GET / POST 都返回 403 Not logged in */
+    @Bean
+    public FilterRegistrationBean<LoginRequiredFilter> loginRequiredFilter() {
+        FilterRegistrationBean<LoginRequiredFilter> registration = new FilterRegistrationBean<>(new LoginRequiredFilter());
+        registration.setOrder(Ordered.HIGHEST_PRECEDENCE + 1);
+        return registration;
     }
 
     @Override
@@ -70,14 +84,7 @@ public class WebMvcConfig implements WebMvcConfigurer {
         registry.addInterceptor(jwtInterceptor())
                 .addPathPatterns("/api/**")
                 .excludePathPatterns("/flow/**")
-                .excludePathPatterns("/api/v1/openApi/**")
-                .excludePathPatterns("/api/v1/config/get")
-                .excludePathPatterns("/api/v1/config/list")
-                .excludePathPatterns("/api/v1/user/login")
-                .excludePathPatterns("/api/v1/user/register")
-                .excludePathPatterns("/api/v1/captcha/**")
-                .excludePathPatterns("/api/v1/recharge/notify/**")
-                .excludePathPatterns("/api/v1/telegram/webhook/**");
+                .excludePathPatterns(LoginRequiredFilter.PUBLIC_PATHS);
 
         // 演示管理员：排在 JWT 校验之后，未登录的请求仍然先得到 401。
         // 登录和验证码要能用；支付回调、Telegram webhook、订阅接口是外部系统调用，不受限制

@@ -1,16 +1,17 @@
 import { TipButton } from "@/components/tip-button";
-import { ApiOutlined, CopyOutlined, KeyOutlined } from "@/components/ant-icons";
+import { ApiOutlined, CopyOutlined, FireOutlined, KeyOutlined, SettingOutlined } from "@/components/ant-icons";
+import { GroupManageDrawer } from "@/components/group-manage-drawer";
 import { useState, useEffect } from "react";
+import type { Selection } from "@react-types/shared";
 import { ToolbarAddIcon } from "@/components/toolbar-icons";
 import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Button } from "@heroui/button";
-import { Input } from "@heroui/input";
+import { Input, Textarea } from "@heroui/input";
 import { Select, SelectItem } from "@heroui/select";
 import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter } from "@heroui/modal";
 import { Spinner } from "@heroui/spinner";
 import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from "@heroui/table";
 import { Dropdown, DropdownTrigger, DropdownMenu, DropdownItem, DropdownSection } from "@heroui/dropdown";
-import { Switch } from "@heroui/switch";
 import { Chip } from "@heroui/chip";
 import toast from 'react-hot-toast';
 import { copyText } from '@/utils/clipboard';
@@ -22,6 +23,7 @@ import {
   deleteUserDeviceGroup,
   getMyDeviceGroupInstallCommand,
   resetMyDeviceGroupSecret,
+  clearMyDeviceGroupFlow,
   createMySingleTunnelGroup,
   getMySingleTunnelGroupList,
   updateMySingleTunnelGroup,
@@ -38,7 +40,6 @@ interface MyDeviceGroup {
   name: string;
   direction: 'inbound' | 'outbound';
   protocol?: string;
-  shared: boolean;
   singleTunnelGroupId?: number | null;
   nodeId: number | null;
   serverIp?: string;
@@ -46,7 +47,20 @@ interface MyDeviceGroup {
   portSta?: number;
   portEnd?: number;
   status?: number;
+  usedFlow?: number;
 }
+
+/** 流量以字节计，按 1024 进位显示，和转发规则页一样最大到 GB */
+const formatFlow = (bytes?: number) => {
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let value = bytes || 0;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return `${unit === 0 ? value : value.toFixed(2)} ${units[unit]}`;
+};
 
 interface SingleTunnelGroupOption {
   id: number;
@@ -64,7 +78,6 @@ interface GroupForm {
   portEnd: number;
   protocol: string;
   singleTunnelGroupId: number | null;
-  shared: boolean;
 }
 
 interface InstallInfo {
@@ -83,7 +96,6 @@ const DEFAULT_FORM: GroupForm = {
   portEnd: 65535,
   protocol: 'tls',
   singleTunnelGroupId: null,
-  shared: false
 };
 
 
@@ -110,6 +122,42 @@ export default function SingleTunnelPage() {
   const [loading, setLoading] = useState(true);
   const [groups, setGroups] = useState<MyDeviceGroup[]>([]);
   const [singleTunnelGroups, setSingleTunnelGroups] = useState<SingleTunnelGroupOption[]>([]);
+  const [activeGroupFilter, setActiveGroupFilter] = useState<number | null>(null); // null=全部, -1=未分组
+
+  // 现在删除分组会清除设备上的分组ID；之前删除的还留着旧ID，这些设备也算未分组，否则筛选时哪里都找不到它
+  const isUngrouped = (device: MyDeviceGroup) =>
+    !device.singleTunnelGroupId || !singleTunnelGroups.some(group => group.id === device.singleTunnelGroupId);
+  const ungroupedDevices = groups.filter(isUngrouped);
+  const visibleDevices = activeGroupFilter === null
+    ? groups
+    : activeGroupFilter === -1
+      ? ungroupedDevices
+      : groups.filter(device => device.singleTunnelGroupId === activeGroupFilter);
+
+  const [selectedKeys, setSelectedKeys] = useState<Selection>(new Set([]));
+  const [clearFlowOpen, setClearFlowOpen] = useState(false);
+  const [clearFlowLoading, setClearFlowLoading] = useState(false);
+  // 只算当前筛选下能看到的设备，切换分组后不会误清看不到的设备
+  const selectedDevices = visibleDevices.filter(device => selectedKeys === 'all' || selectedKeys.has(String(device.id)));
+
+  const confirmClearFlow = async () => {
+    setClearFlowLoading(true);
+    try {
+      const res = await clearMyDeviceGroupFlow(selectedDevices.map(device => device.id));
+      if (res.code === 0) {
+        toast.success('流量已清空');
+        setClearFlowOpen(false);
+        setSelectedKeys(new Set([]));
+        loadData();
+      } else {
+        toast.error(res.msg || '清空失败');
+      }
+    } catch (error) {
+      toast.error('清空失败');
+    } finally {
+      setClearFlowLoading(false);
+    }
+  };
 
   const [modalOpen, setModalOpen] = useState(false);
   const [isEdit, setIsEdit] = useState(false);
@@ -207,6 +255,9 @@ export default function SingleTunnelPage() {
       const res = await deleteMySingleTunnelGroup(group.id);
       if (res.code === 0) {
         toast.success('删除成功');
+        if (activeGroupFilter === group.id) {
+          setActiveGroupFilter(null);
+        }
         loadData();
       } else {
         toast.error(res.msg || '删除失败');
@@ -231,7 +282,7 @@ export default function SingleTunnelPage() {
 
   const handleAdd = () => {
     setIsEdit(false);
-    setForm(DEFAULT_FORM);
+    setForm({ ...DEFAULT_FORM, singleTunnelGroupId: activeGroupFilter && activeGroupFilter > 0 ? activeGroupFilter : null });
     setErrors({});
     setModalOpen(true);
   };
@@ -248,7 +299,6 @@ export default function SingleTunnelPage() {
       portEnd: group.portEnd || 65535,
       protocol: group.protocol || 'tls',
       singleTunnelGroupId: group.singleTunnelGroupId ?? null,
-      shared: group.shared
     });
     setErrors({});
     setModalOpen(true);
@@ -258,7 +308,6 @@ export default function SingleTunnelPage() {
     const newErrors: { [key: string]: string } = {};
     if (!form.name.trim()) newErrors.name = '请输入名称';
     if (!form.serverIp.trim()) newErrors.serverIp = '请输入服务器 IP 或域名';
-    if (!form.entryIps.some(ip => ip.trim())) newErrors.entryIp = '请至少输入一个入口 IP 或域名';
     if (form.portSta < 1 || form.portSta > 65535) newErrors.portSta = '端口号必须在1-65535之间';
     if (form.portEnd < 1 || form.portEnd > 65535) newErrors.portEnd = '端口号必须在1-65535之间';
     setErrors(newErrors);
@@ -270,7 +319,8 @@ export default function SingleTunnelPage() {
     setSubmitLoading(true);
     try {
       const { entryIps, ...rest } = form;
-      const submitData = { ...rest, entryIp: joinEntryIps(entryIps) };
+      // 入口地址留空时默认使用服务器地址
+      const submitData = { ...rest, entryIp: joinEntryIps(entryIps) || form.serverIp.trim() };
       const res = isEdit
         ? await updateUserDeviceGroup(submitData)
         : await createUserDeviceGroup(submitData);
@@ -400,9 +450,44 @@ export default function SingleTunnelPage() {
           <h1 className="text-base font-semibold text-foreground"><HelpTooltip content="添加自己的设备作为转发规则的入口或出口，添加完成后在此获取对接命令，在你的设备上安装即可连接到面板。">单端隧道</HelpTooltip></h1>
         </CardHeader>
         <CardBody className="p-4 space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" variant="bordered" className="border-dashed" startContent={<SettingOutlined />} onPress={() => setGroupManageModalOpen(true)}>管理分组</Button>
+            <Chip
+              size="sm"
+              variant={activeGroupFilter === null ? 'solid' : 'light'}
+              color={activeGroupFilter === null ? 'primary' : 'default'}
+              className="cursor-pointer"
+              onClick={() => setActiveGroupFilter(null)}
+            >
+              全部
+            </Chip>
+            {ungroupedDevices.length > 0 && (
+              <Chip
+                size="sm"
+                variant={activeGroupFilter === -1 ? 'solid' : 'light'}
+                color={activeGroupFilter === -1 ? 'primary' : 'default'}
+                className="cursor-pointer"
+                onClick={() => setActiveGroupFilter(-1)}
+              >
+                未分组 ({ungroupedDevices.length})
+              </Chip>
+            )}
+            {singleTunnelGroups.map(group => (
+              <Chip
+                key={group.id}
+                size="sm"
+                variant={activeGroupFilter === group.id ? 'solid' : 'light'}
+                color={activeGroupFilter === group.id ? 'primary' : 'default'}
+                className="cursor-pointer"
+                onClick={() => setActiveGroupFilter(group.id)}
+              >
+                {group.name} ({group.deviceCount})
+              </Chip>
+            ))}
+          </div>
           <div className="flex flex-wrap items-center gap-3.5">
-            <Button size="sm" variant="bordered" onPress={() => setGroupManageModalOpen(true)}>管理分组</Button>
             <Button size="sm" variant="bordered" startContent={<ToolbarAddIcon />} onPress={handleAdd}>添加设备</Button>
+            <Button size="sm" variant="bordered" startContent={<FireOutlined />} isDisabled={selectedDevices.length === 0} onPress={() => setClearFlowOpen(true)}>清空流量</Button>
             <RefreshButton onRefresh={() => loadData(false)} />
           </div>
           <div>
@@ -410,16 +495,19 @@ export default function SingleTunnelPage() {
             <Table
               removeWrapper
               aria-label="单端隧道设备"
+              selectionMode="multiple"
+              selectedKeys={selectedKeys}
+              onSelectionChange={setSelectedKeys}
               classNames={{ base: "w-full", th: "management-table-heading", td: "management-table-cell" }}
             >
               <TableHeader>
                 <TableColumn>名称</TableColumn>
                 <TableColumn>角色</TableColumn>
                 <TableColumn>状态</TableColumn>
-                <TableColumn>共享</TableColumn>
+                <TableColumn>已用流量</TableColumn>
                 <TableColumn align="end">操作</TableColumn>
               </TableHeader>
-              <TableBody items={groups} emptyContent={<EmptyState text="还没有添加自己的设备" />}>
+              <TableBody items={visibleDevices} emptyContent={<EmptyState text="还没有添加自己的设备" />}>
                 {(group: MyDeviceGroup) => (
                   <TableRow key={group.id}>
                     <TableCell className="font-medium">{group.name}</TableCell>
@@ -429,11 +517,7 @@ export default function SingleTunnelPage() {
                         {group.status === 1 ? '在线' : '离线'}
                       </Chip>
                     </TableCell>
-                    <TableCell>
-                      <Chip size="sm" variant="light" color={group.shared ? 'primary' : 'default'}>
-                        {group.shared ? '已共享' : '仅自己'}
-                      </Chip>
-                    </TableCell>
+                    <TableCell>{formatFlow(group.usedFlow)}</TableCell>
                     <TableCell>
                       <div className="flex justify-end items-center gap-1">
                         <Dropdown placement="bottom-end">
@@ -505,41 +589,13 @@ export default function SingleTunnelPage() {
 
                   <Input labelPlacement="outside-top" size="sm" autoComplete="off" label="服务器 IP / 域名" placeholder="例如：203.0.113.10 或 node.example.com" value={form.serverIp} onChange={(e) => setForm(prev => ({ ...prev, serverIp: e.target.value }))} isInvalid={!!errors.serverIp} errorMessage={errors.serverIp} variant="bordered" />
 
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium text-foreground">入口 IP / 域名</span>
-                      <span className="text-xs text-default-400">{form.entryIps.length} 个</span>
-                    </div>
-                    {errors.entryIp && <p className="text-xs text-danger">{errors.entryIp}</p>}
-                    <div className="space-y-2">
-                      {form.entryIps.map((ip, index) => (
-                        <div key={index} className="flex items-center gap-2">
-                          <Input
-                            size="sm" autoComplete="off"
-                            placeholder="用户连接使用的 IP 或域名"
-                            value={ip}
-                            onChange={(e) => setForm(prev => ({ ...prev, entryIps: prev.entryIps.map((v, i) => i === index ? e.target.value : v) }))}
-                            variant="bordered"
-                            className="flex-1"
-                          />
-                          <TipButton
-                            isIconOnly size="sm" variant="light" color="danger"
-                            isDisabled={form.entryIps.length <= 1}
-                            onPress={() => setForm(prev => ({ ...prev, entryIps: prev.entryIps.filter((_, i) => i !== index) }))}
-                            title="删除这一行"
-                          >
-                            <DeleteIcon />
-                          </TipButton>
-                        </div>
-                      ))}
-                    </div>
-                    <Button
-                      size="sm" variant="flat" className="w-full"
-                      onPress={() => setForm(prev => ({ ...prev, entryIps: [...prev.entryIps, ''] }))}
-                    >
-                      + 添加一行
-                    </Button>
-                  </div>
+                  <Textarea labelPlacement="outside-top" size="sm" autoComplete="off" variant="bordered" disableAutosize rows={3}
+                    label={<HelpTooltip content="用户连接使用的 IP 或域名，一行一个，数量不限；留空时默认使用服务器 IP / 域名">入口 IP / 域名</HelpTooltip>}
+                    placeholder="留空默认使用服务器 IP / 域名"
+                    value={form.entryIps.join('\n')}
+                    onChange={(e) => setForm(prev => ({ ...prev, entryIps: e.target.value.split('\n') }))}
+                    classNames={{ input: 'resize-y min-h-[4.5rem]' }}
+                  />
 
                   <div className="grid grid-cols-2 gap-3">
                     <Input labelPlacement="outside-top" size="sm" autoComplete="off" label="起始端口" type="number" value={form.portSta.toString()} onChange={(e) => setForm(prev => ({ ...prev, portSta: Number(e.target.value) || 1000 }))} isInvalid={!!errors.portSta} errorMessage={errors.portSta} variant="bordered" />
@@ -586,14 +642,6 @@ export default function SingleTunnelPage() {
                       ))
                     ]}
                   </Select>
-
-                  <div className="flex items-center justify-between px-1 py-1">
-                    <div>
-                      <p className="text-sm font-medium text-foreground">共享给其他用户</p>
-                      <p className="text-xs text-default-500">开启后，其他用户在添加转发规则时也可以选用这台设备</p>
-                    </div>
-                    <Switch size="sm" isSelected={form.shared} onValueChange={(v) => setForm(prev => ({ ...prev, shared: v }))} />
-                  </div>
                 </div>
               </ModalBody>
               <ModalFooter>
@@ -678,7 +726,18 @@ export default function SingleTunnelPage() {
         loading={resetLoading}
       />
 
-      <Modal
+      <ConfirmDialog
+        isOpen={clearFlowOpen}
+        onOpenChange={setClearFlowOpen}
+        title="清空流量"
+        message={<>确定要清空选中的 {selectedDevices.length} 台设备的已用流量吗？清空后无法恢复。这里只是设备的流量统计，不影响账号的流量额度。</>}
+        confirmText="确定"
+        confirmColor="danger"
+        onConfirm={confirmClearFlow}
+        loading={clearFlowLoading}
+      />
+
+      <GroupManageDrawer
         isOpen={groupManageModalOpen}
         onOpenChange={(open) => {
           setGroupManageModalOpen(open);
@@ -687,61 +746,17 @@ export default function SingleTunnelPage() {
             setGroupEditingId(null);
           }
         }}
-        size="lg"
-        scrollBehavior="outside"
-        backdrop="opaque"
-        placement="center"
-      >
-        <ModalContent>
-          {() => (
-            <>
-              <ModalHeader className="flex flex-col gap-1">
-                <h2 className="text-base font-semibold">管理分组</h2>
-                <p className="text-xs text-default-500 font-normal">这里的分组只属于你自己，其他用户看不到也用不了</p>
-              </ModalHeader>
-              <ModalBody>
-                <div className="flex gap-2">
-                  <Input
-                    size="sm" autoComplete="off"
-                    placeholder="分组名称"
-                    value={groupNameInput}
-                    onChange={(e) => setGroupNameInput(e.target.value)}
-                    variant="bordered"
-                    className="flex-1"
-                  />
-                  <Button color="default" onPress={handleCreateGroup} isLoading={groupSubmitLoading}>
-                    {groupEditingId ? '保存' : '添加'}
-                  </Button>
-                  {groupEditingId && (
-                    <Button variant="light" onPress={() => { setGroupEditingId(null); setGroupNameInput(''); }}>
-                      取消
-                    </Button>
-                  )}
-                </div>
-                <div className="space-y-2 mt-2 max-h-64 overflow-y-auto">
-                  {singleTunnelGroups.length === 0 && (
-                    <EmptyState compact text="暂无分组" />
-                  )}
-                  {singleTunnelGroups.map(group => (
-                    <div key={group.id} className="flex items-center justify-between p-2 rounded-lg bg-default-100">
-                      <span className="text-small text-foreground">{group.name}（{group.deviceCount} 台设备）</span>
-                      <div className="flex gap-2">
-                        <Button size="sm" variant="light" onPress={() => handleEditGroupStart(group)}>编辑</Button>
-                        <Button size="sm" variant="light" color="danger" onPress={() => handleDeleteGroup(group)}>删除</Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </ModalBody>
-              <ModalFooter>
-                <Button size="sm" variant="bordered" onPress={() => setGroupManageModalOpen(false)}>
-                  关闭
-                </Button>
-              </ModalFooter>
-            </>
-          )}
-        </ModalContent>
-      </Modal>
+        groups={singleTunnelGroups}
+        count={(group) => group.deviceCount}
+        nameInput={groupNameInput}
+        onNameInputChange={setGroupNameInput}
+        editing={!!groupEditingId}
+        onCancelEdit={() => { setGroupEditingId(null); setGroupNameInput(''); }}
+        onSubmit={handleCreateGroup}
+        submitting={groupSubmitLoading}
+        onEdit={handleEditGroupStart}
+        onDelete={handleDeleteGroup}
+      />
     </div>
   );
 }

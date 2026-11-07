@@ -29,6 +29,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -456,6 +457,13 @@ public class TaskQueueServiceImpl extends ServiceImpl<TaskQueueMapper, TaskQueue
             return R.ok("该任务正在处理中");
         }
         try {
+            // 定时扫描等调用方拿到的是之前查出来的记录，排队期间任务可能已被别的线程处理过。
+            // 必须重新确认：重复执行购买会多扣一次钱。失败的任务状态仍是 PENDING，所以还要比较重试次数
+            TaskQueue latest = this.getById(item.getId());
+            if (latest == null || STATUS_SUCCESS.equals(latest.getStatus())
+                    || !Objects.equals(latest.getRetryCount(), item.getRetryCount())) {
+                return R.ok("该任务已被处理");
+            }
             TaskHandler handler = handlerMap.get(item.getTaskType());
             if (handler == null) {
                 return R.err("未知的任务类型: " + item.getTaskType());

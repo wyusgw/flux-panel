@@ -63,6 +63,10 @@ public class AutoRenewAsync {
 
             for (User user : candidates) {
                 try {
+                    // 管理员禁用的账号不登记；到期窗口内解除禁用后，下次任务还能正常续费
+                    if (User.disabledByAdmin(user)) {
+                        continue;
+                    }
                     // 同一用户同一个到期周期只登记一次：已经有记录（执行中、等待重试或已成功）就不重复登记，也不重置状态
                     String dedupKey = user.getId() + ":" + user.getExpTime();
                     long existing = taskQueueService.count(new QueryWrapper<TaskQueue>()

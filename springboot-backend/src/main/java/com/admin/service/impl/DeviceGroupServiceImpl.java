@@ -75,6 +75,10 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
     private SingleTunnelGroupService singleTunnelGroupService;
 
     @Autowired
+    @Lazy
+    private com.admin.service.NodeTrafficCycleService nodeTrafficCycleService;
+
+    @Autowired
     private DeviceGroupChainHopMapper chainHopMapper;
 
     @Autowired
@@ -97,6 +101,9 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
             Node node = nodeService.getById(dto.getNodeId());
             if (node == null) {
                 return R.err(ERROR_NODE_NOT_FOUND);
+            }
+            if (NodeServiceImpl.isAddressMissing(dto.getDirection(), node.getServerIp())) {
+                return R.err(NodeServiceImpl.ERROR_ADDRESS_REQUIRED);
             }
         }
 
@@ -194,13 +201,11 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
             User user = userService.getById(userId);
             Long userGroupId = user != null ? user.getGroupId() : null;
 
-            // 可见范围：管理员建立的设备组（按用户组多对多关系再过滤一次）；或自己名下的单端隧道设备组；
-            // 或他人名下、已设为公开共享的单端隧道设备组
+            // 可见范围：管理员建立的设备组（按用户组多对多关系再过滤一次）；或自己名下的单端隧道设备组
             QueryWrapper<DeviceGroup> query = new QueryWrapper<DeviceGroup>().orderByAsc("sort");
             query.and(w -> {
                 w.and(w2 -> w2.isNull("owner_user_id"));
                 w.or().eq("owner_user_id", userId);
-                w.or(w2 -> w2.isNotNull("owner_user_id").eq("shared", 1));
             });
             // 普通用户不应看到对所有人隐藏的设备组
             query.ne("hide_in_probe", 2);
@@ -208,7 +213,7 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
 
             // 管理员建立的设备组（owner_user_id 为空）按其绑定的用户组列表过滤：
             // 未绑定任何用户组表示对所有人可见，否则要求当前用户所在用户组在列表内；
-            // 单端隧道设备组（owner_user_id 非空）已经按拥有者/共享条件过滤过，不受用户组限制
+            // 单端隧道设备组（owner_user_id 非空）已经按拥有者过滤过，不受用户组限制
             List<Long> adminGroupIds = candidates.stream()
                     .filter(g -> g.getOwnerUserId() == null)
                     .map(DeviceGroup::getId)
@@ -258,7 +263,6 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
             item.put("direction", group.getDirection() == null ? "inbound" : group.getDirection());
             item.put("protocol", group.getProtocol() == null ? "tls" : group.getProtocol());
             item.put("ownerUserId", group.getOwnerUserId());
-            item.put("shared", group.getShared() != null && group.getShared() == 1);
             item.put("singleTunnelGroupId", group.getSingleTunnelGroupId());
             item.put("singleTunnelGroupName", group.getSingleTunnelGroupId() != null
                     ? singleTunnelGroupNameMap.getOrDefault(group.getSingleTunnelGroupId(), "未知分组")
@@ -368,6 +372,9 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
             Node node = nodeService.getById(dto.getNodeId());
             if (node == null) {
                 return R.err(ERROR_NODE_NOT_FOUND);
+            }
+            if (NodeServiceImpl.isAddressMissing(dto.getDirection(), node.getServerIp())) {
+                return R.err(NodeServiceImpl.ERROR_ADDRESS_REQUIRED);
             }
         }
 
@@ -502,7 +509,6 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
         group.setProtocol(dto.getProtocol() != null && !dto.getProtocol().isEmpty() ? dto.getProtocol() : "tls");
         group.setOwnerUserId(userId.longValue());
         group.setSingleTunnelGroupId(dto.getSingleTunnelGroupId());
-        group.setShared(dto.isShared() ? 1 : 0);
         group.setRatio(BigDecimal.ONE);
         group.setHideInProbe(0);
         group.setSort(0);
@@ -531,7 +537,6 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
             item.put("name", group.getName());
             item.put("direction", group.getDirection());
             item.put("protocol", group.getProtocol() == null ? "tls" : group.getProtocol());
-            item.put("shared", group.getShared() != null && group.getShared() == 1);
             item.put("singleTunnelGroupId", group.getSingleTunnelGroupId());
             item.put("nodeId", group.getNodeId());
             if (node != null) {
@@ -540,6 +545,7 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
                 item.put("portSta", node.getPortSta());
                 item.put("portEnd", node.getPortEnd());
                 item.put("status", node.getStatus());
+                item.put("usedFlow", nodeTrafficCycleService.usedBytes(node.getId()));
             }
             return item;
         }).collect(Collectors.toList());
@@ -587,7 +593,6 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
             group.setProtocol(dto.getProtocol() != null && !dto.getProtocol().isEmpty() ? dto.getProtocol() : "tls");
         }
         group.setSingleTunnelGroupId(dto.getSingleTunnelGroupId());
-        group.setShared(dto.isShared() ? 1 : 0);
         group.setUpdatedTime(System.currentTimeMillis());
         boolean result = this.updateById(group);
         if (result && dto.getSingleTunnelGroupId() == null) {
@@ -615,6 +620,27 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
             return R.err("设备组不存在或无权限操作");
         }
         return nodeService.getInstallCommand(group.getNodeId());
+    }
+
+    @Override
+    public R clearMyDeviceFlow(Integer userId, List<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return R.err("请选择要清空流量的设备");
+        }
+        List<DeviceGroup> owned = new ArrayList<>();
+        for (Long id : ids) {
+            DeviceGroup group = findOwnedGroupOrNull(userId, id);
+            if (group == null) {
+                return R.err("设备组不存在或无权限操作");
+            }
+            owned.add(group);
+        }
+        for (DeviceGroup group : owned) {
+            if (group.getNodeId() != null) {
+                nodeTrafficCycleService.clear(group.getNodeId());
+            }
+        }
+        return R.ok();
     }
 
     @Override

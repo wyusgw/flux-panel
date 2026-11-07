@@ -6,15 +6,15 @@ import { Button } from "@heroui/button";
 import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure } from "@heroui/modal";
 import { Input } from "@heroui/input";
 import { Switch } from "@heroui/switch";
-import { Popover, PopoverContent, PopoverTrigger } from "@heroui/popover";
 import { Spinner } from "@heroui/spinner";
 import toast from 'react-hot-toast';
 
 import { EmptyState } from '@/components/empty-state';
 import { showInfoDialog } from '@/components/error-dialog';
 import { HelpTooltip } from '@/components/help-tooltip';
-import { ToastWarningIcon } from '@/components/toast-icons';
+import { PopConfirm } from '@/components/pop-confirm';
 import { getCachedConfigs } from '@/config/site';
+import { copyText } from '@/utils/clipboard';
 import { safeLogout } from '@/utils/logout';
 import {
   getUserPackageInfo,
@@ -82,26 +82,6 @@ const LinkIcon = () => <LinkOutlined />;
 const UnlinkIcon = () => <DisconnectOutlined />;
 const SettingsIcon = () => <SettingOutlined />;
 
-/** 按钮上方的气泡确认 */
-const PopConfirm = ({ title, onConfirm, children }: { title: string; onConfirm: () => void; children: ReactNode }) => {
-  const [open, setOpen] = useState(false);
-  return (
-    <Popover isOpen={open} onOpenChange={setOpen} placement="top" showArrow>
-      <PopoverTrigger>{children}</PopoverTrigger>
-      <PopoverContent className="px-3 py-2.5">
-        <div className="flex items-center gap-2 text-sm text-foreground">
-          <ToastWarningIcon />
-          <span>{title}</span>
-        </div>
-        <div className="flex justify-end gap-2 w-full pt-2.5">
-          <Button size="sm" variant="bordered" className="h-6 min-w-0 px-2 rounded-small border-1 border-default-300 font-normal" onPress={() => setOpen(false)}>取 消</Button>
-          <Button size="sm" color="primary" className="h-6 min-w-0 px-2 rounded-small" onPress={() => { setOpen(false); onConfirm(); }}>确 定</Button>
-        </div>
-      </PopoverContent>
-    </Popover>
-  );
-};
-
 const ModePicker = ({
   value,
   options,
@@ -111,7 +91,7 @@ const ModePicker = ({
   options: { value: number; label: string }[];
   onChange: (value: number) => void;
 }) => (
-  <div role="radiogroup" className="inline-flex rounded-small border-1 border-default-300 overflow-hidden">
+  <div role="radiogroup" className="flex w-full sm:inline-flex sm:w-auto rounded-small border-1 border-default-300 overflow-hidden">
     {options.map((opt, index) => (
       <button
         key={opt.value}
@@ -119,7 +99,7 @@ const ModePicker = ({
         role="radio"
         aria-checked={value === opt.value}
         onClick={() => onChange(opt.value)}
-        className={`h-8 px-3.5 text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary ${index > 0 ? 'border-l-1 border-default-300' : ''} ${value === opt.value ? 'bg-primary text-primary-foreground' : 'text-foreground hover:bg-default-100'}`}
+        className={`h-8 min-w-0 flex-1 sm:flex-none px-1 sm:px-3.5 whitespace-nowrap text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary ${index > 0 ? 'border-l-1 border-default-300' : ''} ${value === opt.value ? 'bg-primary text-primary-foreground' : 'text-foreground hover:bg-default-100'}`}
       >
         {opt.label}
       </button>
@@ -138,8 +118,8 @@ const NotifyCard = ({ title, children }: { title: ReactNode; children: ReactNode
 );
 
 const NotifyRow = ({ label, children }: { label: string; children: ReactNode }) => (
-  <div className="flex items-center gap-3">
-    <span className="w-14 flex-shrink-0 text-sm text-foreground">{label}</span>
+  <div className="flex items-center gap-2 sm:gap-3">
+    <span className="w-8 sm:w-14 flex-shrink-0 text-sm text-foreground">{label}</span>
     <div className="flex-1 min-w-0">{children}</div>
   </div>
 );
@@ -395,6 +375,15 @@ export default function AccountCenterPage() {
     }
   };
 
+  const handleCopyGeneratedPassword = async () => {
+    const success = await copyText(generatedPassword);
+    if (success) {
+      toast.success('已复制');
+    } else {
+      toast.error('复制失败');
+    }
+  };
+
   const handleGeneratedConfirm = () => {
     onGeneratedOpenChange();
     safeLogout();
@@ -587,7 +576,7 @@ export default function AccountCenterPage() {
               <p className="mt-2.5 pl-2.5 border-l-[3px] border-default-200 text-sm text-default-600">如果您的密码已泄漏，可以在这里重置。用户名留空则不修改。重置操作会强制下线您在其他地方的登录。</p>
             </div>
             <div className="space-y-6 max-w-[530px]">
-              <Input autoComplete="off" placeholder="新用户名（选填）" value={newUsername} onChange={(e) => setNewUsername(e.target.value)} variant="bordered" size="sm" classNames={THIN_INPUT} startContent={<UserFieldIcon />} />
+              <Input autoComplete="off" placeholder="新用户名(选填)" value={newUsername} onChange={(e) => setNewUsername(e.target.value)} variant="bordered" size="sm" classNames={THIN_INPUT} startContent={<UserFieldIcon />} />
               <Input autoComplete="off" type="password" placeholder="当前密码" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} variant="bordered" size="sm" classNames={THIN_INPUT} startContent={<LockIcon />} />
               <Input autoComplete="off" type="password" placeholder="新密码，留空随机生成。" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} variant="bordered" size="sm" classNames={THIN_INPUT} startContent={<LockIcon />} />
               <Input autoComplete="off" type="password" placeholder="确认新密码" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} variant="bordered" size="sm" classNames={THIN_INPUT} startContent={<LockIcon />} />
@@ -621,8 +610,8 @@ export default function AccountCenterPage() {
             )}
           </ModalBody>
           <ModalFooter>
-            <Button size="sm" variant="bordered" onPress={() => onBindOpenChange()}>关闭</Button>
-            <Button size="sm" color="primary" isDisabled={bindChecking} onPress={handleRefreshBindStatus}>刷新状态</Button>
+            <Button size="sm" variant="bordered" className={OUTLINE_BUTTON} onPress={() => onBindOpenChange()}>关闭</Button>
+            <Button size="sm" color="primary" className="text-sm font-normal" isDisabled={bindChecking} onPress={handleRefreshBindStatus}>刷新状态</Button>
           </ModalFooter>
         </ModalContent>
       </Modal>
@@ -630,8 +619,8 @@ export default function AccountCenterPage() {
       {/* 推送设置弹窗 */}
       <Modal isOpen={isPushOpen} onOpenChange={onPushOpenChange} placement="center" backdrop="opaque" classNames={{ base: 'max-w-[600px] overflow-visible' }}>
         <ModalContent>
-          <ModalHeader className="pb-3">推送设置</ModalHeader>
-          <ModalBody className="py-0">
+          <ModalHeader className="!px-4 sm:!px-6 pb-3">推送设置</ModalHeader>
+          <ModalBody className="px-4 sm:px-6 py-0">
             <div className="rounded-medium border-1 border-default-200">
               <button
                 type="button"
@@ -643,7 +632,7 @@ export default function AccountCenterPage() {
                 <span>通道: Telegram</span>
               </button>
               {pushChannelOpen && (
-                <div className="p-4 space-y-3.5">
+                <div className="p-3 sm:p-4 space-y-3.5">
                   {isAdminUser ? (
                     <>
                       <NotifyCard title="收款信息">
@@ -694,7 +683,7 @@ export default function AccountCenterPage() {
               )}
             </div>
           </ModalBody>
-          <ModalFooter className="pt-3">
+          <ModalFooter className="!px-4 sm:!px-6 pt-3">
             <Button size="sm" variant="bordered" className={OUTLINE_BUTTON} onPress={() => onPushOpenChange()}>取 消</Button>
             <Button size="sm" color="primary" className="text-sm font-normal" isLoading={pushSaving} onPress={handleSavePushSettings}>确 定</Button>
           </ModalFooter>
@@ -702,16 +691,24 @@ export default function AccountCenterPage() {
       </Modal>
 
       {/* 随机生成密码展示 */}
-      <Modal isOpen={isGeneratedOpen} onOpenChange={() => {}} isDismissable={false} size="sm" placement="center" backdrop="opaque">
+      <Modal isOpen={isGeneratedOpen} onOpenChange={() => {}} isDismissable={false} hideCloseButton size="sm" placement="center" backdrop="opaque">
         <ModalContent>
           <ModalHeader>密码重置成功</ModalHeader>
           <ModalBody className="space-y-3 text-sm">
-            <p className="text-default-600">您的新密码为（仅显示一次，请妥善保存）：</p>
-            <div className="px-3 py-2 rounded-medium bg-default-100 font-mono text-center text-base select-all">{generatedPassword}</div>
+            <p className="text-default-600">您的新密码为:</p>
+            <button
+              type="button"
+              title="点击复制"
+              aria-label="复制新密码"
+              onClick={handleCopyGeneratedPassword}
+              className="w-full px-3 py-2 rounded-medium bg-default-100 hover:bg-default-200 font-mono text-center text-base break-all transition-colors cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            >
+              {generatedPassword}
+            </button>
             <p className="text-xs text-default-500">请使用新密码重新登录。</p>
           </ModalBody>
           <ModalFooter>
-            <Button size="sm" color="primary" className="w-full" onPress={handleGeneratedConfirm}>我已保存，重新登录</Button>
+            <Button size="sm" color="primary" className="w-full text-sm font-normal" onPress={handleGeneratedConfirm}>我已保存，重新登录</Button>
           </ModalFooter>
         </ModalContent>
       </Modal>

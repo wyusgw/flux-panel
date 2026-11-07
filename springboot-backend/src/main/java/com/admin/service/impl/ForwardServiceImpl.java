@@ -360,27 +360,53 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
                 gostResult = updateGostServices(updatedForward, tunnel, permissionResult != null ? permissionResult.getLimiter() : null, nodeInfo, userTunnel);
             }
 
-            if (gostResult.getCode() != 0) {
-                if (isNodeOfflineFailure(gostResult)) {
-                    // 节点当前离线：更新内容正常保存，只是暂时无法把配置推送到节点，不应因此阻止保存。
-                    // 隧道未发生变化的情况下才登记重试队列（隧道变更+离线的场景更复杂，暂不自动重试，走原有手动兜底）。
-                    log.warn("转发 {} 更新成功，但目标节点当前离线，配置暂未同步：{}", updatedForward.getId(), gostResult.getMsg());
-                    updatedForward.setStatus(1);
-                    boolean savedOffline = this.updateById(updatedForward);
-                    if (savedOffline && !tunnelChanged) {
-                        enqueueForwardSyncTask(updatedForward, tunnel, gostResult.getMsg());
-                    }
-                    return savedOffline
-                            ? okWithMsg("端口转发已更新，但目标节点当前离线，已加入同步重试队列，节点上线后会自动补推配置")
-                            : R.err("端口转发更新失败");
-                }
-                return gostResult;
-            }
-            updatedForward.setStatus(1);
-            // 9. 保存更新
-            boolean result = this.updateById(updatedForward);
-            return result ? R.ok("端口转发更新成功") : R.err("端口转发更新失败");
+            String serviceName = buildServiceName(updatedForward.getId(), updatedForward.getUserId(), userTunnel);
+            return saveUpdatedForward(updatedForward, existForward, tunnel, tunnelChanged, serviceName, gostResult);
         }
+    }
+
+    /**
+     * 配置推送后保存规则。编辑不改变运行状态：已暂停的规则保存后仍然暂停，否则修改规则或隧道会让
+     * 流量用完、账号到期和用户自己暂停的规则恢复运行；其余规则保存后为运行中。
+     */
+    R saveUpdatedForward(Forward updatedForward, Forward existForward, Tunnel tunnel, boolean tunnelChanged, String serviceName, R gostResult) {
+        boolean wasPaused = Objects.equals(existForward.getStatus(), FORWARD_STATUS_PAUSED);
+        int statusAfterSave = wasPaused ? FORWARD_STATUS_PAUSED : FORWARD_STATUS_ACTIVE;
+
+        if (gostResult.getCode() != 0) {
+            if (isNodeOfflineFailure(gostResult)) {
+                // 节点当前离线：更新内容正常保存，只是暂时无法把配置推送到节点，不应因此阻止保存。
+                // 隧道未发生变化的情况下才登记重试队列（隧道变更+离线的场景更复杂，暂不自动重试，走原有手动兜底）。
+                log.warn("转发 {} 更新成功，但目标节点当前离线，配置暂未同步：{}", updatedForward.getId(), gostResult.getMsg());
+                updatedForward.setStatus(statusAfterSave);
+                boolean savedOffline = this.updateById(updatedForward);
+                if (savedOffline && !tunnelChanged) {
+                    enqueueForwardSyncTask(updatedForward, tunnel, gostResult.getMsg());
+                }
+                return savedOffline
+                        ? okWithMsg("端口转发已更新，但目标节点当前离线，已加入同步重试队列，节点上线后会自动补推配置")
+                        : R.err("端口转发更新失败");
+            }
+            return wasPaused ? keepPausedAfterPush(updatedForward, tunnel, serviceName, gostResult) : gostResult;
+        }
+
+        updatedForward.setStatus(statusAfterSave);
+        if (wasPaused) {
+            R pauseResult = keepPausedAfterPush(updatedForward, tunnel, serviceName, gostResult);
+            if (pauseResult.getCode() != 0) {
+                // 配置已经推送成功，修改要保存；服务可能已经启动，交给队列重新推送并暂停
+                log.warn("转发 {} 更新后重新暂停失败：{}", updatedForward.getId(), pauseResult.getMsg());
+                boolean savedPaused = this.updateById(updatedForward);
+                if (savedPaused) {
+                    enqueueForwardSyncTask(updatedForward, tunnel, pauseResult.getMsg());
+                }
+                return savedPaused
+                        ? okWithMsg("端口转发已更新，但暂停服务未成功（节点可能离线），已加入同步重试队列")
+                        : R.err("端口转发更新失败");
+            }
+        }
+        boolean result = this.updateById(updatedForward);
+        return result ? R.ok("端口转发更新成功") : R.err("端口转发更新失败");
     }
 
     @Override

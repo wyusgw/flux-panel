@@ -1740,3 +1740,17 @@ PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
 
+-- node 表新增 proxy：节点连接面板使用的 SOCKS5 代理，如 socks5://user:pass@host:port，为空表示直连
+SET @sql = (
+    SELECT IF(
+        NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = DATABASE() AND table_name = 'node' AND column_name = 'proxy'
+        ),
+        'ALTER TABLE `node` ADD COLUMN `proxy` varchar(500) DEFAULT NULL COMMENT "节点连接面板使用的 SOCKS5 代理";',
+        'SELECT "Column `proxy` already exists in `node`";'
+    )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;

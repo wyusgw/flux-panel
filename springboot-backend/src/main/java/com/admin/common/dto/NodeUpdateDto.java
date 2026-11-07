@@ -38,6 +38,9 @@ public class NodeUpdateDto {
     private Integer socks;
     private Integer ss;
 
+    /** 节点连接面板使用的 SOCKS5 代理；不传（null）表示不修改，传空字符串表示改为直连 */
+    private String proxy;
+
     /** 该节点所属的节点组ID列表；不传（null）表示不修改现有归属，传空数组表示清空归属 */
     private List<Long> nodeGroupIds;
 } 

@@ -200,10 +200,11 @@ get_config_params() {
 }
 
 # 解析命令行参数
-while getopts "a:s:" opt; do
+while getopts "a:s:p:" opt; do
   case $opt in
     a) SERVER_ADDR="$OPTARG" ;;
     s) SECRET="$OPTARG" ;;
+    p) PROXY="$OPTARG" ;;
     *) echo "无效参数"; exit 1 ;;
   esac
 done
@@ -247,7 +248,7 @@ install_gost() {
   cat > "$CONFIG_FILE" <<EOF
 {
   "addr": "$SERVER_ADDR",
-  "secret": "$SECRET"
+  "secret": "$SECRET"$( [[ -n "$PROXY" ]] && printf ',\n  "proxy": "%s"' "$PROXY" )
 }
 EOF
 

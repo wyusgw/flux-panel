@@ -255,6 +255,29 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
             }
         }
 
+        // 代理：null 表示不修改；空字符串表示改为直连
+        String newProxy = null;
+        if (nodeUpdateDto.getProxy() != null) {
+            newProxy = nodeUpdateDto.getProxy().trim();
+            String proxyError = validateProxy(newProxy);
+            if (proxyError != null) {
+                return R.err(proxyError);
+            }
+        }
+        boolean proxyChanged = newProxy != null && !newProxy.equals(StrUtil.nullToEmpty(node.getProxy()));
+        if (proxyChanged && online) {
+            if (!supportsProxy(node.getVersion())) {
+                return R.err("节点版本过低，请先更新节点后再设置代理");
+            }
+            // 节点会先通过新代理试连面板，连不上不会保存，也不会断开现有连接
+            JSONObject proxyReq = new JSONObject();
+            proxyReq.put("proxy", newProxy);
+            GostDto proxyResult = WebSocketServer.send_msg(node.getId(), proxyReq, "SetProxy");
+            if (!Objects.equals(proxyResult.getMsg(), "OK")) {
+                return R.err(proxyResult.getMsg());
+            }
+        }
+
         if (online && (httpChanged || tlsChanged || socksChanged || ssChanged)) {
             JSONObject req = new JSONObject();
             req.put("http", newHttp);
@@ -403,6 +426,7 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
         node.setTls(nodeUpdateDto.getTls());
         node.setSocks(nodeUpdateDto.getSocks());
         node.setSs(nodeUpdateDto.getSs());
+        node.setProxy(nodeUpdateDto.getProxy() == null ? null : nodeUpdateDto.getProxy().trim());
         // 验证端口范围
         validatePortRange(node.getPortSta(), node.getPortEnd());
         
@@ -664,6 +688,10 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
         String chmodAndRun = verifyScript + "chmod +x ./install.sh && ./install.sh"
                 + " -a " + processedServerAddr   // 服务器地址
                 + " -s " + node.getSecret();     // 节点密钥
+        boolean hasProxy = StrUtil.isNotBlank(node.getProxy()) && validateProxy(node.getProxy().trim()) == null;
+        if (hasProxy) {
+            chmodAndRun += " -p \"" + node.getProxy().trim() + "\"";   // 节点连接面板的 SOCKS5 代理
+        }
 
         StringBuilder candidateUrls = new StringBuilder();
         for (String prefix : mirrorPrefixes) {
@@ -689,7 +717,8 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
 
         String offlineDir = "/tmp/flux-panel-offline";
         result.put("offlineCommand", "unzip -o offline.zip -d " + offlineDir
-                + " && bash " + offlineDir + "/offline.sh -a \"" + processedServerAddr + "\" -s \"" + node.getSecret() + "\"");
+                + " && bash " + offlineDir + "/offline.sh -a \"" + processedServerAddr + "\" -s \"" + node.getSecret() + "\""
+                + (hasProxy ? " -p \"" + node.getProxy().trim() + "\"" : ""));
 
         return R.ok(result);
     }
@@ -810,10 +839,35 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
 
     /** 节点程序从 1.2.5 开始支持屏蔽 Shadowsocks */
     static boolean supportsSsBlock(String version) {
+        return versionAtLeast(version, 1, 2, 5);
+    }
+
+    /** 1.2.6 起节点支持 SetProxy 命令 */
+    static boolean supportsProxy(String version) {
+        return versionAtLeast(version, 1, 2, 6);
+    }
+
+    /** 代理地址会拼进管理员复制执行的 shell 命令，只允许 socks5 和 ssh 且字符严格受限；返回错误信息，合法（含空）返回 null */
+    static String validateProxy(String proxy) {
+        if (proxy == null || proxy.isEmpty()) {
+            return null;
+        }
+        if (proxy.length() > 300 || !PROXY_PATTERN.matcher(proxy).matches()) {
+            return "代理地址格式不正确，应为 socks5://[用户名:密码@]主机:端口 或 ssh://用户名:密码@主机[:端口]，用户名和密码中的特殊字符需要先做 URL 编码";
+        }
+        return null;
+    }
+
+    private static final String PROXY_HOST = "(\\[[0-9A-Fa-f:.]+\\]|[A-Za-z0-9.\\-]+)";
+    private static final String PROXY_CRED = "[A-Za-z0-9._~%\\-]";
+    private static final java.util.regex.Pattern PROXY_PATTERN = java.util.regex.Pattern.compile(
+            "^(socks5h?://(" + PROXY_CRED + "*:" + PROXY_CRED + "*@)?" + PROXY_HOST + ":[0-9]{1,5}"
+                    + "|ssh://" + PROXY_CRED + "+:" + PROXY_CRED + "+@" + PROXY_HOST + "(:[0-9]{1,5})?)$");
+
+    private static boolean versionAtLeast(String version, int... minimum) {
         if (version == null) {
             return false;
         }
-        int[] minimum = {1, 2, 5};
         String[] parts = version.trim().split("\\.");
         try {
             for (int i = 0; i < minimum.length; i++) {

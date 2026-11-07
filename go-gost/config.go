@@ -14,6 +14,8 @@ type Config struct {
 	Tls    int    `json:"tls"`
 	Socks  int    `json:"socks"`
 	Ss     int    `json:"ss"`
+	// Proxy 节点连接面板使用的 SOCKS5 代理，如 socks5://user:pass@127.0.0.1:1080，留空直连
+	Proxy string `json:"proxy"`
 }
 
 // LoadConfig 加载配置文件

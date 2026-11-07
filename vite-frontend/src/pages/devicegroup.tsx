@@ -91,6 +91,7 @@ interface NodeItem {
   tls?: number;
   socks?: number;
   ss?: number;
+  proxy?: string;
   nodeGroupIds?: number[];
 }
 
@@ -220,7 +221,7 @@ export default function DeviceGroupPage() {
 
   const [advancedModalOpen, setAdvancedModalOpen] = useState(false);
   const [advancedTarget, setAdvancedTarget] = useState<NodeItem | null>(null);
-  const [advancedForm, setAdvancedForm] = useState<{ http: number; tls: number; socks: number; ss: number; nodeGroupIds: number[] }>({ http: 0, tls: 0, socks: 0, ss: 0, nodeGroupIds: [] });
+  const [advancedForm, setAdvancedForm] = useState<{ http: number; tls: number; socks: number; ss: number; proxy: string; nodeGroupIds: number[] }>({ http: 0, tls: 0, socks: 0, ss: 0, proxy: '', nodeGroupIds: [] });
   const [advancedLoading, setAdvancedLoading] = useState(false);
 
   const [resetModalOpen, setResetModalOpen] = useState(false);
@@ -528,7 +529,7 @@ export default function DeviceGroupPage() {
   const handleAdvancedEdit = (nodeId: number) => {
     const node = nodes.find(n => n.id === nodeId) || orphanNodes.find(n => n.id === nodeId) || null;
     setAdvancedTarget(node);
-    setAdvancedForm({ http: node?.http || 0, tls: node?.tls || 0, socks: node?.socks || 0, ss: node?.ss || 0, nodeGroupIds: node?.nodeGroupIds || [] });
+    setAdvancedForm({ http: node?.http || 0, tls: node?.tls || 0, socks: node?.socks || 0, ss: node?.ss || 0, proxy: node?.proxy || '', nodeGroupIds: node?.nodeGroupIds || [] });
     setAdvancedModalOpen(true);
   };
 
@@ -1086,6 +1087,13 @@ export default function DeviceGroupPage() {
                     ))}
                   </div>
                 </div>
+
+                <Input labelPlacement="outside-top" size="sm" autoComplete="off" variant="bordered"
+                  label={<HelpTooltip content="节点连接面板使用的 SOCKS5 或 SSH 代理">代理</HelpTooltip>}
+                  placeholder="socks5://用户名:密码@主机:端口 或 ssh://用户名:密码@主机:端口"
+                  value={advancedForm.proxy}
+                  onChange={(e) => setAdvancedForm(prev => ({ ...prev, proxy: e.target.value }))}
+                />
 
                 <Select listboxProps={{ emptyContent: <EmptyState compact /> }} labelPlacement="outside-top"
                   size="sm"

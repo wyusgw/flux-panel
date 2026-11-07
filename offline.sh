@@ -2,17 +2,18 @@
 
 # 离线部署脚本：与 install.sh 的安装逻辑基本一致，区别在于不联网下载 gost 二进制，
 # 而是直接使用与本脚本一起解压出来的本地 ./gost 文件（来自离线包 zip）。
-# 用法：bash offline.sh -a <服务器地址> -s <密钥>
+# 用法：bash offline.sh -a <服务器地址> -s <密钥> [-p <SOCKS5 或 SSH 代理，如 socks5://127.0.0.1:1080、ssh://root:pass@1.2.3.4:22>]
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALL_DIR="/etc/gost"
 
-while getopts "a:s:" opt; do
+while getopts "a:s:p:" opt; do
   case $opt in
     a) SERVER_ADDR="$OPTARG" ;;
     s) SECRET="$OPTARG" ;;
+    p) PROXY="$OPTARG" ;;
     *) echo "无效参数"; exit 1 ;;
   esac
 done
@@ -58,7 +59,7 @@ echo "创建新配置: config.json"
 cat > "$CONFIG_FILE" <<EOF
 {
   "addr": "$SERVER_ADDR",
-  "secret": "$SECRET"
+  "secret": "$SECRET"$( [[ -n "$PROXY" ]] && printf ',\n  "proxy": "%s"' "$PROXY" )
 }
 EOF
 

@@ -90,10 +90,38 @@ class AdminFlowLimitTest {
 
     @Test
     void flowRules() {
-        assertNull(ForwardServiceImpl.adminFlowBlockReason(admin(99999, 0, 0)));
-        assertNull(ForwardServiceImpl.adminFlowBlockReason(admin(10, 5 * GB, 5 * GB - 1)));
-        assertEquals("用户流量已用完", ForwardServiceImpl.adminFlowBlockReason(admin(0, 0, 0)));
-        assertEquals("用户流量已用完", ForwardServiceImpl.adminFlowBlockReason(admin(10, 6 * GB, 4 * GB)));
+        long now = System.currentTimeMillis();
+        assertNull(ForwardServiceImpl.adminBlockReason(admin(99999, 0, 0), now));
+        assertNull(ForwardServiceImpl.adminBlockReason(admin(10, 5 * GB, 5 * GB - 1), now));
+        assertEquals("用户流量已用完", ForwardServiceImpl.adminBlockReason(admin(0, 0, 0), now));
+        assertEquals("用户流量已用完", ForwardServiceImpl.adminBlockReason(admin(10, 6 * GB, 4 * GB), now));
+    }
+
+    @Test
+    void expiredAdminIsBlockedButNoExpiryOrFutureExpiryIsNot() {
+        long now = 1_000_000L;
+        User admin = admin(99999, 0, 0);
+        assertNull(ForwardServiceImpl.adminBlockReason(admin, now));
+        admin.setExpTime(now + 1);
+        assertNull(ForwardServiceImpl.adminBlockReason(admin, now));
+        admin.setExpTime(now);
+        assertEquals("当前账号已到期", ForwardServiceImpl.adminBlockReason(admin, now));
+    }
+
+    @Test
+    void expiredAdminCannotCreateEditOrResumeOwnRulesButCanStillManageUsers() {
+        User expired = admin(99999, 0, 0);
+        expired.setExpTime(System.currentTimeMillis() - 1000);
+        loginAs(expired);
+
+        assertEquals(403, service.createForward(new ForwardDto()).getCode());
+        assertEquals(403, service.updateForward(updateOf(rule(ADMIN_ID))).getCode());
+        assertNotEquals(403, service.updateForward(updateOf(rule(99))).getCode());
+        assertNotEquals(403, service.syncForwardForTunnel(updateOf(rule(ADMIN_ID))).getCode());
+
+        ReflectionTestUtils.setField(service, "tunnelResolver", enabledTunnelResolver());
+        rule(ADMIN_ID);
+        assertEquals(403, service.resumeForward(7L).getCode());
     }
 
     @Test

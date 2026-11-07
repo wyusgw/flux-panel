@@ -71,6 +71,7 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
     private static final long BYTES_TO_GB = 1024L * 1024L * 1024L;
     /** 无套餐、流量用完、账号到期导致不能创建或修改规则时返回的状态码 */
     private static final int RULE_SERVICE_BLOCKED_CODE = 403;
+    private static final String TUNNEL_GRANT_EXPIRED = "隧道权限已到期";
 
     @Resource
     @Lazy
@@ -141,7 +142,7 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         // 1.0.1 规则归属者没有套餐、流量用完或账号到期时不能创建规则；提前检查，避免先提示没有隧道权限
         User ruleOwner = userService.getById(effectiveUser.getUserId());
         String blockReason = effectiveUser.getRoleId() == ADMIN_ROLE_ID
-                ? adminFlowBlockReason(ruleOwner)
+                ? adminBlockReason(ruleOwner, System.currentTimeMillis())
                 : ruleServiceBlockReason(ruleOwner, System.currentTimeMillis());
         if (blockReason != null) {
             return R.err(RULE_SERVICE_BLOCKED_CODE, blockReason);
@@ -174,6 +175,9 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
 
         // 3. 权限和限制检查（按规则归属者 effectiveUser 校验，管理员创建自己的规则时两者相同）
         UserTunnel userTunnel = tunnelResolver.resolveUserTunnel(effectiveUser.getUserId(), forwardDto.getTunnelId(), forwardDto.getInDeviceGroupId());
+        if (effectiveUser.getRoleId() != ADMIN_ROLE_ID && isTunnelGrantExpired(userTunnel, System.currentTimeMillis())) {
+            return R.err(RULE_SERVICE_BLOCKED_CODE, TUNNEL_GRANT_EXPIRED);
+        }
         UserPermissionResult permissionResult = checkUserPermissions(effectiveUser, tunnel, userTunnel, null);
         if (permissionResult.isHasError()) {
             return R.err(permissionResult.getErrorMessage());
@@ -314,10 +318,10 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             return R.err("转发不存在");
         }
 
-        // 管理员编辑自己的规则受流量限制；编辑别人的规则按原来的做法不拦
+        // 管理员编辑自己的规则受到期和流量限制；编辑别人的规则按原来的做法不拦
         if (!tunnelSync && currentUser.getRoleId() == ADMIN_ROLE_ID
                 && Objects.equals(currentUser.getUserId(), existForward.getUserId())) {
-            String adminBlockReason = adminFlowBlockReason(userService.getById(currentUser.getUserId()));
+            String adminBlockReason = adminBlockReason(userService.getById(currentUser.getUserId()), System.currentTimeMillis());
             if (adminBlockReason != null) {
                 return R.err(RULE_SERVICE_BLOCKED_CODE, adminBlockReason);
             }
@@ -348,6 +352,10 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             userTunnel = tunnelResolver.resolveUserTunnel(existForward.getUserId(), forwardUpdateDto.getTunnelId(), forwardUpdateDto.getInDeviceGroupId());
         } else {
             userTunnel = tunnelResolver.resolveUserTunnel(currentUser.getUserId(), forwardUpdateDto.getTunnelId(), forwardUpdateDto.getInDeviceGroupId());
+        }
+
+        if (currentUser.getRoleId() != ADMIN_ROLE_ID && isTunnelGrantExpired(userTunnel, System.currentTimeMillis())) {
+            return R.err(RULE_SERVICE_BLOCKED_CODE, TUNNEL_GRANT_EXPIRED);
         }
 
         // 5. 检查权限和限制
@@ -581,9 +589,9 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
                 return R.err("隧道已禁用，无法恢复服务");
             }
 
-            // 管理员恢复自己的规则只看流量，不要求套餐
+            // 管理员恢复自己的规则看到期和流量，不要求套餐
             if (currentUser.getRoleId() == ADMIN_ROLE_ID && Objects.equals(currentUser.getUserId(), forward.getUserId())) {
-                String adminBlockReason = adminFlowBlockReason(userService.getById(currentUser.getUserId()));
+                String adminBlockReason = adminBlockReason(userService.getById(currentUser.getUserId()), System.currentTimeMillis());
                 if (adminBlockReason != null) {
                     return R.err(RULE_SERVICE_BLOCKED_CODE, adminBlockReason);
                 }
@@ -1145,12 +1153,20 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         return isFlowExhausted(user) ? "用户流量已用完" : null;
     }
 
-    /** 管理员只受流量限制：默认的管理员账号没有套餐，要求套餐的话新装的面板连规则都建不了 */
-    static String adminFlowBlockReason(User user) {
+    /** 管理员受到期和流量限制，但不要求套餐：默认的管理员账号没有套餐，要求套餐的话新装的面板连规则都建不了 */
+    static String adminBlockReason(User user, long now) {
         if (user == null) {
             return "用户不存在";
         }
+        if (user.getExpTime() != null && user.getExpTime() <= now) {
+            return "当前账号已到期";
+        }
         return isFlowExhausted(user) ? "用户流量已用完" : null;
+    }
+
+    /** 隧道授权有自己的到期时间；状态要等每天 0 点的任务才改，所以到期当天只看状态拦不住 */
+    static boolean isTunnelGrantExpired(UserTunnel userTunnel, long now) {
+        return userTunnel != null && userTunnel.getExpTime() != null && userTunnel.getExpTime() <= now;
     }
 
     private static boolean isFlowExhausted(User user) {
@@ -1187,6 +1203,9 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         UserTunnel userTunnel = tunnelResolver.resolveUserTunnel(userId, forward);
         if (userTunnel == null) {
             return R.err("你没有该隧道权限");
+        }
+        if (isTunnelGrantExpired(userTunnel, System.currentTimeMillis())) {
+            return R.err(RULE_SERVICE_BLOCKED_CODE, TUNNEL_GRANT_EXPIRED);
         }
 
         return R.ok();

@@ -1006,7 +1006,7 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
 
     /**
      * 校验普通用户是否有权限使用该设备组：
-     * 单端隧道用户自建设备组（ownerUserId 非空）——拥有者本人始终可用，其余用户仅当该设备组标记为公开共享才可用；
+     * 单端隧道用户自建设备组（ownerUserId 非空）——只有拥有者本人可用；
      * 管理员建立的设备组——未绑定用户组则所有人可用，否则需与自身用户组一致
      */
     private R checkDeviceGroupVisibility(DeviceGroup group, Integer userId) {
@@ -1018,9 +1018,6 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             return R.err("无权限使用设备组：" + group.getName());
         }
         if (group.getOwnerUserId() != null) {
-            if (group.getShared() != null && group.getShared() == 1) {
-                return R.ok();
-            }
             return R.err("无权限使用设备组：" + group.getName());
         }
         List<Long> allowedUserGroupIds = deviceGroupService.getUserGroupIds(group.getId());

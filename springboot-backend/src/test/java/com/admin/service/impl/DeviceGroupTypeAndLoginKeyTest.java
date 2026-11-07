@@ -53,24 +53,19 @@ class DeviceGroupTypeAndLoginKeyTest {
         hiddenAdminGroup.setHideInProbe(2);
         assertEquals(-1, visibility(hiddenAdminGroup, 5).getCode());
 
-        DeviceGroup hiddenShared = group("inbound");
-        hiddenShared.setHideInProbe(2);
-        hiddenShared.setOwnerUserId(9L);
-        hiddenShared.setShared(1);
-        assertEquals(-1, visibility(hiddenShared, 5).getCode());
-        assertEquals(0, visibility(hiddenShared, 9).getCode());
+        DeviceGroup hiddenOwn = group("inbound");
+        hiddenOwn.setHideInProbe(2);
+        hiddenOwn.setOwnerUserId(9L);
+        assertEquals(-1, visibility(hiddenOwn, 5).getCode());
+        assertEquals(0, visibility(hiddenOwn, 9).getCode());
     }
 
     @Test
-    void sharedGroupRulesAreUnchanged() {
-        DeviceGroup shared = group("inbound");
-        shared.setOwnerUserId(9L);
-        shared.setShared(1);
-        assertEquals(0, visibility(shared, 5).getCode());
-
-        DeviceGroup privateGroup = group("inbound");
-        privateGroup.setOwnerUserId(9L);
-        assertEquals(-1, visibility(privateGroup, 5).getCode());
+    void selfHostedGroupIsOnlyUsableByItsOwner() {
+        DeviceGroup selfHosted = group("inbound");
+        selfHosted.setOwnerUserId(9L);
+        assertEquals(0, visibility(selfHosted, 9).getCode());
+        assertEquals(-1, visibility(selfHosted, 5).getCode());
     }
 
     @Test

@@ -613,7 +613,7 @@ public class WebSocketServer extends TextWebSocketHandler {
         }
     }
 
-    /** 节点消息只发给能看到这个节点的连接：普通用户不该收到隐藏节点和别人未共享的自建节点 */
+    /** 节点消息只发给能看到这个节点的连接：普通用户不该收到隐藏节点和别人的自建节点 */
     private void broadcastNodeMessage(Long nodeId, String message) {
         for (WebSocketSession session : activeSessions) {
             if (canSeeNode(session, nodeId)) {

@@ -160,13 +160,12 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
         groupQuery.and(w -> {
             w.and(w2 -> w2.isNull("owner_user_id"));
             w.or().eq("owner_user_id", userId);
-            w.or(w2 -> w2.isNotNull("owner_user_id").eq("shared", 1));
         });
         List<DeviceGroup> candidateGroups = deviceGroupMapper.selectList(groupQuery);
 
         // 管理员建立的设备组（owner_user_id 为空）按其绑定的用户组列表过滤：
         // 未绑定任何用户组表示对所有人可见，否则要求当前用户所在用户组在列表内；
-        // 单端隧道设备组（owner_user_id 非空）已经按拥有者/共享条件过滤过，不受用户组限制
+        // 单端隧道设备组（owner_user_id 非空）已经按拥有者过滤过，不受用户组限制
         List<Long> adminGroupIds = candidateGroups.stream()
                 .filter(g -> g.getOwnerUserId() == null)
                 .map(DeviceGroup::getId)

@@ -61,11 +61,6 @@ public class DeviceGroup extends BaseEntity {
     private Long singleTunnelGroupId;
 
     /**
-     * 仅 ownerUserId 非空时有意义：0-仅拥有者自己可用，1-开放给所有用户在添加转发规则时选用
-     */
-    private Integer shared;
-
-    /**
      * 流量倍率
      */
     private BigDecimal ratio;

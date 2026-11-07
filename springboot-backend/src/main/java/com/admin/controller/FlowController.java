@@ -294,7 +294,7 @@ public class FlowController extends BaseController {
     /**
      * 节点密钥只能证明上报来自某个节点，而普通用户也能拿到自建节点的密钥，所以还要确认：
      * 规则属于服务名里的用户、上报节点是规则的入口节点、流量值不为负（负数会减少已用流量）。
-     * 出口节点的服务不上报流量（节点程序跳过了 _tls 服务的统计），不能接受它的上报，否则共享节点的所有者能多报别人的流量。
+     * 出口节点的服务不上报流量（节点程序跳过了 _tls 服务的统计），不能接受它的上报，否则出口节点的所有者能多报别人的流量。
      */
     static boolean isTrustedFlowReport(Forward forward, Tunnel tunnel, String userId, Long reportingNodeId, FlowDto flow) {
         if (forward == null || tunnel == null || reportingNodeId == null) {

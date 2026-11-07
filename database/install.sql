@@ -69,7 +69,7 @@ CREATE TABLE `device_group` (
   `protocol` varchar(20) NOT NULL DEFAULT 'tls' COMMENT '出口协议类型（TLS/WSS/TCP/MTLS/MWSS/MTCP），仅出口/入口＋出口设备组用到',
   `owner_user_id` bigint(20) DEFAULT NULL COMMENT '单端隧道用户自建设备组的拥有者用户ID；管理员建立的设备组此字段为空',
   `single_tunnel_group_id` int(10) DEFAULT NULL COMMENT '单端隧道设备所属的单端组ID（用户自建设备时选择），管理员建立的设备组此字段为空',
-  `shared` tinyint(1) NOT NULL DEFAULT '0' COMMENT '仅 owner_user_id 非空时有意义：0-仅拥有者自己可用，1-开放给所有用户在添加转发规则时选用',
+  `shared` tinyint(1) NOT NULL DEFAULT '0' COMMENT '已弃用：共享功能已移除，自建设备组只有拥有者可用',
   `ratio` decimal(10,2) NOT NULL DEFAULT '1.00',
   `hide_in_probe` int(10) NOT NULL DEFAULT '0',
   `remark` varchar(500) DEFAULT NULL,

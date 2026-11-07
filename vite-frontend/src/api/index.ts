@@ -136,6 +136,7 @@ export const updateUserDeviceGroup = (data: any) => Network.post("/userDeviceGro
 export const deleteUserDeviceGroup = (id: number) => Network.post("/userDeviceGroup/delete", { id });
 export const getMyDeviceGroupInstallCommand = (id: number) => Network.post("/userDeviceGroup/install", { id });
 export const resetMyDeviceGroupSecret = (id: number) => Network.post("/userDeviceGroup/resetSecret", { id });
+export const clearMyDeviceGroupFlow = (ids: number[]) => Network.post("/userDeviceGroup/clearFlow", { ids });
 
 // 节点CRUD操作 - 全部使用POST请求
 export const createNode = (data: any) => Network.post("/node/create", data);

@@ -6,14 +6,13 @@ import { Button } from "@heroui/button";
 import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure } from "@heroui/modal";
 import { Input } from "@heroui/input";
 import { Switch } from "@heroui/switch";
-import { Popover, PopoverContent, PopoverTrigger } from "@heroui/popover";
 import { Spinner } from "@heroui/spinner";
 import toast from 'react-hot-toast';
 
 import { EmptyState } from '@/components/empty-state';
 import { showInfoDialog } from '@/components/error-dialog';
 import { HelpTooltip } from '@/components/help-tooltip';
-import { ToastWarningIcon } from '@/components/toast-icons';
+import { PopConfirm } from '@/components/pop-confirm';
 import { getCachedConfigs } from '@/config/site';
 import { copyText } from '@/utils/clipboard';
 import { safeLogout } from '@/utils/logout';
@@ -82,26 +81,6 @@ const RechargeIcon = () => <PlusCircleOutlined />;
 const LinkIcon = () => <LinkOutlined />;
 const UnlinkIcon = () => <DisconnectOutlined />;
 const SettingsIcon = () => <SettingOutlined />;
-
-/** 按钮上方的气泡确认 */
-const PopConfirm = ({ title, onConfirm, children }: { title: string; onConfirm: () => void; children: ReactNode }) => {
-  const [open, setOpen] = useState(false);
-  return (
-    <Popover isOpen={open} onOpenChange={setOpen} placement="top" showArrow>
-      <PopoverTrigger>{children}</PopoverTrigger>
-      <PopoverContent className="px-3 py-2.5">
-        <div className="flex items-center gap-2 text-sm text-foreground">
-          <ToastWarningIcon />
-          <span>{title}</span>
-        </div>
-        <div className="flex justify-end gap-2 w-full pt-2.5">
-          <Button size="sm" variant="bordered" className="h-6 min-w-0 px-2 rounded-small border-1 border-default-300 font-normal" onPress={() => setOpen(false)}>取 消</Button>
-          <Button size="sm" color="primary" className="h-6 min-w-0 px-2 rounded-small" onPress={() => { setOpen(false); onConfirm(); }}>确 定</Button>
-        </div>
-      </PopoverContent>
-    </Popover>
-  );
-};
 
 const ModePicker = ({
   value,

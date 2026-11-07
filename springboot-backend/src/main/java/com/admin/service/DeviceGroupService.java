@@ -83,5 +83,8 @@ public interface DeviceGroupService extends IService<DeviceGroup> {
     /**
      * 普通用户重置自己名下设备组对应节点的密钥；非本人拥有时拒绝
      */
+    /** 清零自己设备的周期流量；只要有一个不属于该用户就整批拒绝 */
+    R clearMyDeviceFlow(Integer userId, java.util.List<Long> ids);
+
     R resetMySecret(Integer userId, Long groupId);
 }

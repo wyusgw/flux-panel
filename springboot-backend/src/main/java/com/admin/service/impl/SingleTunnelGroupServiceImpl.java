@@ -9,6 +9,7 @@ import com.admin.mapper.SingleTunnelGroupMapper;
 import com.admin.service.DeviceGroupService;
 import com.admin.service.SingleTunnelGroupService;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
@@ -108,7 +109,12 @@ public class SingleTunnelGroupServiceImpl extends ServiceImpl<SingleTunnelGroupM
             return R.err(ERROR_GROUP_NOT_FOUND);
         }
 
-        // 删除单端组不会对已归类的单端隧道设备产生实际影响，只是不再显示分组名称
+        // 删除后设备变回未分组，转发规则的分组也是这样处理
+        deviceGroupService.update(new UpdateWrapper<DeviceGroup>()
+                .eq("single_tunnel_group_id", id)
+                .eq("owner_user_id", userId)
+                .set("single_tunnel_group_id", null));
+
         boolean result = this.removeById(id);
         return result ? R.ok(SUCCESS_DELETE_MSG) : R.err("单端组删除失败");
     }

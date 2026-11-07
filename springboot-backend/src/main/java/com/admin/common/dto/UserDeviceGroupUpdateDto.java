@@ -25,7 +25,7 @@ public class UserDeviceGroupUpdateDto {
     @NotBlank(message = "服务器 IP / 域名不能为空")
     private String serverIp;
 
-    @NotBlank(message = "入口 IP / 域名不能为空")
+    /** 留空时默认使用 serverIp */
     private String entryIp;
 
     private Integer portSta;

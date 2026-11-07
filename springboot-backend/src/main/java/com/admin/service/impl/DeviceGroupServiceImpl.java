@@ -75,6 +75,10 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
     private SingleTunnelGroupService singleTunnelGroupService;
 
     @Autowired
+    @Lazy
+    private com.admin.service.NodeTrafficCycleService nodeTrafficCycleService;
+
+    @Autowired
     private DeviceGroupChainHopMapper chainHopMapper;
 
     @Autowired
@@ -541,6 +545,7 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
                 item.put("portSta", node.getPortSta());
                 item.put("portEnd", node.getPortEnd());
                 item.put("status", node.getStatus());
+                item.put("usedFlow", nodeTrafficCycleService.usedBytes(node.getId()));
             }
             return item;
         }).collect(Collectors.toList());
@@ -615,6 +620,27 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
             return R.err("设备组不存在或无权限操作");
         }
         return nodeService.getInstallCommand(group.getNodeId());
+    }
+
+    @Override
+    public R clearMyDeviceFlow(Integer userId, List<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return R.err("请选择要清空流量的设备");
+        }
+        List<DeviceGroup> owned = new ArrayList<>();
+        for (Long id : ids) {
+            DeviceGroup group = findOwnedGroupOrNull(userId, id);
+            if (group == null) {
+                return R.err("设备组不存在或无权限操作");
+            }
+            owned.add(group);
+        }
+        for (DeviceGroup group : owned) {
+            if (group.getNodeId() != null) {
+                nodeTrafficCycleService.clear(group.getNodeId());
+            }
+        }
+        return R.ok();
     }
 
     @Override

@@ -38,6 +38,23 @@ class NodeAddressRequiredTest {
     }
 
     @Test
+    void selfHostedDeviceOnlyRequiresTheServerAddress() {
+        Validator validator = Validation.buildDefaultValidatorFactory().getValidator();
+        com.admin.common.dto.UserDeviceGroupDto create = new com.admin.common.dto.UserDeviceGroupDto();
+        create.setName("mine");
+        create.setDirection("inbound");
+        assertEquals(1, validator.validate(create).size(), "只缺服务器地址");
+        create.setServerIp("1.1.1.1");
+        assertEquals(0, validator.validate(create).size());
+
+        com.admin.common.dto.UserDeviceGroupUpdateDto update = new com.admin.common.dto.UserDeviceGroupUpdateDto();
+        update.setId(1L);
+        update.setName("mine");
+        update.setServerIp("1.1.1.1");
+        assertEquals(0, validator.validate(update).size());
+    }
+
+    @Test
     void createDtoAcceptsMissingAddressesButStillValidatesTheRest() {
         Validator validator = Validation.buildDefaultValidatorFactory().getValidator();
         NodeDto dto = new NodeDto();

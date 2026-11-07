@@ -188,6 +188,13 @@ const CONFIG_ITEMS: ConfigItem[] = [
     type: 'switch'
   },
   {
+    key: 'allow_private_forward_target',
+    section: 'basic',
+    label: '允许转发到内网地址',
+    description: '开启后普通用户可以把规则转发到内网地址，也可以诊断内网地址。回环和节点自身地址始终不允许，管理员和用户自己的节点不受限',
+    type: 'switch'
+  },
+  {
     key: 'looking_glass_hide_ip',
     section: 'basic',
     label: '诊断结果隐藏 IP',

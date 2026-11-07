@@ -1620,6 +1620,11 @@ func isValidHostname(hostname string) bool {
 		return false
 	}
 
+	// 诊断命令直接把主机名作为参数，-开头会被当成命令选项
+	if hostname[0] == '-' {
+		return false
+	}
+
 	// 简单的主机名验证
 	for _, r := range hostname {
 		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||

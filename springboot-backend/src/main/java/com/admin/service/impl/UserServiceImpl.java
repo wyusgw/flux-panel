@@ -11,6 +11,8 @@ import com.admin.common.utils.GostUtil;
 import com.admin.common.utils.CaptchaProviderUtil;
 import com.admin.common.utils.HttpContextUtils;
 import com.admin.common.utils.JwtUtil;
+import com.admin.common.utils.HttpContextUtils;
+import com.admin.common.utils.LoginAttemptLimiter;
 import com.admin.common.utils.Md5Util;
 import com.admin.common.utils.NotificationUtil;
 import com.admin.common.utils.TunnelResolver;
@@ -145,6 +147,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     private ImageCaptchaApplication application;
 
     @Resource
+    private LoginAttemptLimiter loginAttemptLimiter;
+
+    @Resource
     @Lazy
     private UserGroupService userGroupService;
 
@@ -201,11 +206,19 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
 
 
 
-        // 2. 验证用户凭据
+        // 2. 验证用户凭据：先看尝试次数，超限时不再比对密码，避免继续猜测
+        String clientIp = LoginAttemptLimiter.clientIp(HttpContextUtils.getHttpServletRequest());
+        if (loginAttemptLimiter.isBlocked(loginDto.getUsername(), clientIp)) {
+            return R.err(429, LoginAttemptLimiter.TOO_MANY_ATTEMPTS);
+        }
         LoginValidationResult validationResult = validateUserCredentials(loginDto);
         if (validationResult.isHasError()) {
+            if (ERROR_LOGIN_CREDENTIALS.equals(validationResult.getErrorMessage())) {
+                loginAttemptLimiter.recordFailure(loginDto.getUsername(), clientIp);
+            }
             return R.err(validationResult.getErrorMessage());
         }
+        loginAttemptLimiter.recordSuccess(loginDto.getUsername(), clientIp);
 
         // 3. 生成令牌并返回用户信息
         User user = validationResult.getUser();

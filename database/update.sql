@@ -1626,3 +1626,117 @@ UPDATE `user` SET `disable_reason` = 2
 WHERE `status` = 0 AND `disable_reason` = 0 AND `role_id` <> 0 AND `exp_time` IS NOT NULL AND `exp_time` < UNIX_TIMESTAMP() * 1000;
 UPDATE `user` SET `disable_reason` = 1
 WHERE `status` = 0 AND `disable_reason` = 0;
+
+-- 补上历史版本漏掉的字段迁移：这些字段只写进了 install.sql，老库升级上来可能没有（重复执行无影响）
+SET @sql = (
+    SELECT IF(
+        NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = DATABASE()
+              AND table_name = 'user'
+              AND column_name = 'telegram_chat_id'
+        ),
+        'ALTER TABLE `user` ADD COLUMN `telegram_chat_id` varchar(64) DEFAULT NULL;',
+        'SELECT "Column `telegram_chat_id` already exists in `user`";'
+    )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @sql = (
+    SELECT IF(
+        NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = DATABASE()
+              AND table_name = 'user'
+              AND column_name = 'telegram_bind_code'
+        ),
+        'ALTER TABLE `user` ADD COLUMN `telegram_bind_code` varchar(16) DEFAULT NULL;',
+        'SELECT "Column `telegram_bind_code` already exists in `user`";'
+    )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @sql = (
+    SELECT IF(
+        NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = DATABASE()
+              AND table_name = 'user'
+              AND column_name = 'telegram_bind_time'
+        ),
+        'ALTER TABLE `user` ADD COLUMN `telegram_bind_time` bigint(20) DEFAULT NULL;',
+        'SELECT "Column `telegram_bind_time` already exists in `user`";'
+    )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @sql = (
+    SELECT IF(
+        NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = DATABASE()
+              AND table_name = 'user'
+              AND column_name = 'notify_payment_mode'
+        ),
+        'ALTER TABLE `user` ADD COLUMN `notify_payment_mode` tinyint(4) NOT NULL DEFAULT 0;',
+        'SELECT "Column `notify_payment_mode` already exists in `user`";'
+    )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @sql = (
+    SELECT IF(
+        NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = DATABASE()
+              AND table_name = 'user'
+              AND column_name = 'notify_device_mode'
+        ),
+        'ALTER TABLE `user` ADD COLUMN `notify_device_mode` tinyint(4) NOT NULL DEFAULT 0;',
+        'SELECT "Column `notify_device_mode` already exists in `user`";'
+    )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @sql = (
+    SELECT IF(
+        NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = DATABASE()
+              AND table_name = 'user'
+              AND column_name = 'notify_device_groups'
+        ),
+        'ALTER TABLE `user` ADD COLUMN `notify_device_groups` varchar(500) DEFAULT NULL;',
+        'SELECT "Column `notify_device_groups` already exists in `user`";'
+    )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @sql = (
+    SELECT IF(
+        NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = DATABASE()
+              AND table_name = 'forward'
+              AND column_name = 'speed_limit'
+        ),
+        'ALTER TABLE `forward` ADD COLUMN `speed_limit` int(11) NOT NULL DEFAULT 0;',
+        'SELECT "Column `speed_limit` already exists in `forward`";'
+    )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+

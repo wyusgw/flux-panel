@@ -12,12 +12,18 @@ import com.alibaba.fastjson.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import org.springframework.web.bind.annotation.*;
 
+import com.admin.common.utils.HttpContextUtils;
+import com.admin.common.utils.LoginAttemptLimiter;
+
 import java.util.Objects;
 
 @RestController
 @CrossOrigin
 @RequestMapping("/api/v1/openApi")
 public class OpenApiController extends BaseController {
+
+    @javax.annotation.Resource
+    private LoginAttemptLimiter loginAttemptLimiter;
 
     @LogAnnotation
     @GetMapping("/subStore")
@@ -39,15 +45,24 @@ public class OpenApiController extends BaseController {
             return R.err("密码不能为空");
         }
 
+        // 这个接口没有验证码，和登录共用尝试次数限制，否则可以绕过验证码猜密码
+        String clientIp = LoginAttemptLimiter.clientIp(HttpContextUtils.getHttpServletRequest());
+        if (loginAttemptLimiter.isBlocked(user, clientIp)) {
+            return R.err(429, LoginAttemptLimiter.TOO_MANY_ATTEMPTS);
+        }
+
         User userInfo = userService.getOne(new QueryWrapper<User>().eq("user", user));
         if (userInfo == null) {
+            loginAttemptLimiter.recordFailure(user, clientIp);
             return R.err("鉴权失败");
         }
 
         String pwdMd5 = Md5Util.md5(pwd);
         if (!Objects.equals(pwdMd5, userInfo.getPwd())) {
+            loginAttemptLimiter.recordFailure(user, clientIp);
             return R.err("鉴权失败");
         }
+        loginAttemptLimiter.recordSuccess(user, clientIp);
 
         final long GIGA = 1024L * 1024L * 1024L;
         String headerValue;

@@ -172,7 +172,8 @@ public class WebSocketServer extends TextWebSocketHandler {
                     
                     // 异步处理广播消息，避免阻塞当前线程
                     for (WebSocketSession targetSession : activeSessions) {
-                        if (targetSession != null && targetSession.isOpen() && !targetSession.equals(session)) {
+                        if (targetSession != null && targetSession.isOpen() && !targetSession.equals(session)
+                                && canSeeNode(targetSession, Long.valueOf(id))) {
                             // 演示账号的探针页同样不能看到节点 IP
                             boolean demo = Boolean.TRUE.equals(targetSession.getAttributes().get("demo"));
                             sendToUser(targetSession, demo ? DemoDataMasker.maskIps(broadcastMessage) : broadcastMessage, null);
@@ -352,7 +353,7 @@ public class WebSocketServer extends TextWebSocketHandler {
                         res.put("id", id);
                         res.put("type", "status");
                         res.put("data", 1);
-                        broadcastMessage(res.toJSONString());
+                        broadcastNodeMessage(nodeId, res.toJSONString());
                         notificationUtil.notifyDeviceStatus(node, true);
 
                         // 节点上线后异步重试该节点相关、之前因离线等原因失败的任务队列项（如转发同步），
@@ -509,7 +510,7 @@ public class WebSocketServer extends TextWebSocketHandler {
                 res.put("id", nodeId.toString());
                 res.put("type", "status");
                 res.put("data", 0);
-                broadcastMessage(res.toJSONString());
+                broadcastNodeMessage(nodeId, res.toJSONString());
                 notificationUtil.notifyDeviceStatus(node, false);
             } else {
                 log.info("节点 {} 状态更新为离线失败", nodeId);
@@ -604,6 +605,58 @@ public class WebSocketServer extends TextWebSocketHandler {
                 }
                 return false;
             });
+        }
+    }
+
+    /** 节点消息只发给能看到这个节点的连接：普通用户不该收到隐藏节点和别人未共享的自建节点 */
+    private void broadcastNodeMessage(Long nodeId, String message) {
+        for (WebSocketSession session : activeSessions) {
+            if (canSeeNode(session, nodeId)) {
+                sendToUser(session, message);
+            }
+        }
+    }
+
+    boolean canSeeNode(WebSocketSession session, Long nodeId) {
+        Object roleId = session.getAttributes().get("roleId");
+        if (Integer.valueOf(0).equals(roleId)) {
+            return true;
+        }
+        Object userId = session.getAttributes().get("id");
+        if (userId == null) {
+            return false;
+        }
+        return visibleNodes(Integer.valueOf(userId.toString())).contains(nodeId);
+    }
+
+    /** 节点每 2~3 秒上报一次，每条都查库太重，按用户缓存一小段时间；权限变化最多延迟这么久生效 */
+    private java.util.Set<Long> visibleNodes(Integer userId) {
+        long now = System.currentTimeMillis();
+        VisibleNodes cached = visibleNodesCache.get(userId);
+        if (cached != null && now - cached.loadedAt < VISIBLE_NODES_TTL_MILLIS) {
+            return cached.nodeIds;
+        }
+        java.util.Set<Long> nodeIds;
+        try {
+            nodeIds = nodeService.getVisibleNodeIds(userId);
+        } catch (Exception e) {
+            log.warn("查询用户 {} 可见节点失败: {}", userId, e.getMessage());
+            nodeIds = java.util.Collections.emptySet();
+        }
+        visibleNodesCache.put(userId, new VisibleNodes(now, nodeIds));
+        return nodeIds;
+    }
+
+    private static final long VISIBLE_NODES_TTL_MILLIS = 30_000L;
+    private static final ConcurrentHashMap<Integer, VisibleNodes> visibleNodesCache = new ConcurrentHashMap<>();
+
+    private static final class VisibleNodes {
+        private final long loadedAt;
+        private final java.util.Set<Long> nodeIds;
+
+        private VisibleNodes(long loadedAt, java.util.Set<Long> nodeIds) {
+            this.loadedAt = loadedAt;
+            this.nodeIds = nodeIds;
         }
     }
 

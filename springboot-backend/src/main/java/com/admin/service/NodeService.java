@@ -20,6 +20,9 @@ public interface NodeService extends IService<Node> {
 
     R getAllNodes();
 
+    /** 普通用户能看到的节点ID，与节点列表接口的范围一致 */
+    java.util.Set<Long> getVisibleNodeIds(Integer userId);
+
     R updateNode(NodeUpdateDto nodeUpdateDto);
 
     R deleteNode(Long id);

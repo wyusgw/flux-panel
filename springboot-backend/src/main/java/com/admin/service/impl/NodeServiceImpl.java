@@ -146,6 +146,51 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
      * 
      * @return 包含所有节点的响应对象
      */
+    /** 普通用户能看到的节点，与节点列表接口的范围一致 */
+    @Override
+    public Set<Long> getVisibleNodeIds(Integer userId) {
+        User user = userId != null ? userMapper.selectById(userId) : null;
+        if (user == null) {
+            return Collections.emptySet();
+        }
+
+        QueryWrapper<DeviceGroup> groupQuery = new QueryWrapper<DeviceGroup>()
+                .eq("hide_in_probe", 0);
+        Long userGroupId = user.getGroupId();
+        groupQuery.and(w -> {
+            w.and(w2 -> w2.isNull("owner_user_id"));
+            w.or().eq("owner_user_id", userId);
+            w.or(w2 -> w2.isNotNull("owner_user_id").eq("shared", 1));
+        });
+        List<DeviceGroup> candidateGroups = deviceGroupMapper.selectList(groupQuery);
+
+        // 管理员建立的设备组（owner_user_id 为空）按其绑定的用户组列表过滤：
+        // 未绑定任何用户组表示对所有人可见，否则要求当前用户所在用户组在列表内；
+        // 单端隧道设备组（owner_user_id 非空）已经按拥有者/共享条件过滤过，不受用户组限制
+        List<Long> adminGroupIds = candidateGroups.stream()
+                .filter(g -> g.getOwnerUserId() == null)
+                .map(DeviceGroup::getId)
+                .collect(Collectors.toList());
+        Map<Long, List<Long>> userGroupIdsByGroup = adminGroupIds.isEmpty() ? Collections.emptyMap()
+                : deviceGroupUserGroupRelationMapper.selectList(
+                        new QueryWrapper<DeviceGroupUserGroupRelation>().in("device_group_id", adminGroupIds))
+                    .stream()
+                    .collect(Collectors.groupingBy(DeviceGroupUserGroupRelation::getDeviceGroupId,
+                            Collectors.mapping(DeviceGroupUserGroupRelation::getUserGroupId, Collectors.toList())));
+
+        return candidateGroups.stream()
+                .filter(g -> {
+                    if (g.getOwnerUserId() != null) {
+                        return true;
+                    }
+                    List<Long> allowed = userGroupIdsByGroup.getOrDefault(g.getId(), Collections.emptyList());
+                    return allowed.isEmpty() || (userGroupId != null && allowed.contains(userGroupId));
+                })
+                .map(DeviceGroup::getNodeId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+    }
+
     @Override
     public R getAllNodes() {
         Integer roleId = JwtUtil.getRoleIdFromToken();
@@ -155,47 +200,7 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
         if (isAdmin) {
             nodeList = this.list();
         } else {
-            Integer userId = JwtUtil.getUserIdFromToken();
-            User user = userId != null ? userMapper.selectById(userId) : null;
-            if (user == null) {
-                return R.ok(Collections.emptyList());
-            }
-
-            QueryWrapper<DeviceGroup> groupQuery = new QueryWrapper<DeviceGroup>()
-                    .eq("hide_in_probe", 0);
-            Long userGroupId = user.getGroupId();
-            groupQuery.and(w -> {
-                w.and(w2 -> w2.isNull("owner_user_id"));
-                w.or().eq("owner_user_id", userId);
-                w.or(w2 -> w2.isNotNull("owner_user_id").eq("shared", 1));
-            });
-            List<DeviceGroup> candidateGroups = deviceGroupMapper.selectList(groupQuery);
-
-            // 管理员建立的设备组（owner_user_id 为空）按其绑定的用户组列表过滤：
-            // 未绑定任何用户组表示对所有人可见，否则要求当前用户所在用户组在列表内；
-            // 单端隧道设备组（owner_user_id 非空）已经按拥有者/共享条件过滤过，不受用户组限制
-            List<Long> adminGroupIds = candidateGroups.stream()
-                    .filter(g -> g.getOwnerUserId() == null)
-                    .map(DeviceGroup::getId)
-                    .collect(Collectors.toList());
-            Map<Long, List<Long>> userGroupIdsByGroup = adminGroupIds.isEmpty() ? Collections.emptyMap()
-                    : deviceGroupUserGroupRelationMapper.selectList(
-                            new QueryWrapper<DeviceGroupUserGroupRelation>().in("device_group_id", adminGroupIds))
-                        .stream()
-                        .collect(Collectors.groupingBy(DeviceGroupUserGroupRelation::getDeviceGroupId,
-                                Collectors.mapping(DeviceGroupUserGroupRelation::getUserGroupId, Collectors.toList())));
-
-            Set<Long> visibleNodeIds = candidateGroups.stream()
-                    .filter(g -> {
-                        if (g.getOwnerUserId() != null) {
-                            return true;
-                        }
-                        List<Long> allowed = userGroupIdsByGroup.getOrDefault(g.getId(), Collections.emptyList());
-                        return allowed.isEmpty() || (userGroupId != null && allowed.contains(userGroupId));
-                    })
-                    .map(DeviceGroup::getNodeId)
-                    .filter(Objects::nonNull)
-                    .collect(Collectors.toSet());
+            Set<Long> visibleNodeIds = getVisibleNodeIds(JwtUtil.getUserIdFromToken());
             nodeList = visibleNodeIds.isEmpty()
                     ? Collections.emptyList()
                     : this.list(new QueryWrapper<Node>().in("id", visibleNodeIds));

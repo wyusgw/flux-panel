@@ -14,6 +14,12 @@ import com.admin.common.utils.WebSocketServer;
 import com.admin.entity.*;
 import com.admin.mapper.ForwardMapper;
 import com.admin.service.*;
+import com.admin.common.utils.ForwardTargetPolicy;
+import com.admin.entity.ViteConfig;
+import com.admin.service.ViteConfigService;
+import java.net.InetAddress;
+import java.util.Arrays;
+import java.util.Collections;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
@@ -95,6 +101,10 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
     @Lazy
     private TaskQueueService taskQueueService;
 
+    @Resource
+    @Lazy
+    private ViteConfigService viteConfigService;
+
     /**
      * 端口分配 -> 落库 这段临界区的互斥锁：避免并发创建/更新转发规则时，
      * 两个请求都在对方尚未提交端口占用记录前查到"端口空闲"，进而对同一物理端口
@@ -143,6 +153,10 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         }
         if (tunnel.getStatus() != TUNNEL_STATUS_ACTIVE) {
             return R.err("隧道已禁用，无法创建转发");
+        }
+        String targetBlocked = forwardTargetBlockReason(currentUser, forwardDto.getRemoteAddr(), tunnel);
+        if (targetBlocked != null) {
+            return R.err(RULE_SERVICE_BLOCKED_CODE, targetBlocked);
         }
 
         // 3. 权限和限制检查（按规则归属者 effectiveUser 校验，管理员创建自己的规则时两者相同）
@@ -281,6 +295,10 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         }
         if (tunnel.getStatus() != TUNNEL_STATUS_ACTIVE) {
             return R.err("隧道已禁用，无法更新转发");
+        }
+        String targetBlocked = forwardTargetBlockReason(currentUser, forwardUpdateDto.getRemoteAddr(), tunnel);
+        if (targetBlocked != null) {
+            return R.err(RULE_SERVICE_BLOCKED_CODE, targetBlocked);
         }
         boolean tunnelChanged = isTunnelChanged(existForward, forwardUpdateDto);
 
@@ -1005,6 +1023,28 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         }
 
         return UserPermissionResult.success(null, userTunnel);
+    }
+
+    /**
+     * 普通用户的转发目标限制，见 {@link ForwardTargetPolicy}。管理员不受限；用户自己的节点也不受限，
+     * 在自建节点上转发到本机服务是单端隧道的正常用法。真正去连目标的是隧道转发的出口节点、端口转发的入口节点。
+     */
+    private String forwardTargetBlockReason(UserInfo currentUser, String remoteAddr, Tunnel tunnel) {
+        if (currentUser.getRoleId() == ADMIN_ROLE_ID) {
+            return null;
+        }
+        Long dialNodeId = tunnel.getType() != null && tunnel.getType() == TUNNEL_TYPE_TUNNEL_FORWARD && tunnel.getOutNodeId() != null
+                ? tunnel.getOutNodeId() : tunnel.getInNodeId();
+        long ownedGroups = deviceGroupService.count(new QueryWrapper<DeviceGroup>()
+                .eq("node_id", dialNodeId).eq("owner_user_id", currentUser.getUserId()));
+        if (ownedGroups > 0) {
+            return null;
+        }
+        ViteConfig allowPrivate = viteConfigService.getOne(new QueryWrapper<ViteConfig>().eq("name", ForwardTargetPolicy.CONFIG_ALLOW_PRIVATE));
+        Node dialNode = nodeService.getNodeById(dialNodeId);
+        List<String> nodeAddrs = dialNode == null ? Collections.emptyList() : Arrays.asList(dialNode.getServerIp(), dialNode.getIp());
+        return ForwardTargetPolicy.checkRemoteAddrs(remoteAddr,
+                allowPrivate != null && "true".equals(allowPrivate.getValue()), nodeAddrs, InetAddress::getAllByName);
     }
 
     /**

@@ -626,3 +626,20 @@ html.dark:not(.theme-transparent) .hover-dropdown-content { background-color: #1
 /* 节点状态页：隐藏表格和整页的滚动条，内容放不下时仍可用滚轮、触控板或手指滑动 */
 .probe-scroll, html:has(.probe-page), body:has(.probe-page) { scrollbar-width: none; }
 .probe-scroll::-webkit-scrollbar, html:has(.probe-page)::-webkit-scrollbar, body:has(.probe-page)::-webkit-scrollbar { display: none; }
+
+/* 站点公告里的 HTML 内容：补回被全局样式重置的基本排版 */
+.announcement-html { overflow-wrap: anywhere; }
+.announcement-html > * + * { margin-top: 0.5em; }
+.announcement-html h1 { font-size: 1.5em; font-weight: 600; }
+.announcement-html h2 { font-size: 1.25em; font-weight: 600; }
+.announcement-html h3, .announcement-html h4 { font-size: 1.1em; font-weight: 600; }
+.announcement-html ul { list-style: disc; padding-left: 1.5em; }
+.announcement-html ol { list-style: decimal; padding-left: 1.5em; }
+.announcement-html a { color: hsl(var(--heroui-primary)); text-decoration: underline; }
+.announcement-html img { max-width: 100%; height: auto; }
+.announcement-html table { border-collapse: collapse; }
+.announcement-html th, .announcement-html td { border: 1px solid hsl(var(--heroui-default-300)); padding: 0.25em 0.6em; }
+.announcement-html hr { border-color: hsl(var(--heroui-default-300)); }
+.announcement-html blockquote { border-left: 3px solid hsl(var(--heroui-default-300)); padding-left: 0.8em; opacity: 0.85; }
+.announcement-html pre, .announcement-html code { font-family: ui-monospace, monospace; font-size: 0.9em; }
+.announcement-html pre { white-space: pre-wrap; }

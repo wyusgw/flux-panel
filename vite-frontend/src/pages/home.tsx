@@ -1,4 +1,5 @@
 import { EmptyState } from "@/components/empty-state";
+import { AnnouncementContent } from "@/components/announcement-content";
 import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Accordion, AccordionItem } from "@heroui/accordion";
 import { useEffect, useState } from "react";
@@ -86,7 +87,7 @@ export default function HomePage() {
                 正在加载公告…
               </div>
             ) : announcement ? (
-              <p className="text-base leading-7 text-foreground whitespace-pre-wrap">{announcement}</p>
+              <AnnouncementContent value={announcement} className="text-base leading-7 text-foreground" />
             ) : (
               <EmptyState text="暂无站点公告" />
             )}

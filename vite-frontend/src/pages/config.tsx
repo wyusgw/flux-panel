@@ -267,8 +267,8 @@ const CONFIG_ITEMS: ConfigItem[] = [
     key: 'site_announcement',
     section: 'announcement',
     label: '站点公告',
-    placeholder: '请输入站点公告内容，将显示在用户首页',
-    description: '显示在所有用户首页的公告内容，留空则不显示',
+    placeholder: '以 < 开头则显示为 HTML',
+    description: '显示在所有用户首页的公告内容，以 < 开头时按 HTML 显示（会过滤脚本和表单等不安全的内容），否则按纯文本原样换行显示，留空则不显示',
     type: 'textarea'
   },
   {

@@ -43,6 +43,33 @@ public class User extends BaseEntity {
      */
     private Integer status;
 
+    /** 未停用 */
+    public static final int DISABLE_REASON_NONE = 0;
+    /** 管理员禁用：只能由管理员解除 */
+    public static final int DISABLE_REASON_MANUAL = 1;
+    /** 账号到期：续费或购买套餐后自动恢复，也允许登录以便续费 */
+    public static final int DISABLE_REASON_EXPIRED = 2;
+
+    /** 停用原因，见 DISABLE_REASON_* */
+    private Integer disableReason;
+
+    /** 是否因账号到期被停用；管理员禁用或没有原因的旧数据都返回 false，不会被自动解除 */
+    public static boolean disabledByExpiry(User user) {
+        return user != null && Integer.valueOf(0).equals(user.getStatus())
+                && Integer.valueOf(DISABLE_REASON_EXPIRED).equals(user.getDisableReason());
+    }
+
+    /** 管理员保存用户时的停用原因：解除停用时清空，新禁用记为管理员禁用，状态没变则保留原因 */
+    public static int resolveDisableReason(Integer oldStatus, Integer oldReason, int newStatus) {
+        if (newStatus != 0) {
+            return DISABLE_REASON_NONE;
+        }
+        if (!Integer.valueOf(0).equals(oldStatus) || oldReason == null || oldReason == DISABLE_REASON_NONE) {
+            return DISABLE_REASON_MANUAL;
+        }
+        return oldReason;
+    }
+
     private String user;
 
     private String pwd;

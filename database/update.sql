@@ -1602,3 +1602,27 @@ SET @sql = (
 PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
+
+-- user 表：添加 disable_reason 字段（停用原因：0-未停用，1-管理员禁用，2-账号到期；重复执行无影响）
+SET @sql = (
+    SELECT IF(
+        NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = DATABASE()
+              AND table_name = 'user'
+              AND column_name = 'disable_reason'
+        ),
+        'ALTER TABLE `user` ADD COLUMN `disable_reason` INT(10) NOT NULL DEFAULT 0 COMMENT "停用原因：0-未停用，1-管理员禁用，2-账号到期";',
+        'SELECT "Column `disable_reason` already exists in `user`";'
+    )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- 归类已停用的存量用户（只处理还没有原因的记录，重复执行无影响）：
+-- 普通用户到期时间已过的按到期处理，其余按管理员禁用处理，避免把管理员禁用的账号误解封
+UPDATE `user` SET `disable_reason` = 2
+WHERE `status` = 0 AND `disable_reason` = 0 AND `role_id` <> 0 AND `exp_time` IS NOT NULL AND `exp_time` < UNIX_TIMESTAMP() * 1000;
+UPDATE `user` SET `disable_reason` = 1
+WHERE `status` = 0 AND `disable_reason` = 0;

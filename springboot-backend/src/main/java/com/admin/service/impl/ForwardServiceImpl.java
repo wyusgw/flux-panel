@@ -58,6 +58,8 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
     private static final int TUNNEL_STATUS_ACTIVE = 1;
 
     private static final long BYTES_TO_GB = 1024L * 1024L * 1024L;
+    /** 无套餐、流量用完、账号到期导致不能创建或修改规则时返回的状态码 */
+    private static final int RULE_SERVICE_BLOCKED_CODE = 403;
 
     @Resource
     @Lazy
@@ -115,6 +117,14 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
                 return R.err("目标用户不存在");
             }
             effectiveUser = new UserInfo(targetUser.getId().intValue(), targetUser.getRoleId(), targetUser.getUser());
+        }
+
+        // 1.0.1 规则归属者没有套餐、流量用完或账号到期时不能创建规则；提前检查，避免先提示没有隧道权限
+        if (effectiveUser.getRoleId() != ADMIN_ROLE_ID) {
+            String blockReason = ruleServiceBlockReason(userService.getById(effectiveUser.getUserId()), System.currentTimeMillis());
+            if (blockReason != null) {
+                return R.err(RULE_SERVICE_BLOCKED_CODE, blockReason);
+            }
         }
 
         // 1.1 校验隧道选择方式：显式隧道 或 入口/出口设备组，二选一（沿用发起请求者本人的身份校验，
@@ -242,6 +252,12 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             User user = userService.getById(currentUser.getUserId());
             if (user == null) return R.err("用户不存在");
             if (user.getStatus() == 0) return R.err("用户已到期或被禁用");
+            // 更新成功后规则会被设为运行中并重新下发，不拦截的话流量用完被暂停的规则改一下就恢复了。
+            // 只拦普通用户本人：隧道变更时 TunnelServiceImpl 会以管理员身份批量同步规则，不能被个别用户卡住
+            String blockReason = ruleServiceBlockReason(user, System.currentTimeMillis());
+            if (blockReason != null) {
+                return R.err(RULE_SERVICE_BLOCKED_CODE, blockReason);
+            }
         }
 
         // 1.1 校验隧道选择方式：显式隧道 或 入口/出口设备组，二选一
@@ -943,10 +959,8 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
 
         // 获取用户信息（流量/到期时间/转发数量等额度统一由账号自身的套餐控制，
         // 不再额外维护一套隧道级别的额度——避免账号层与隧道层两套限制重复配置、互相打架）
+        // 账号到期、无套餐、流量用完已由 ruleServiceBlockReason 在创建和更新入口拦截
         User userInfo = userService.getById(currentUser.getUserId());
-        if (userInfo.getExpTime() != null && userInfo.getExpTime() <= System.currentTimeMillis()) {
-            return UserPermissionResult.error("当前账号已到期");
-        }
 
         // 检查用户隧道权限
         if (userTunnel == null) {
@@ -957,11 +971,6 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             return UserPermissionResult.error("隧道被禁用");
         }
 
-        // 流量限制检查
-        if (userInfo.getFlow() <= 0) {
-            return UserPermissionResult.error("用户总流量已用完");
-        }
-
         // 转发数量限制检查
         R quotaCheckResult = checkForwardQuota(currentUser.getUserId(), userInfo, excludeForwardId);
         if (quotaCheckResult.getCode() != 0) {
@@ -969,6 +978,28 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         }
 
         return UserPermissionResult.success(null, userTunnel);
+    }
+
+    /**
+     * 规则归属者当前能否使用转发服务，不能时返回原因，能用时返回 null。
+     * 无套餐按「没有流量配额」判断：管理员在用户管理里手动设置了流量的无套餐用户仍可使用。
+     */
+    static String ruleServiceBlockReason(User user, long now) {
+        if (user == null) {
+            return "用户不存在";
+        }
+        if (user.getExpTime() != null && user.getExpTime() <= now) {
+            return "当前账号已到期";
+        }
+        if (Integer.valueOf(0).equals(user.getStatus())) {
+            return "用户已被禁用";
+        }
+        long flowLimit = user.getFlow() == null ? 0L : user.getFlow();
+        if (flowLimit <= 0) {
+            return user.getPackageId() == null ? "用户未购买套餐" : "用户流量已用完";
+        }
+        long used = (user.getInFlow() == null ? 0L : user.getInFlow()) + (user.getOutFlow() == null ? 0L : user.getOutFlow());
+        return used >= flowLimit * BYTES_TO_GB ? "用户流量已用完" : null;
     }
 
     /**
@@ -991,19 +1022,14 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
      * 检查用户流量限制
      */
     private R checkUserFlowLimits(Integer userId, Forward forward) {
-        User userInfo = userService.getById(userId);
-        if (userInfo.getExpTime() != null && userInfo.getExpTime() <= System.currentTimeMillis()) {
-            return R.err("当前账号已到期");
+        String blockReason = ruleServiceBlockReason(userService.getById(userId), System.currentTimeMillis());
+        if (blockReason != null) {
+            return R.err(RULE_SERVICE_BLOCKED_CODE, blockReason);
         }
 
         UserTunnel userTunnel = tunnelResolver.resolveUserTunnel(userId, forward);
         if (userTunnel == null) {
             return R.err("你没有该隧道权限");
-        }
-
-        // 检查用户总流量限制（账号级别，套餐决定的总量上限）
-        if (userInfo.getFlow() * BYTES_TO_GB <= userInfo.getInFlow() + userInfo.getOutFlow()) {
-            return R.err("用户总流量已用完，无法恢复服务");
         }
 
         return R.ok();

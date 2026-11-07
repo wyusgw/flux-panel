@@ -225,6 +225,11 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         // 2. 应用套餐：分配用户组、重置流量与转发数配额、延长/设置到期时间
         updateUser.setGroupId(packagePlan.getGroupId());
         updateUser.setPackageId(packagePlan.getId());
+        // 因到期停用的账号购买后恢复；管理员禁用的账号不受影响。已暂停的规则由用户自己恢复
+        if (User.disabledByExpiry(user)) {
+            updateUser.setStatus(1);
+            updateUser.setDisableReason(User.DISABLE_REASON_NONE);
+        }
         Long planTraffic = packagePlan.getTraffic();
         updateUser.setFlow(planTraffic == null || planTraffic <= 0 ? UNLIMITED_FLOW : planTraffic);
         updateUser.setInFlow(0L);

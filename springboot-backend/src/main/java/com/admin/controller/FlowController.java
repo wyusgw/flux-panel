@@ -233,9 +233,19 @@ public class FlowController extends BaseController {
         }
         String forwardId = serviceIds[0];
         String userId = serviceIds[1];
-        String userTunnelId = serviceIds[2];
 
         Forward forward = forwardService.getById(forwardId);
+        Tunnel reportTunnel = forward != null ? tunnelResolver.resolveTunnel(forward) : null;
+        if (!isTrustedFlowReport(forward, reportTunnel, userId, reportingNodeId, flowDataList)) {
+            log.warn("节点 {} 的流量上报未通过校验，已忽略: {}", reportingNodeId, flowDataList);
+            return SUCCESS_RESPONSE;
+        }
+
+        // 节点上真实的服务名（后面暂停服务要用）；是否检查限额、累加到哪条隧道授权以数据库为准，
+        // 不信任上报内容，否则把第三段写成 0 就能跳过限额
+        String name = buildServiceName(forwardId, userId, serviceIds[2]);
+        UserTunnel ownerTunnel = tunnelResolver.resolveUserTunnel(forward.getUserId(), forward);
+        String userTunnelId = ownerTunnel != null ? String.valueOf(ownerTunnel.getId()) : DEFAULT_USER_TUNNEL_ID;
 
         // 记录原始（不计流量倍率）流量到当日累计，供管理员仪表盘/"统计数据"弹窗展示；
         // 必须在 filterFlowData 按倍率改写 flowDataList 之前取值，否则拿到的就不是原始数据了
@@ -246,6 +256,11 @@ public class FlowController extends BaseController {
 
         //  处理流量倍率及单双向计算
         FlowDto flowStats = filterFlowData(flowDataList, forward, flowType);
+        // 超大数值按倍率换算后可能溢出成负数，会减少用户已用流量
+        if (flowStats.getD() < 0 || flowStats.getU() < 0) {
+            log.warn("节点 {} 上报的流量换算后溢出，已忽略: {}", reportingNodeId, flowDataList.getN());
+            return SUCCESS_RESPONSE;
+        }
 
         // 先更新所有流量统计 - 确保流量数据的一致性
         updateForwardFlow(forwardId, flowStats);
@@ -253,7 +268,6 @@ public class FlowController extends BaseController {
         updateUserTunnelFlow(userTunnelId, flowStats);
 
         // 7. 检查和服务暂停操作
-        String name = buildServiceName(forwardId, userId, userTunnelId);
         if (Objects.equals(userTunnelId, DEFAULT_USER_TUNNEL_ID)) {
             // 管理员转发：完全跳过限额检查
         } else if (Objects.equals(userTunnelId, DEVICE_GROUP_USER_TUNNEL_ID)) {
@@ -266,6 +280,23 @@ public class FlowController extends BaseController {
         }
 
         return SUCCESS_RESPONSE;
+    }
+
+    /**
+     * 节点密钥只能证明上报来自某个节点，而普通用户也能拿到自建节点的密钥，所以还要确认：
+     * 规则属于服务名里的用户、上报节点确实承载这条规则、流量值不为负（负数会减少已用流量）。
+     */
+    static boolean isTrustedFlowReport(Forward forward, Tunnel tunnel, String userId, Long reportingNodeId, FlowDto flow) {
+        if (forward == null || tunnel == null || reportingNodeId == null) {
+            return false;
+        }
+        if (flow.getU() == null || flow.getD() == null || flow.getU() < 0 || flow.getD() < 0) {
+            return false;
+        }
+        if (!Objects.equals(String.valueOf(forward.getUserId()), userId)) {
+            return false;
+        }
+        return reportingNodeId.equals(tunnel.getInNodeId()) || reportingNodeId.equals(tunnel.getOutNodeId());
     }
 
     private void checkUserRelatedLimits(String userId, String name) {

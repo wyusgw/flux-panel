@@ -24,6 +24,7 @@ export interface User {
   walletBalance?: number; // 钱包余额(元)
   autoRenew?: number; // 自动续费(0-关闭,1-开启)
   demoMode?: number; // 演示模式(0-关闭,1-开启)
+  disableReason?: number; // 停用原因(0-未停用,1-管理员禁用,2-账号到期)
   remark?: string | null; // 备注
   roleId?: number; // 角色ID(0-管理员,1-普通用户)
 }

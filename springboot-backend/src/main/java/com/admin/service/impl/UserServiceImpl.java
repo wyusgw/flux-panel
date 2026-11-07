@@ -378,6 +378,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         User updateUser = buildUpdateUserEntity(userUpdateDto);
         updateUser.setRoleId(newRoleId);
         updateUser.setDemoMode(newDemoMode);
+        updateUser.setDisableReason(User.resolveDisableReason(beforeUpdate.getStatus(), beforeUpdate.getDisableReason(), newStatus));
         boolean result = this.updateById(updateUser);
 
         // 角色变了：两种角色能分配的页面不同，旧设置不再有意义，恢复为新角色的全部页面
@@ -747,7 +748,8 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
             return LoginValidationResult.error(ERROR_LOGIN_CREDENTIALS);
         }
         
-        if (user.getStatus() == USER_STATUS_DISABLED) {
+        // 因到期停用的账号允许登录，否则无法自助续费；规则相关操作仍由状态和额度校验拦截
+        if (user.getStatus() == USER_STATUS_DISABLED && !User.disabledByExpiry(user)) {
             return LoginValidationResult.error(ERROR_ACCOUNT_DISABLED);
         }
         
@@ -803,6 +805,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         
         // 设置默认属性
         user.setStatus(userDto.getStatus() != null ? userDto.getStatus() : USER_STATUS_ACTIVE);
+        user.setDisableReason(User.resolveDisableReason(USER_STATUS_ACTIVE, User.DISABLE_REASON_NONE, user.getStatus()));
         user.setDemoMode(Boolean.TRUE.equals(userDto.getAdmin()) && isDemoRequested(userDto.getDemoMode()) ? DEMO_MODE_ON : DEMO_MODE_OFF);
         user.setRoleId(Boolean.TRUE.equals(userDto.getAdmin()) ? ADMIN_ROLE_ID : USER_ROLE_ID);
         

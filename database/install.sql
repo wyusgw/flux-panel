@@ -324,6 +324,7 @@ CREATE TABLE `user` (
   `created_time` bigint(20) NOT NULL,
   `updated_time` bigint(20) DEFAULT NULL,
   `status` int(10) NOT NULL,
+  `disable_reason` int(10) NOT NULL DEFAULT '0' COMMENT '停用原因：0-未停用，1-管理员禁用，2-账号到期',
   `group_id` bigint(20) DEFAULT NULL,
   `package_id` bigint(20) DEFAULT NULL,
   `wallet_balance` decimal(10,2) NOT NULL DEFAULT '0.00',

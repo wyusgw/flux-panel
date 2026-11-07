@@ -920,7 +920,7 @@ export default function UserPage() {
               {user.name || user.user}
               {user.demoMode === 1 && <span className="ml-1.5 text-xs font-normal text-warning-600">演示</span>}
               {user.roleId === 0 && user.demoMode !== 1 && <span className="ml-1.5 text-xs font-normal text-primary">管理员</span>}
-              {user.status === 0 && <span className="ml-1.5 text-xs font-normal text-danger">封禁</span>}
+              {user.status === 0 && <span className="ml-1.5 text-xs font-normal text-danger">{user.disableReason === 2 ? '到期停用' : '封禁'}</span>}
             </p>
             {user.name && <p className="mt-0.5 text-xs text-default-500">@{user.user}</p>}
           </div>

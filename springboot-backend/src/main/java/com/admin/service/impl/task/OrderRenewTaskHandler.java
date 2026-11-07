@@ -78,6 +78,10 @@ public class OrderRenewTaskHandler implements TaskHandler {
         if (user == null) {
             return R.ok("用户已不存在，无需续费");
         }
+        // 登记后才被管理员禁用：直接结束，不扣款，也不发续费失败通知
+        if (User.disabledByAdmin(user)) {
+            return R.ok("账号已被禁用，不再续费");
+        }
         // 到期时间变了：这个周期已经续费过（或被管理员手动处理），不再重复扣款
         if (user.getExpTime() == null || !expTime.equals(user.getExpTime())) {
             return R.ok("该到期周期已处理");

@@ -39,6 +39,7 @@ import java.util.concurrent.ThreadLocalRandom;
 public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements OrderService {
 
     private static final String ERROR_USER_NOT_FOUND = "用户不存在";
+    private static final String ERROR_ACCOUNT_DISABLED = "账号已被禁用，无法购买套餐";
     private static final String ERROR_PACKAGE_NOT_FOUND = "套餐不存在或已下架";
     private static final String ERROR_INSUFFICIENT_BALANCE = "钱包余额不足，请先充值";
     private static final String ORDER_TYPE_PACKAGE = "package";
@@ -155,6 +156,9 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
      * 提交前的业务预校验，规则与 purchasePackageForUser 一致（不消耗兑换码次数、不扣款）；通过返回 null
      */
     private R precheckPurchase(User user, Long packageId, String redeemCode) {
+        if (User.disabledByAdmin(user)) {
+            return R.err(ERROR_ACCOUNT_DISABLED);
+        }
         PackagePlan packagePlan = packagePlanService.getById(packageId);
         if (packagePlan == null) {
             return R.err(ERROR_PACKAGE_NOT_FOUND);
@@ -182,6 +186,11 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
     @Override
     @Transactional(rollbackFor = Exception.class)
     public R purchasePackageForUser(User user, Long packageId, String redeemCode) {
+        // 管理员禁用的账号付款后也恢复不了，不能扣款；手动购买和自动续费都经过这里
+        if (User.disabledByAdmin(user)) {
+            return R.err(ERROR_ACCOUNT_DISABLED);
+        }
+
         PackagePlan packagePlan = packagePlanService.getById(packageId);
         if (packagePlan == null) {
             return R.err(ERROR_PACKAGE_NOT_FOUND);

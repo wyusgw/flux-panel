@@ -59,6 +59,11 @@ public class User extends BaseEntity {
                 && Integer.valueOf(DISABLE_REASON_EXPIRED).equals(user.getDisableReason());
     }
 
+    /** 是否被管理员禁用；没有原因的旧数据也按此处理，避免误解封 */
+    public static boolean disabledByAdmin(User user) {
+        return user != null && Integer.valueOf(0).equals(user.getStatus()) && !disabledByExpiry(user);
+    }
+
     /** 管理员保存用户时的停用原因：解除停用时清空，新禁用记为管理员禁用，状态没变则保留原因 */
     public static int resolveDisableReason(Integer oldStatus, Integer oldReason, int newStatus) {
         if (newStatus != 0) {

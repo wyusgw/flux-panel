@@ -1123,6 +1123,8 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
     private Forward updateForwardEntity(ForwardUpdateDto forwardUpdateDto, Forward existForward, Tunnel tunnel) {
         Forward forward = new Forward();
         BeanUtils.copyProperties(forwardUpdateDto, forward);
+        // 归属不能由请求决定：否则普通用户改掉 userId 就能把规则转给别人，流量也计到对方账上
+        forward.setUserId(existForward.getUserId());
 
         // 处理端口分配逻辑
         boolean tunnelChanged = isTunnelSelectionChanged(existForward.getTunnelId(), existForward.getInDeviceGroupId(), existForward.getOutDeviceGroupId(),

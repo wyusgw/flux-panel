@@ -33,7 +33,7 @@ import { useMenuPermissions } from "@/utils/menu-permissions";
 import { showErrorDialog } from "@/components/error-dialog";
 import { HEADER_COLUMN_CLASS, HEADER_TABLE_CLASS_NAMES, TableHeaderFilter } from "@/components/table-header-filter";
 import { nextSort, SortCarets } from "@/components/table-sort";
-import { DatePicker } from "@heroui/date-picker";
+import { DateTimePicker } from "@/components/datetime-picker";
 import { Spinner } from "@heroui/spinner";
 
 import toast from 'react-hot-toast';
@@ -72,7 +72,6 @@ import { SearchIcon, EditIcon, DeleteIcon } from '@/components/icons';
 import { EmptyState } from '@/components/empty-state';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { FieldLabel, UnitField } from '@/components/form-field';
-import { parseDate, today, getLocalTimeZone } from "@internationalized/date";
 import RefreshButton from "@/components/refresh-button";
 import { DayOfMonthPicker } from "@/components/day-of-month-picker";
 
@@ -1294,20 +1293,10 @@ export default function UserPage() {
 
               <div>
                 <FieldLabel tip="留空表示永不过期">过期时间</FieldLabel>
-                <DatePicker
-                  aria-label="过期时间" variant="bordered"
-                  value={userForm.expTime ? parseDate(userForm.expTime.toISOString().split('T')[0]) as any : null}
-                  placeholderValue={today(getLocalTimeZone())}
-                  onChange={(date) => {
-                    if (date) {
-                      const jsDate = new Date(date.year, date.month - 1, date.day, 23, 59, 59);
-                      setUserForm(prev => ({ ...prev, expTime: jsDate }));
-                    } else {
-                      setUserForm(prev => ({ ...prev, expTime: null }));
-                    }
-                  }}
-                  showMonthAndYearPickers
-                  className="cursor-pointer"
+                <DateTimePicker
+                  ariaLabel="过期时间"
+                  value={userForm.expTime}
+                  onChange={(date) => setUserForm(prev => ({ ...prev, expTime: date }))}
                 />
               </div>
 

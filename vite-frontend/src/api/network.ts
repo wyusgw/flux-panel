@@ -67,10 +67,35 @@ function handleTokenExpired() {
 
 // 检查响应是否为token失效
 function isTokenExpired(response: ApiResponse) {
+  // 没带 Token 时后端返回 403 + "Not logged in"
+  if (response && response.code === 403 && response.msg === 'Not logged in') {
+    return true;
+  }
   return response && response.code === 401 && 
          (response.msg === '未登录或token已过期' || 
           response.msg === '无效的token或token已过期' ||
           response.msg === '无法获取用户权限信息');
+}
+
+
+// 后端出错时 HTTP 状态码不再是 200（400、401、403、500 等），但响应体仍是 { code, msg, data }，
+// axios 会把它当异常抛出，这里取回响应体，页面照旧读 code / msg。没有响应体（断网、超时、网关错误页）才用通用提示
+function responseFromError<T>(error: any, label: string): ApiResponse<T> | null {
+  console.error(`${label}请求错误:`, error);
+  const body = error?.response?.data;
+  if (body && typeof body === 'object' && typeof body.code === 'number') {
+    if (isTokenExpired(body)) {
+      handleTokenExpired();
+      return null;
+    }
+    return body as ApiResponse<T>;
+  }
+  // 旧版后端的 401 没有响应体也按登录失效处理
+  if (error?.response?.status === 401) {
+    handleTokenExpired();
+    return null;
+  }
+  return { code: -1, msg: error?.message || '网络请求失败', data: null as T };
 }
 
 const Network = {
@@ -98,17 +123,12 @@ const Network = {
           }
           resolve(response.data);
         })
-                 .catch(function(error: any) {
-           console.error('GET请求错误:', error);
-           
-           // 检查是否是401错误（token失效）
-           if (error.response && error.response.status === 401) {
-             handleTokenExpired();
-             return;
-           }
-           
-           resolve({"code": -1, "msg": error.message || "网络请求失败", "data": null as T});
-         });
+        .catch(function(error: any) {
+          const result = responseFromError<T>(error, 'GET');
+          if (result) {
+            resolve(result);
+          }
+        });
     });
   },
 
@@ -136,17 +156,12 @@ const Network = {
           }
           resolve(response.data);
         })
-                 .catch(function(error: any) {
-           console.error('POST请求错误:', error);
-           
-           // 检查是否是401错误（token失效）
-           if (error.response && error.response.status === 401) {
-             handleTokenExpired();
-             return;
-           }
-           
-           resolve({"code": -1, "msg": error.message || "网络请求失败", "data": null as T});
-         });
+        .catch(function(error: any) {
+          const result = responseFromError<T>(error, 'POST');
+          if (result) {
+            resolve(result);
+          }
+        });
     });
   }
 };

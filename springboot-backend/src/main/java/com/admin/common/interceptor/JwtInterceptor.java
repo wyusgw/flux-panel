@@ -20,7 +20,7 @@ public class JwtInterceptor implements HandlerInterceptor {
         String token = request.getHeader("Authorization");
 
         if (!StringUtils.hasText(token)) {
-            throw new UnauthorizedException("未登录或token已过期");
+            throw new UnauthorizedException(LoginRequiredFilter.NOT_LOGGED_IN_CODE, LoginRequiredFilter.NOT_LOGGED_IN_MSG);
         }
 
 

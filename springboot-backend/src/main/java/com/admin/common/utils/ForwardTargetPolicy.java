@@ -51,7 +51,8 @@ public final class ForwardTargetPolicy {
     /** 检查单个主机名或 IP，不允许时返回原因，允许时返回 null */
     public static String checkHost(String rawHost, boolean allowPrivate, Collection<String> nodeAddrs, Resolver resolver) {
         String host = normalize(rawHost);
-        if (host.isEmpty() || host.startsWith("-")) {
+        // % 是 IPv6 区域标识：面板上不存在这张网卡时解析失败，节点却能照常连接，不拒绝就绕过了后面的判断
+        if (host.isEmpty() || host.startsWith("-") || host.contains("%")) {
             return BLOCKED_FORMAT + rawHost;
         }
         if (host.equals("localhost") || host.endsWith(".localhost")) {
@@ -63,6 +64,10 @@ public final class ForwardTargetPolicy {
         }
 
         InetAddress[] addresses = resolve(host, resolver);
+        // 解析不了的域名可以放行，但 IP 字面量解析不了说明写法有问题，判断不了指向哪里
+        if (addresses.length == 0 && host.contains(":")) {
+            return BLOCKED_FORMAT + rawHost;
+        }
         Set<String> nodeIps = nodeIps(nodeAddrs, resolver);
         if (nodeHosts(nodeAddrs).contains(host)) {
             return BLOCKED_NODE + rawHost;

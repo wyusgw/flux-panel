@@ -239,6 +239,11 @@ public class FlowController extends BaseController {
         Tunnel reportTunnel = forward != null ? tunnelResolver.resolveTunnel(forward) : null;
         if (!isTrustedFlowReport(forward, reportTunnel, userId, reportingNodeId, flowDataList)) {
             log.warn("节点 {} 的流量上报未通过校验，已忽略: {}", reportingNodeId, flowDataList);
+            // 规则已不在这个节点上（如节点离线时更换了隧道，旧服务没删掉），这些流量不计费，所以要让它停下，
+            // 否则就是一条免费的转发。命令只发给上报节点自己，伪造上报也影响不到别的节点
+            if (isStrayReport(forward, reportTunnel, userId, reportingNodeId)) {
+                pauseStrayService(reportingNodeId, buildServiceName(forwardId, userId, serviceIds[2]));
+            }
             return SUCCESS_RESPONSE;
         }
 
@@ -288,7 +293,8 @@ public class FlowController extends BaseController {
 
     /**
      * 节点密钥只能证明上报来自某个节点，而普通用户也能拿到自建节点的密钥，所以还要确认：
-     * 规则属于服务名里的用户、上报节点确实承载这条规则、流量值不为负（负数会减少已用流量）。
+     * 规则属于服务名里的用户、上报节点是规则的入口节点、流量值不为负（负数会减少已用流量）。
+     * 出口节点的服务不上报流量（节点程序跳过了 _tls 服务的统计），不能接受它的上报，否则共享节点的所有者能多报别人的流量。
      */
     static boolean isTrustedFlowReport(Forward forward, Tunnel tunnel, String userId, Long reportingNodeId, FlowDto flow) {
         if (forward == null || tunnel == null || reportingNodeId == null) {
@@ -300,7 +306,21 @@ public class FlowController extends BaseController {
         if (!Objects.equals(String.valueOf(forward.getUserId()), userId)) {
             return false;
         }
-        return reportingNodeId.equals(tunnel.getInNodeId()) || reportingNodeId.equals(tunnel.getOutNodeId());
+        return reportingNodeId.equals(tunnel.getInNodeId());
+    }
+
+    /** 服务名对得上这条规则，但上报节点不是它的入口节点 */
+    static boolean isStrayReport(Forward forward, Tunnel tunnel, String userId, Long reportingNodeId) {
+        return forward != null && tunnel != null && reportingNodeId != null
+                && Objects.equals(String.valueOf(forward.getUserId()), userId)
+                && !reportingNodeId.equals(tunnel.getInNodeId());
+    }
+
+    void pauseStrayService(Long nodeId, String serviceName) {
+        GostDto result = GostUtil.PauseService(nodeId, serviceName);
+        if (!Objects.equals(result.getMsg(), "OK")) {
+            log.warn("暂停节点 {} 上残留的服务 {} 失败: {}", nodeId, serviceName, result.getMsg());
+        }
     }
 
     /** 只有规则所有者确实是管理员才能跳过限额，查不到用户时不算 */

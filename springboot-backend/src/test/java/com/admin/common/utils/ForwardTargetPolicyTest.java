@@ -117,6 +117,30 @@ class ForwardTargetPolicyTest {
     }
 
     @Test
+    void ipv6ZoneCannotHideALoopbackAddress() {
+        for (String addr : new String[]{"[::1%lo]:22", "[::1%no-such-nic]:22", "::1%eth5", "[fe80::1%eth0]:22", "127.0.0.1%lo:22", "[::1%25lo]:22"}) {
+            assertNotNull(check(addr, true), addr);
+        }
+    }
+
+    @Test
+    void unparsableIpv6LiteralIsRejectedButUnknownDomainIsNot() {
+        ForwardTargetPolicy.Resolver failing = host -> {
+            throw new UnknownHostException(host);
+        };
+        assertNotNull(ForwardTargetPolicy.checkRemoteAddrs("[1:2:3:bad::]:22", true, null, failing));
+        assertNull(ForwardTargetPolicy.checkRemoteAddrs("unknown.example:22", true, null, failing));
+    }
+
+    /** 用真实的解析器确认：Java 解析不了的写法也不会被当成“未知域名”放行 */
+    @Test
+    void realResolverCannotBeBypassedWithZones() {
+        for (String addr : new String[]{"[::1%no-such-nic]:22", "[fe80::1%no-such-nic]:22"}) {
+            assertNotNull(ForwardTargetPolicy.checkRemoteAddrs(addr, true, null, InetAddress::getAllByName), addr);
+        }
+    }
+
+    @Test
     void emptyInputIsNotAnError() {
         assertNull(check(null, false));
         assertNull(check(" ", false));

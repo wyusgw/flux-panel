@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test;
 import java.util.Arrays;
 import java.util.Collections;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -107,6 +108,34 @@ class FlowPauseTest {
         assertFalse(FlowController.isAdminOwner(normal));
         assertFalse(FlowController.isAdminOwner(new com.admin.entity.User()));
         assertFalse(FlowController.isAdminOwner(null));
+    }
+
+    private String upload(String name, long reportingNode) {
+        com.admin.common.dto.FlowDto flow = new com.admin.common.dto.FlowDto();
+        flow.setN(name);
+        flow.setU(10L);
+        flow.setD(20L);
+        return org.springframework.test.util.ReflectionTestUtils.invokeMethod(controller, "processFlowData", flow, reportingNode);
+    }
+
+    @Test
+    void reportFromANodeNoLongerCarryingTheRuleIsNotBilledAndThatServiceIsPaused() {
+        doNothing().when(controller).pauseStrayService(any(), anyString());
+        when(forwardService.getById("7")).thenReturn(forward(7L, 1));
+
+        assertEquals("ok", upload("7_5_-1_tcp", 99L));
+
+        verify(controller).pauseStrayService(99L, "7_5_-1");
+        verify(forwardService, never()).update(any(), any());
+    }
+
+    @Test
+    void reportWithSomeoneElsesUserIdPausesNothing() {
+        when(forwardService.getById("7")).thenReturn(forward(7L, 1));
+
+        assertEquals("ok", upload("7_6_-1_tcp", 99L));
+
+        verify(controller, never()).pauseStrayService(any(), anyString());
     }
 
     @Test

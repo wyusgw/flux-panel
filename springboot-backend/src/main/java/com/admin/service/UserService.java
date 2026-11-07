@@ -17,6 +17,9 @@ public interface UserService extends IService<User> {
 
     R login(LoginDto loginDto);
 
+    /** 密码尝试计数用的账号标识：MySQL 比较用户名时忽略大小写、重音和末尾空格，同一账号有多种写法 */
+    String loginAttemptKey(String username);
+
     R register(RegisterDto registerDto);
 
     R createUser(UserDto userDto);

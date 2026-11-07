@@ -47,22 +47,23 @@ public class OpenApiController extends BaseController {
 
         // 这个接口没有验证码，和登录共用尝试次数限制，否则可以绕过验证码猜密码
         String clientIp = LoginAttemptLimiter.clientIp(HttpContextUtils.getHttpServletRequest());
-        if (loginAttemptLimiter.isBlocked(user, clientIp)) {
+        String attemptKey = userService.loginAttemptKey(user);
+        if (loginAttemptLimiter.isBlocked(attemptKey, clientIp)) {
             return R.err(429, LoginAttemptLimiter.TOO_MANY_ATTEMPTS);
         }
 
         User userInfo = userService.getOne(new QueryWrapper<User>().eq("user", user));
         if (userInfo == null) {
-            loginAttemptLimiter.recordFailure(user, clientIp);
+            loginAttemptLimiter.recordFailure(attemptKey, clientIp);
             return R.err("鉴权失败");
         }
 
         String pwdMd5 = Md5Util.md5(pwd);
         if (!Objects.equals(pwdMd5, userInfo.getPwd())) {
-            loginAttemptLimiter.recordFailure(user, clientIp);
+            loginAttemptLimiter.recordFailure(attemptKey, clientIp);
             return R.err("鉴权失败");
         }
-        loginAttemptLimiter.recordSuccess(user, clientIp);
+        loginAttemptLimiter.recordSuccess(attemptKey, clientIp);
 
         final long GIGA = 1024L * 1024L * 1024L;
         String headerValue;

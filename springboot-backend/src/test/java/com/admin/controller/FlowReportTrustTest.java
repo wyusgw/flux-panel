@@ -34,9 +34,9 @@ class FlowReportTrustTest {
     }
 
     @Test
-    void acceptsReportsFromEitherNodeOfTheRule() {
+    void acceptsReportsFromTheEntryNode() {
         assertTrue(FlowController.isTrustedFlowReport(forward(), tunnel(OUT_NODE), "5", IN_NODE, flow(1L, 2L)));
-        assertTrue(FlowController.isTrustedFlowReport(forward(), tunnel(OUT_NODE), "5", OUT_NODE, flow(0L, 0L)));
+        assertTrue(FlowController.isTrustedFlowReport(forward(), tunnel(OUT_NODE), "5", IN_NODE, flow(0L, 0L)));
         assertTrue(FlowController.isTrustedFlowReport(forward(), tunnel(null), "5", IN_NODE, flow(1L, 2L)));
     }
 
@@ -56,6 +56,21 @@ class FlowReportTrustTest {
     void rejectsReportFromNodeThatDoesNotCarryTheRule() {
         assertFalse(FlowController.isTrustedFlowReport(forward(), tunnel(OUT_NODE), "5", 99L, flow(1L, 2L)));
         assertFalse(FlowController.isTrustedFlowReport(forward(), tunnel(null), "5", 99L, flow(1L, 2L)));
+    }
+
+    @Test
+    void rejectsReportFromExitNode() {
+        // 出口节点的 _tls 服务不上报流量，收到就是伪造的
+        assertFalse(FlowController.isTrustedFlowReport(forward(), tunnel(OUT_NODE), "5", OUT_NODE, flow(1L, 2L)));
+    }
+
+    @Test
+    void strayReportIsOnlyAServiceOfThisRuleOnAnotherNode() {
+        assertTrue(FlowController.isStrayReport(forward(), tunnel(OUT_NODE), "5", 99L));
+        assertFalse(FlowController.isStrayReport(forward(), tunnel(OUT_NODE), "5", IN_NODE));
+        assertFalse(FlowController.isStrayReport(forward(), tunnel(OUT_NODE), "6", 99L));
+        assertFalse(FlowController.isStrayReport(null, tunnel(OUT_NODE), "5", 99L));
+        assertFalse(FlowController.isStrayReport(forward(), null, "5", 99L));
     }
 
     @Test

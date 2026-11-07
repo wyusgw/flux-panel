@@ -208,17 +208,18 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
 
         // 2. 验证用户凭据：先看尝试次数，超限时不再比对密码，避免继续猜测
         String clientIp = LoginAttemptLimiter.clientIp(HttpContextUtils.getHttpServletRequest());
-        if (loginAttemptLimiter.isBlocked(loginDto.getUsername(), clientIp)) {
+        String attemptKey = loginAttemptKey(loginDto.getUsername());
+        if (loginAttemptLimiter.isBlocked(attemptKey, clientIp)) {
             return R.err(429, LoginAttemptLimiter.TOO_MANY_ATTEMPTS);
         }
         LoginValidationResult validationResult = validateUserCredentials(loginDto);
         if (validationResult.isHasError()) {
             if (ERROR_LOGIN_CREDENTIALS.equals(validationResult.getErrorMessage())) {
-                loginAttemptLimiter.recordFailure(loginDto.getUsername(), clientIp);
+                loginAttemptLimiter.recordFailure(attemptKey, clientIp);
             }
             return R.err(validationResult.getErrorMessage());
         }
-        loginAttemptLimiter.recordSuccess(loginDto.getUsername(), clientIp);
+        loginAttemptLimiter.recordSuccess(attemptKey, clientIp);
 
         // 3. 生成令牌并返回用户信息
         User user = validationResult.getUser();
@@ -778,6 +779,16 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         }
         
         return LoginValidationResult.success(user);
+    }
+
+    @Override
+    public String loginAttemptKey(String username) {
+        // 账号存在时用 ID，不管用什么写法都算同一个账号；用 LIMIT 1 是因为用户名没有唯一索引，重复记录不能让这里报错
+        User user = this.getOne(new QueryWrapper<User>().eq("user", username).last("LIMIT 1"));
+        if (user != null) {
+            return "id:" + user.getId();
+        }
+        return "name:" + (username == null ? "" : username.trim().toLowerCase(java.util.Locale.ROOT));
     }
 
     /**

@@ -60,6 +60,8 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
     private static final int TUNNEL_TYPE_PORT_FORWARD = 1;
     private static final int TUNNEL_TYPE_TUNNEL_FORWARD = 2;
     private static final int FORWARD_STATUS_ACTIVE = 1;
+    /** hide_in_probe：对所有用户隐藏 */
+    private static final int HIDE_FROM_ALL_USERS = 2;
     private static final int FORWARD_STATUS_PAUSED = 0;
     private static final int FORWARD_STATUS_ERROR = -1;
     private static final int TUNNEL_STATUS_ACTIVE = 1;
@@ -952,6 +954,11 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             }
         }
 
+        String typeError = deviceGroupTypeError(inGroup, outGroup);
+        if (typeError != null) {
+            return R.err(typeError);
+        }
+
         if (currentUser.getRoleId() != ADMIN_ROLE_ID) {
             R visibilityCheck = checkDeviceGroupVisibility(inGroup, currentUser.getUserId());
             if (visibilityCheck.getCode() != 0) {
@@ -969,15 +976,34 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
     }
 
     /**
+     * 设备组类型决定了节点的用途：仅监控的节点不转发流量（可能没有地址），入口和出口也不能互换。
+     * 前端只列出匹配的设备组，这里防止绕过前端。没有类型的旧数据按入口处理。
+     */
+    static String deviceGroupTypeError(DeviceGroup inGroup, DeviceGroup outGroup) {
+        String inDirection = inGroup.getDirection() == null ? "inbound" : inGroup.getDirection();
+        if (!"inbound".equals(inDirection) && !"both".equals(inDirection)) {
+            return "设备组「" + inGroup.getName() + "」不能作为入口使用";
+        }
+        if (outGroup != null && !"outbound".equals(outGroup.getDirection()) && !"both".equals(outGroup.getDirection())) {
+            return "设备组「" + outGroup.getName() + "」不能作为出口使用";
+        }
+        return null;
+    }
+
+    /**
      * 校验普通用户是否有权限使用该设备组：
      * 单端隧道用户自建设备组（ownerUserId 非空）——拥有者本人始终可用，其余用户仅当该设备组标记为公开共享才可用；
      * 管理员建立的设备组——未绑定用户组则所有人可用，否则需与自身用户组一致
      */
     private R checkDeviceGroupVisibility(DeviceGroup group, Integer userId) {
+        if (group.getOwnerUserId() != null && group.getOwnerUserId().equals(userId.longValue())) {
+            return R.ok();
+        }
+        // 对所有用户隐藏的设备组不会出现在普通用户的列表里，知道 ID 也不能用
+        if (Integer.valueOf(HIDE_FROM_ALL_USERS).equals(group.getHideInProbe())) {
+            return R.err("无权限使用设备组：" + group.getName());
+        }
         if (group.getOwnerUserId() != null) {
-            if (group.getOwnerUserId().equals(userId.longValue())) {
-                return R.ok();
-            }
             if (group.getShared() != null && group.getShared() == 1) {
                 return R.ok();
             }

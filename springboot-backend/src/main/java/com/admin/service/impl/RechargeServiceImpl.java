@@ -65,6 +65,7 @@ public class RechargeServiceImpl extends ServiceImpl<OrderMapper, Order> impleme
         PAY_TYPE_LABELS.put("alipay", "支付宝");
         PAY_TYPE_LABELS.put("wxpay", "微信支付");
         PAY_TYPE_LABELS.put("qqpay", "QQ钱包");
+        PAY_TYPE_LABELS.put("usdt", "USDT");
     }
 
     @Autowired

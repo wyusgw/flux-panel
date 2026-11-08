@@ -15,6 +15,6 @@ public class RechargeDto {
     @NotBlank(message = "请选择支付渠道")
     private String channelId;
 
-    /** 付款方式（alipay-支付宝，wxpay-微信支付，qqpay-QQ钱包），留空使用渠道允许的第一种 */
+    /** 付款方式（alipay-支付宝，wxpay-微信支付，qqpay-QQ钱包，usdt-USDT），留空使用渠道允许的第一种，渠道未设置时不传 */
     private String payType;
 }

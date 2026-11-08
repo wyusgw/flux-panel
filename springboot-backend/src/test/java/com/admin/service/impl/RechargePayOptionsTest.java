@@ -17,8 +17,8 @@ class RechargePayOptionsTest {
     @Test
     void payTypesDefaultToNoneAndDropUnknown() {
         assertEquals(Collections.emptyList(), RechargeServiceImpl.allowedPayTypes(new JSONObject()));
-        JSONObject channel = JSONObject.parseObject("{\"payTypes\":[\"wxpay\",\"bank\",\"alipay\",\"wxpay\"]}");
-        assertEquals(Arrays.asList("wxpay", "alipay"), RechargeServiceImpl.allowedPayTypes(channel));
+        JSONObject channel = JSONObject.parseObject("{\"payTypes\":[\"wxpay\",\"bank\",\"alipay\",\"wxpay\",\"usdt\"]}");
+        assertEquals(Arrays.asList("wxpay", "alipay", "usdt"), RechargeServiceImpl.allowedPayTypes(channel));
         assertEquals(Collections.emptyList(), RechargeServiceImpl.allowedPayTypes(JSONObject.parseObject("{\"payTypes\":[]}")));
     }
 

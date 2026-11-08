@@ -96,7 +96,8 @@ const CHANNEL_FIELDS: Record<string, ChannelField[]> = {
 const EPAY_PAY_TYPES = [
   { value: 'alipay', label: '支付宝' },
   { value: 'wxpay', label: '微信支付' },
-  { value: 'qqpay', label: 'QQ钱包' }
+  { value: 'qqpay', label: 'QQ钱包' },
+  { value: 'usdt', label: 'USDT' }
 ];
 
 const PAYMENT_TYPES: { label: string; value: PaymentChannel['type'] }[] = [

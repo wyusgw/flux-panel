@@ -36,7 +36,8 @@ const SUPPORTED_CHANNEL_TYPES: string[] = ['epay', 'epusdt', 'tokenpay', 'crypto
 const PAY_TYPE_NAMES: Record<string, string> = {
   alipay: '支付宝',
   wxpay: '微信支付',
-  qqpay: 'QQ钱包'
+  qqpay: 'QQ钱包',
+  usdt: 'USDT'
 };
 
 /** 渠道可选的付款方式；EPay 未设置时只显示一个按钮，不传 type，由易支付收银台选择 */

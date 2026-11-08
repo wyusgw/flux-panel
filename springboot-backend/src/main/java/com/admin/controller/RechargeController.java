@@ -43,12 +43,21 @@ public class RechargeController {
      */
     @PostMapping("/notify/epay")
     public String notifyEpayPost(HttpServletRequest request) {
-        return rechargeService.handleEpayNotify(paramsFromRequest(request));
+        return handleNotify(request);
     }
 
     @GetMapping("/notify/epay")
     public String notifyEpayGet(HttpServletRequest request) {
-        return rechargeService.handleEpayNotify(paramsFromRequest(request));
+        return handleNotify(request);
+    }
+
+    /** 处理异常时也只回 fail 纯文本，让网关稍后重试 */
+    private String handleNotify(HttpServletRequest request) {
+        try {
+            return rechargeService.handleEpayNotify(paramsFromRequest(request));
+        } catch (Exception e) {
+            return "fail";
+        }
     }
 
     private Map<String, String> paramsFromRequest(HttpServletRequest request) {

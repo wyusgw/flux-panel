@@ -35,8 +35,12 @@ public class EpayUtil {
 
         StringBuilder sb = new StringBuilder();
         for (Map.Entry<String, String> entry : sorted.entrySet()) {
-            sb.append(entry.getKey()).append('=').append(entry.getValue()).append('&');
+            if (sb.length() > 0) {
+                sb.append('&');
+            }
+            sb.append(entry.getKey()).append('=').append(entry.getValue());
         }
+        // 易支付规范：md5(a=1&b=2 + 商户密钥)，密钥前不能带 &，否则网关提示签名错误
         sb.append(merchantKey);
 
         return DigestUtil.md5Hex(sb.toString());

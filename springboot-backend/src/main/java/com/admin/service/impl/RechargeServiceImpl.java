@@ -183,6 +183,16 @@ public class RechargeServiceImpl extends ServiceImpl<OrderMapper, Order> impleme
             return "fail";
         }
 
+        // 回调的商户号与金额必须和下单时一致，避免同一密钥下其他订单或改价的通知被当成本订单入账
+        String pid = config.getString("pid");
+        if (StringUtils.isNotBlank(params.get("pid")) && !params.get("pid").equals(pid)) {
+            return "fail";
+        }
+        BigDecimal paidMoney = parseAmount(params.get("money"));
+        if (paidMoney == null || order.getAmount() == null || paidMoney.compareTo(order.getAmount()) != 0) {
+            return "fail";
+        }
+
         long now = System.currentTimeMillis();
         // 原子条件更新：仅当仍为待支付状态时才转为已支付，避免并发重复通知重复加值
         boolean updated = this.update(new UpdateWrapper<Order>()
@@ -199,7 +209,8 @@ public class RechargeServiceImpl extends ServiceImpl<OrderMapper, Order> impleme
         }
 
         if (!creditWallet(order, now)) {
-            return "fail";
+            // 抛出异常让订单状态一起回滚，网关重试时还能重新处理，不会出现已支付却没加值
+            throw new IllegalStateException("充值加值失败，订单 " + outTradeNo);
         }
 
         return "success";

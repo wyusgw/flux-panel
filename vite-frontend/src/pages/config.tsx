@@ -37,7 +37,7 @@ interface ConfigItem {
 interface PaymentChannel {
   id: string;
   name: string;
-  type: 'epay' | 'epusdt' | 'tokenpay' | 'cyber' | 'cryptomus';
+  type: 'epay' | 'epusdt' | 'tokenpay' | 'cryptomus';
   enabled: boolean;
   payTypes?: string[];
   config?: Record<string, string>;

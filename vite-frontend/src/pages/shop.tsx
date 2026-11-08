@@ -24,7 +24,7 @@ interface PackagePlanItem {
 interface PaymentChannel {
   id: string;
   name: string;
-  type: 'epay' | 'epusdt' | 'tokenpay' | 'cyber' | 'cryptomus';
+  type: 'epay' | 'epusdt' | 'tokenpay' | 'cryptomus';
   enabled: boolean;
   payTypes?: string[];
   feeRate?: string | number;
@@ -57,7 +57,6 @@ const PAYMENT_TYPE_LABELS: Record<PaymentChannel['type'], string> = {
   epay: 'EPay',
   epusdt: 'EPUSDT',
   tokenpay: 'TokenPay',
-  cyber: 'Cyber',
   cryptomus: 'Cryptomus'
 };
 
@@ -148,7 +147,7 @@ export default function ShopPage() {
       setMinRechargeAmount(Number(configs.payment_min_amount) || 0);
       try {
         const channels = JSON.parse(configs.payment_config_json || '[]');
-        // Cyber 暂未接入，即使后台旧配置里启用了也不显示
+        // 只显示已接入的类型，后台旧配置里不支持的类型即使启用了也不显示
         setPaymentChannels(Array.isArray(channels)
           ? channels.filter((channel: PaymentChannel) => channel.enabled && SUPPORTED_CHANNEL_TYPES.includes(channel.type))
           : []);

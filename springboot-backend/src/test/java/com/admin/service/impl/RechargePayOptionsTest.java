@@ -50,7 +50,7 @@ class RechargePayOptionsTest {
         assertFalse(RechargeServiceImpl.isConfigComplete("tokenpay", JSONObject.parseObject("{\"url\":\"u\",\"secret\":\"s\"}")));
         assertTrue(RechargeServiceImpl.isConfigComplete("tokenpay", JSONObject.parseObject("{\"url\":\"u\",\"secret\":\"s\",\"currency\":\"USDT_TRC20\"}")));
         assertTrue(RechargeServiceImpl.isConfigComplete("cryptomus", JSONObject.parseObject("{\"pid\":\"m\",\"secret\":\"s\"}")));
-        assertFalse(RechargeServiceImpl.isConfigComplete("cyber", JSONObject.parseObject("{\"url\":\"u\",\"pid\":\"1\",\"secret\":\"s\"}")));
+        assertFalse(RechargeServiceImpl.isConfigComplete("unknown", JSONObject.parseObject("{\"url\":\"u\",\"pid\":\"1\",\"secret\":\"s\"}")));
     }
 
     @Test

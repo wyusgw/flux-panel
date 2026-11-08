@@ -1754,3 +1754,33 @@ SET @sql = (
 PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
+
+-- orders 表新增 pay_amount：充值订单实付金额（含手续费）
+SET @sql = (
+    SELECT IF(
+        NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = DATABASE() AND table_name = 'orders' AND column_name = 'pay_amount'
+        ),
+        'ALTER TABLE `orders` ADD COLUMN `pay_amount` decimal(10,2) DEFAULT NULL COMMENT "充值订单实付金额（含手续费）";',
+        'SELECT "Column `pay_amount` already exists in `orders`";'
+    )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- orders 表新增 pay_type：充值订单付款方式
+SET @sql = (
+    SELECT IF(
+        NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = DATABASE() AND table_name = 'orders' AND column_name = 'pay_type'
+        ),
+        'ALTER TABLE `orders` ADD COLUMN `pay_type` varchar(20) DEFAULT NULL COMMENT "充值订单付款方式";',
+        'SELECT "Column `pay_type` already exists in `orders`";'
+    )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;

@@ -29,6 +29,15 @@ class ViteConfigPublicValueTest {
     }
 
     @Test
+    void paymentChannelsExposeFeeRateAndPayTypes() {
+        String raw = "[{\"id\":\"a\",\"type\":\"epay\",\"payTypes\":[\"wxpay\"],\"config\":{\"secret\":\"SECRET\",\"feeRate\":\"3\"}}]";
+        String result = ViteConfigServiceImpl.publicValue("payment_config_json", raw);
+        assertFalse(result.contains("SECRET"));
+        assertTrue(result.contains("\"feeRate\":\"3\""));
+        assertTrue(result.contains("\"payTypes\":[\"wxpay\"]"));
+    }
+
+    @Test
     void brokenPaymentConfigNeverLeaksOriginalText() {
         assertEquals("[]", ViteConfigServiceImpl.publicValue("payment_config_json", "SECRET not json"));
         assertEquals("[]", ViteConfigServiceImpl.publicValue("payment_config_json", null));

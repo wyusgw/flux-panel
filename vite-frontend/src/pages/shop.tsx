@@ -26,8 +26,30 @@ interface PaymentChannel {
   name: string;
   type: 'epay' | 'epusdt' | 'tokenpay' | 'cyber' | 'cryptomus';
   enabled: boolean;
-  config?: Record<string, string>;
+  payTypes?: string[];
+  feeRate?: string | number;
 }
+
+const PAY_TYPE_NAMES: Record<string, string> = {
+  alipay: '支付宝',
+  wxpay: '微信支付',
+  qqpay: 'QQ钱包'
+};
+
+/** 渠道可选的付款方式，旧配置没有 payTypes 时默认支付宝 */
+const payTypesOf = (channel: PaymentChannel) =>
+  channel.type !== 'epay' ? [''] : (channel.payTypes ?? ['alipay']).filter(type => PAY_TYPE_NAMES[type]);
+
+const feeRateOf = (channel: PaymentChannel) => {
+  const rate = Number(channel.feeRate ?? 0);
+  return Number.isFinite(rate) && rate > 0 ? rate : 0;
+};
+
+/** 与后端一致：手续费 = 金额 × 费率%，四舍五入到分 */
+const payAmountOf = (amount: number, rate: number) => {
+  const cents = Math.round(amount * 100);
+  return (cents + Math.round(cents * rate / 100)) / 100;
+};
 
 const PAYMENT_TYPE_LABELS: Record<PaymentChannel['type'], string> = {
   epay: 'EPay',
@@ -85,7 +107,7 @@ export default function ShopPage() {
   const [walletBalance, setWalletBalance] = useState(0);
 
   const [rechargeAmount, setRechargeAmount] = useState('100.00');
-  const [rechargeLoadingChannelId, setRechargeLoadingChannelId] = useState<string | null>(null);
+  const [rechargeLoadingKey, setRechargeLoadingKey] = useState<string | null>(null);
   const [minRechargeAmount, setMinRechargeAmount] = useState(0);
   const [paymentChannels, setPaymentChannels] = useState<PaymentChannel[]>([]);
 
@@ -136,7 +158,7 @@ export default function ShopPage() {
     }
   };
 
-  const handleRecharge = async (channel: PaymentChannel) => {
+  const handleRecharge = async (channel: PaymentChannel, payType: string) => {
     const amount = parseFloat(rechargeAmount);
     if (!amount || amount <= 0) {
       toast.error('请输入有效的充值金额');
@@ -147,9 +169,9 @@ export default function ShopPage() {
       return;
     }
 
-    setRechargeLoadingChannelId(channel.id);
+    setRechargeLoadingKey(`${channel.id}:${payType}`);
     try {
-      const res = await createRechargeOrder(amount, channel.id);
+      const res = await createRechargeOrder(amount, channel.id, payType || undefined);
       if (res.code === 0 && res.data?.payUrl) {
         window.location.href = res.data.payUrl;
       } else {
@@ -158,7 +180,7 @@ export default function ShopPage() {
     } catch (error) {
       toast.error('创建充值订单失败');
     } finally {
-      setRechargeLoadingChannelId(null);
+      setRechargeLoadingKey(null);
     }
   };
 
@@ -260,11 +282,22 @@ export default function ShopPage() {
 
           {paymentChannels.length > 0 ? (
             <div className="mt-6 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-              {paymentChannels.map((channel) => (
-                <Button key={channel.id} variant="bordered" isLoading={rechargeLoadingChannelId === channel.id} onPress={() => handleRecharge(channel)}>
-                  {channel.name || PAYMENT_TYPE_LABELS[channel.type]}
-                </Button>
-              ))}
+              {paymentChannels.flatMap((channel) => payTypesOf(channel).map((payType) => {
+                const channelName = channel.name || PAYMENT_TYPE_LABELS[channel.type];
+                const rate = feeRateOf(channel);
+                const amount = parseFloat(rechargeAmount);
+                const key = `${channel.id}:${payType}`;
+                return (
+                  <Button key={key} variant="bordered" className="h-auto min-h-10 py-1.5 flex-col gap-0" isLoading={rechargeLoadingKey === key} onPress={() => handleRecharge(channel, payType)}>
+                    <span>{payType ? `${channelName} · ${PAY_TYPE_NAMES[payType]}` : channelName}</span>
+                    {rate > 0 && (
+                      <span className="text-tiny text-default-500">
+                        手续费 {rate}%{amount > 0 ? `，实付 ${payAmountOf(amount, rate).toFixed(2)} 元` : ''}
+                      </span>
+                    )}
+                  </Button>
+                );
+              }))}
             </div>
           ) : (
             <div className="flex flex-col items-center justify-center gap-2 pt-4">

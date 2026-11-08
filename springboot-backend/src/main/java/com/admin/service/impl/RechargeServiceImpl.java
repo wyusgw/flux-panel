@@ -26,8 +26,11 @@ import org.springframework.transaction.annotation.Transactional;
 import java.io.UnsupportedEncodingException;
 import java.math.BigDecimal;
 import java.net.URLEncoder;
+import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -44,6 +47,15 @@ public class RechargeServiceImpl extends ServiceImpl<OrderMapper, Order> impleme
     private static final String ORDER_TYPE_RECHARGE = "recharge";
     private static final int ORDER_STATUS_PENDING = 0;
     private static final int ORDER_STATUS_PAID = 1;
+
+    /** 易支付通用的付款方式及名称，渠道未配置 payTypes 时只允许支付宝（兼容旧配置） */
+    static final Map<String, String> PAY_TYPE_LABELS = new LinkedHashMap<>();
+
+    static {
+        PAY_TYPE_LABELS.put("alipay", "支付宝");
+        PAY_TYPE_LABELS.put("wxpay", "微信支付");
+        PAY_TYPE_LABELS.put("qqpay", "QQ钱包");
+    }
 
     @Autowired
     @Lazy
@@ -104,16 +116,35 @@ public class RechargeServiceImpl extends ServiceImpl<OrderMapper, Order> impleme
             return R.err("该支付渠道尚未配置完整（URL / PID / 密钥）");
         }
 
+        List<String> allowedPayTypes = allowedPayTypes(channel);
+        if (allowedPayTypes.isEmpty()) {
+            return R.err("该支付渠道未配置可用的付款方式");
+        }
+        String payType = StringUtils.isBlank(dto.getPayType()) ? allowedPayTypes.get(0) : dto.getPayType();
+        if (!allowedPayTypes.contains(payType)) {
+            return R.err("该支付渠道不支持此付款方式");
+        }
+
+        BigDecimal feeRate = parseFeeRate(config.getString("feeRate"));
+        if (feeRate == null) {
+            return R.err("该支付渠道的费率配置有误");
+        }
+        BigDecimal amount = dto.getAmount().setScale(2, RoundingMode.HALF_UP);
+        if (amount.compareTo(BigDecimal.ZERO) <= 0) {
+            return R.err("充值金额必须大于0");
+        }
+        BigDecimal payAmount = payAmountOf(amount, feeRate);
+
         String host = StringUtils.isNotBlank(callbackHost) ? stripTrailingSlash(callbackHost) : baseUrl;
         String notifyUrl = host + "/api/v1/recharge/notify/epay";
         String returnUrl = host + "/shop";
 
         String orderNo = generateOrderNo();
-        String money = dto.getAmount().setScale(2, java.math.RoundingMode.HALF_UP).toPlainString();
+        String money = payAmount.toPlainString();
 
         Map<String, String> params = new LinkedHashMap<>();
         params.put("pid", pid);
-        params.put("type", "alipay");
+        params.put("type", payType);
         params.put("out_trade_no", orderNo);
         params.put("notify_url", notifyUrl);
         params.put("return_url", returnUrl);
@@ -132,9 +163,15 @@ public class RechargeServiceImpl extends ServiceImpl<OrderMapper, Order> impleme
         order.setUserName(user.getUser());
         order.setType(ORDER_TYPE_RECHARGE);
         order.setChannelId(dto.getChannelId());
-        order.setAmount(dto.getAmount());
+        order.setAmount(amount);
+        order.setPayAmount(payAmount);
+        order.setPayType(payType);
         order.setOrderStatus(ORDER_STATUS_PENDING);
-        order.setInfo("钱包充值（" + channel.getString("name") + "）");
+        String info = "钱包充值（" + channel.getString("name") + " · " + PAY_TYPE_LABELS.get(payType);
+        if (payAmount.compareTo(amount) != 0) {
+            info += "，实付 " + money + " 元";
+        }
+        order.setInfo(info + "）");
         long currentTime = System.currentTimeMillis();
         order.setCreatedTime(currentTime);
         order.setUpdatedTime(currentTime);
@@ -148,6 +185,7 @@ public class RechargeServiceImpl extends ServiceImpl<OrderMapper, Order> impleme
         JSONObject result = new JSONObject();
         result.put("orderNo", orderNo);
         result.put("payUrl", payUrl);
+        result.put("payAmount", payAmount);
         return R.ok(result);
     }
 
@@ -189,7 +227,9 @@ public class RechargeServiceImpl extends ServiceImpl<OrderMapper, Order> impleme
             return "fail";
         }
         BigDecimal paidMoney = parseAmount(params.get("money"));
-        if (paidMoney == null || order.getAmount() == null || paidMoney.compareTo(order.getAmount()) != 0) {
+        // 新订单核对含手续费的实付金额，升级前创建的订单没有 pay_amount，按到账金额核对
+        BigDecimal expectedMoney = order.getPayAmount() != null ? order.getPayAmount() : order.getAmount();
+        if (paidMoney == null || expectedMoney == null || paidMoney.compareTo(expectedMoney) != 0) {
             return "fail";
         }
 
@@ -345,6 +385,46 @@ public class RechargeServiceImpl extends ServiceImpl<OrderMapper, Order> impleme
         } catch (Exception ignored) {
         }
         return null;
+    }
+
+    /** 渠道允许的付款方式：取 payTypes 中受支持的值，未配置时默认支付宝 */
+    static List<String> allowedPayTypes(JSONObject channel) {
+        List<String> result = new ArrayList<>();
+        Object raw = channel == null ? null : channel.get("payTypes");
+        if (!(raw instanceof JSONArray)) {
+            result.add("alipay");
+            return result;
+        }
+        JSONArray types = (JSONArray) raw;
+        for (int i = 0; i < types.size(); i++) {
+            String type = types.getString(i);
+            if (PAY_TYPE_LABELS.containsKey(type) && !result.contains(type)) {
+                result.add(type);
+            }
+        }
+        return result;
+    }
+
+    /** 费率（百分比），留空为 0；不是 0～100 之间的数字返回 null */
+    static BigDecimal parseFeeRate(String value) {
+        if (StringUtils.isBlank(value)) {
+            return BigDecimal.ZERO;
+        }
+        try {
+            BigDecimal rate = new BigDecimal(value.trim());
+            if (rate.compareTo(BigDecimal.ZERO) < 0 || rate.compareTo(new BigDecimal("100")) > 0) {
+                return null;
+            }
+            return rate;
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    /** 实付金额 = 到账金额 ×（1 + 费率%），保留两位小数，四舍五入 */
+    static BigDecimal payAmountOf(BigDecimal amount, BigDecimal feeRate) {
+        BigDecimal fee = amount.multiply(feeRate).divide(new BigDecimal("100"), 2, RoundingMode.HALF_UP);
+        return amount.add(fee).setScale(2, RoundingMode.HALF_UP);
     }
 
     private String generateOrderNo() {

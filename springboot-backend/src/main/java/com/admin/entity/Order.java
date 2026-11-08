@@ -66,5 +66,15 @@ public class Order extends BaseEntity {
      */
     private Integer orderStatus;
 
+    /**
+     * 充值订单实际需付款金额（含手续费），钱包到账为 amount；非充值订单或旧订单为空
+     */
+    private BigDecimal payAmount;
+
+    /**
+     * 充值订单的付款方式（alipay / wxpay / qqpay），非充值订单为空
+     */
+    private String payType;
+
     private Long paidTime;
 }

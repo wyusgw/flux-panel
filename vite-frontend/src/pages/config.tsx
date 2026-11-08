@@ -39,8 +39,16 @@ interface PaymentChannel {
   name: string;
   type: 'epay' | 'epusdt' | 'tokenpay' | 'cyber' | 'cryptomus';
   enabled: boolean;
+  payTypes?: string[];
   config?: Record<string, string>;
 }
+
+/** 易支付付款方式，与后端 RechargeServiceImpl.PAY_TYPE_LABELS 一致 */
+const EPAY_PAY_TYPES = [
+  { value: 'alipay', label: '支付宝' },
+  { value: 'wxpay', label: '微信支付' },
+  { value: 'qqpay', label: 'QQ钱包' }
+];
 
 const PAYMENT_TYPES: { label: string; value: PaymentChannel['type'] }[] = [
   { label: 'EPay', value: 'epay' },
@@ -410,18 +418,27 @@ export default function ConfigPage() {
   const addPaymentChannel = () => {
     setConfiguringChannel({
       id: crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`,
-      name: '', type: 'epay', enabled: true, config: {}
+      name: '', type: 'epay', enabled: true, payTypes: ['alipay'], config: {}
     });
     onChannelConfigOpen();
   };
 
   const openChannelConfig = (channel: PaymentChannel) => {
-    setConfiguringChannel({ ...channel, config: { ...channel.config } });
+    setConfiguringChannel({ ...channel, payTypes: channel.payTypes ?? ['alipay'], config: { ...channel.config } });
     onChannelConfigOpen();
   };
 
   const saveChannelConfig = () => {
     if (!configuringChannel) return;
+    if (configuringChannel.type === 'epay' && !(configuringChannel.payTypes?.length)) {
+      toast.error('请至少选择一种付款方式');
+      return;
+    }
+    const feeRate = configuringChannel.config?.feeRate;
+    if (feeRate !== undefined && feeRate !== '' && !(Number(feeRate) >= 0 && Number(feeRate) <= 100)) {
+      toast.error('费率需在 0～100 之间');
+      return;
+    }
     const exists = paymentChannels.some(channel => channel.id === configuringChannel.id);
     updatePaymentChannels(exists
       ? paymentChannels.map(channel => channel.id === configuringChannel.id ? configuringChannel : channel)
@@ -752,6 +769,20 @@ export default function ConfigPage() {
                   <span className="text-sm font-medium text-foreground">启用</span>
                   <Switch isSelected={configuringChannel?.enabled ?? false} onValueChange={(enabled) => setConfiguringChannel(channel => channel ? { ...channel, enabled } : null)} />
                 </div>
+                {configuringChannel?.type === 'epay' && (
+                  <Select labelPlacement="outside-top" size="sm" selectionMode="multiple"
+                    label={<HelpTooltip content="用户充值时可选的付款方式，需支付服务商已开通">付款方式</HelpTooltip>}
+                    placeholder="请选择付款方式"
+                    selectedKeys={new Set(configuringChannel?.payTypes ?? [])}
+                    onSelectionChange={(keys) => {
+                      const selected = Array.from(keys) as string[];
+                      // 按固定顺序保存，商城页按钮顺序稳定
+                      const payTypes = EPAY_PAY_TYPES.map(type => type.value).filter(value => selected.includes(value));
+                      setConfiguringChannel(channel => channel ? { ...channel, payTypes } : null);
+                    }}>
+                    {EPAY_PAY_TYPES.map(type => <SelectItem key={type.value}>{type.label}</SelectItem>)}
+                  </Select>
+                )}
                 <Input labelPlacement="outside-top"
                   size="sm" autoComplete="off"
                   label={<HelpTooltip content="支付服务商提供的 API 接口地址">URL</HelpTooltip>}
@@ -781,7 +812,7 @@ export default function ConfigPage() {
                 />
                 <Input labelPlacement="outside-top"
                   size="sm" autoComplete="off"
-                  label={<HelpTooltip content="该支付渠道收取的手续费比例">费率</HelpTooltip>}
+                  label={<HelpTooltip content="用户充值时额外支付的手续费比例，例如 3 表示充值 100 元需付 103 元，钱包到账 100 元">费率</HelpTooltip>}
                   type="number"
                   value={configuringChannel?.config?.feeRate ?? '0.0'}
                   onChange={(event) => setConfiguringChannel(channel => channel ? { ...channel, config: { ...channel.config, feeRate: event.target.value } } : null)}

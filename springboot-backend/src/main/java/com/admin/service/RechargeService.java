@@ -28,6 +28,15 @@ public interface RechargeService {
      */
     String handleEpayNotify(Map<String, String> params);
 
+    /** 处理 EPUSDT 异步通知（JSON 请求体），返回是否已成功处理（含重复通知） */
+    boolean handleEpusdtNotify(String rawBody);
+
+    /** 处理 TokenPay 异步通知（JSON 请求体），返回是否已成功处理（含重复通知） */
+    boolean handleTokenpayNotify(String rawBody);
+
+    /** 处理 Cryptomus Webhook（JSON 请求体），返回是否已成功处理（含重复通知） */
+    boolean handleCryptomusNotify(String rawBody);
+
     /**
      * 管理员在"订单管理"页手动将一笔待支付的充值订单标记为已支付：
      * 与网关异步通知走相同的原子幂等更新 + 加值逻辑，用于网关回调丢失等场景的人工补单。

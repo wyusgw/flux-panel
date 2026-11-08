@@ -6,6 +6,7 @@ import com.admin.common.lang.R;
 import com.admin.common.utils.HttpContextUtils;
 import com.admin.service.RechargeService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
@@ -49,6 +50,34 @@ public class RechargeController {
     @GetMapping("/notify/epay")
     public String notifyEpayGet(HttpServletRequest request) {
         return handleNotify(request);
+    }
+
+    /** EPUSDT 回调：返回 ok 表示已处理，其他内容网关会重试 */
+    @PostMapping("/notify/epusdt")
+    public String notifyEpusdt(@RequestBody(required = false) String body) {
+        return safely(() -> rechargeService.handleEpusdtNotify(body)) ? "ok" : "fail";
+    }
+
+    /** TokenPay 回调：返回 ok 表示已处理 */
+    @PostMapping("/notify/tokenpay")
+    public String notifyTokenpay(@RequestBody(required = false) String body) {
+        return safely(() -> rechargeService.handleTokenpayNotify(body)) ? "ok" : "fail";
+    }
+
+    /** Cryptomus Webhook：非 200 状态码时网关会重试 */
+    @PostMapping("/notify/cryptomus")
+    public ResponseEntity<String> notifyCryptomus(@RequestBody(required = false) String body) {
+        return safely(() -> rechargeService.handleCryptomusNotify(body))
+                ? ResponseEntity.ok("ok")
+                : ResponseEntity.badRequest().body("fail");
+    }
+
+    private boolean safely(java.util.function.BooleanSupplier handler) {
+        try {
+            return handler.getAsBoolean();
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     /** 处理异常时也只回 fail 纯文本，让网关稍后重试 */

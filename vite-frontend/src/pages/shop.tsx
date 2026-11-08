@@ -30,6 +30,8 @@ interface PaymentChannel {
   feeRate?: string | number;
 }
 
+const SUPPORTED_CHANNEL_TYPES: string[] = ['epay', 'epusdt', 'tokenpay', 'cryptomus'];
+
 const PAY_TYPE_NAMES: Record<string, string> = {
   alipay: '支付宝',
   wxpay: '微信支付',
@@ -146,7 +148,10 @@ export default function ShopPage() {
       setMinRechargeAmount(Number(configs.payment_min_amount) || 0);
       try {
         const channels = JSON.parse(configs.payment_config_json || '[]');
-        setPaymentChannels(Array.isArray(channels) ? channels.filter((channel: PaymentChannel) => channel.enabled) : []);
+        // Cyber 暂未接入，即使后台旧配置里启用了也不显示
+        setPaymentChannels(Array.isArray(channels)
+          ? channels.filter((channel: PaymentChannel) => channel.enabled && SUPPORTED_CHANNEL_TYPES.includes(channel.type))
+          : []);
       } catch (error) {
         setPaymentChannels([]);
       }

@@ -5,6 +5,7 @@ import com.admin.common.lang.R;
 import com.admin.common.utils.EpayUtil;
 import com.admin.common.utils.JwtUtil;
 import com.admin.common.utils.NotificationUtil;
+import com.admin.common.utils.PaymentGatewayUtil;
 import com.admin.entity.Order;
 import com.admin.entity.User;
 import com.admin.entity.ViteConfig;
@@ -47,6 +48,12 @@ public class RechargeServiceImpl extends ServiceImpl<OrderMapper, Order> impleme
     private static final String ORDER_TYPE_RECHARGE = "recharge";
     private static final int ORDER_STATUS_PENDING = 0;
     private static final int ORDER_STATUS_PAID = 1;
+
+    static final String TYPE_EPAY = "epay";
+    static final String TYPE_EPUSDT = "epusdt";
+    static final String TYPE_TOKENPAY = "tokenpay";
+    static final String TYPE_CRYPTOMUS = "cryptomus";
+    static final List<String> SUPPORTED_TYPES = java.util.Arrays.asList(TYPE_EPAY, TYPE_EPUSDT, TYPE_TOKENPAY, TYPE_CRYPTOMUS);
 
     /** 易支付通用的付款方式及名称，渠道未配置 payTypes 时只允许支付宝（兼容旧配置） */
     static final Map<String, String> PAY_TYPE_LABELS = new LinkedHashMap<>();
@@ -103,26 +110,31 @@ public class RechargeServiceImpl extends ServiceImpl<OrderMapper, Order> impleme
             return R.err("该支付渠道未启用");
         }
         String type = channel.getString("type");
-        if (!"epay".equals(type)) {
-            return R.err("该支付类型暂未支持，目前仅支持 EPay");
+        if (!SUPPORTED_TYPES.contains(type)) {
+            return R.err("该支付类型暂未支持");
+        }
+        if (!isChannelUsable(channel)) {
+            return R.err("该支付渠道尚未配置完整");
         }
 
         JSONObject config = channel.getJSONObject("config");
-        String url = config == null ? null : config.getString("url");
-        String pid = config == null ? null : config.getString("pid");
-        String secret = config == null ? null : config.getString("secret");
-        String callbackHost = config == null ? null : config.getString("callbackHost");
-        if (StringUtils.isBlank(url) || StringUtils.isBlank(pid) || StringUtils.isBlank(secret)) {
-            return R.err("该支付渠道尚未配置完整（URL / PID / 密钥）");
-        }
+        String url = config.getString("url");
+        String pid = config.getString("pid");
+        String secret = config.getString("secret");
+        String callbackHost = config.getString("callbackHost");
 
-        List<String> allowedPayTypes = allowedPayTypes(channel);
-        if (allowedPayTypes.isEmpty()) {
-            return R.err("该支付渠道未配置可用的付款方式");
-        }
-        String payType = StringUtils.isBlank(dto.getPayType()) ? allowedPayTypes.get(0) : dto.getPayType();
-        if (!allowedPayTypes.contains(payType)) {
-            return R.err("该支付渠道不支持此付款方式");
+        String payType = null;
+        if (TYPE_EPAY.equals(type)) {
+            List<String> allowedPayTypes = allowedPayTypes(channel);
+            if (allowedPayTypes.isEmpty()) {
+                return R.err("该支付渠道未配置可用的付款方式");
+            }
+            payType = StringUtils.isBlank(dto.getPayType()) ? allowedPayTypes.get(0) : dto.getPayType();
+            if (!allowedPayTypes.contains(payType)) {
+                return R.err("该支付渠道不支持此付款方式");
+            }
+        } else if (TYPE_TOKENPAY.equals(type)) {
+            payType = config.getString("currency").trim();
         }
 
         BigDecimal feeRate = parseFeeRate(config.getString("feeRate"));
@@ -136,26 +148,53 @@ public class RechargeServiceImpl extends ServiceImpl<OrderMapper, Order> impleme
         BigDecimal payAmount = payAmountOf(amount, feeRate);
 
         String host = StringUtils.isNotBlank(callbackHost) ? stripTrailingSlash(callbackHost) : baseUrl;
-        String notifyUrl = host + "/api/v1/recharge/notify/epay";
+        String notifyUrl = host + "/api/v1/recharge/notify/" + type;
         String returnUrl = host + "/shop";
 
         String orderNo = generateOrderNo();
         String money = payAmount.toPlainString();
+        String gatewayNote = null;
 
-        Map<String, String> params = new LinkedHashMap<>();
-        params.put("pid", pid);
-        params.put("type", payType);
-        params.put("out_trade_no", orderNo);
-        params.put("notify_url", notifyUrl);
-        params.put("return_url", returnUrl);
-        params.put("name", "钱包充值");
-        params.put("money", money);
-        params.put("sign_type", "MD5");
-
-        String sign = EpayUtil.sign(params, secret);
-        params.put("sign", sign);
-
-        String payUrl = stripTrailingSlash(url) + "/submit.php?" + buildQueryString(params);
+        // 先向网关下单，成功后再保存订单，网关报错时不会留下无法支付的订单
+        String payUrl;
+        try {
+            switch (type) {
+                case TYPE_EPUSDT:
+                    payUrl = PaymentGatewayUtil.epusdtCreate(url, secret, orderNo, payAmount, notifyUrl, returnUrl);
+                    break;
+                case TYPE_TOKENPAY:
+                    payUrl = PaymentGatewayUtil.tokenpayCreate(url, secret, orderNo, String.valueOf(user.getId()),
+                            payAmount, payType, notifyUrl, returnUrl);
+                    break;
+                case TYPE_CRYPTOMUS: {
+                    String currency = cryptomusCurrency(config);
+                    BigDecimal invoiceAmount = cryptomusAmount(payAmount, currency, config.getString("rate"));
+                    if (invoiceAmount == null) {
+                        return R.err("该支付渠道的汇率配置有误");
+                    }
+                    if (!"CNY".equals(currency)) {
+                        gatewayNote = invoiceAmount.toPlainString() + " " + currency;
+                    }
+                    payUrl = PaymentGatewayUtil.cryptomusCreate(url, pid, secret, orderNo, invoiceAmount, currency, notifyUrl, returnUrl);
+                    break;
+                }
+                default: {
+                    Map<String, String> params = new LinkedHashMap<>();
+                    params.put("pid", pid);
+                    params.put("type", payType);
+                    params.put("out_trade_no", orderNo);
+                    params.put("notify_url", notifyUrl);
+                    params.put("return_url", returnUrl);
+                    params.put("name", "钱包充值");
+                    params.put("money", money);
+                    params.put("sign_type", "MD5");
+                    params.put("sign", EpayUtil.sign(params, secret));
+                    payUrl = stripTrailingSlash(url) + "/submit.php?" + buildQueryString(params);
+                }
+            }
+        } catch (PaymentGatewayUtil.GatewayException e) {
+            return R.err(e.getMessage());
+        }
 
         Order order = new Order();
         order.setOrderNo(orderNo);
@@ -167,9 +206,17 @@ public class RechargeServiceImpl extends ServiceImpl<OrderMapper, Order> impleme
         order.setPayAmount(payAmount);
         order.setPayType(payType);
         order.setOrderStatus(ORDER_STATUS_PENDING);
-        String info = "钱包充值（" + channel.getString("name") + " · " + PAY_TYPE_LABELS.get(payType);
+        String info = "钱包充值（" + channel.getString("name");
+        if (TYPE_EPAY.equals(type)) {
+            info += " · " + PAY_TYPE_LABELS.get(payType);
+        } else if (TYPE_TOKENPAY.equals(type)) {
+            info += " · " + payType;
+        }
         if (payAmount.compareTo(amount) != 0) {
             info += "，实付 " + money + " 元";
+        }
+        if (gatewayNote != null) {
+            info += "，账单 " + gatewayNote;
         }
         order.setInfo(info + "）");
         long currentTime = System.currentTimeMillis();
@@ -233,27 +280,120 @@ public class RechargeServiceImpl extends ServiceImpl<OrderMapper, Order> impleme
             return "fail";
         }
 
+        markPaid(order, params.get("trade_no"));
+        return "success";
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public boolean handleEpusdtNotify(String rawBody) {
+        com.alibaba.fastjson2.JSONObject body = parseBody(rawBody);
+        if (body == null) return false;
+        PendingNotify pending = loadOrder(body.getString("order_id"), TYPE_EPUSDT);
+        if (pending == null) return false;
+        if (pending.alreadyPaid) return true;
+        if (!PaymentGatewayUtil.epusdtVerify(body, pending.config.getString("secret"))) return false;
+        // 状态 1 等待支付，2 支付成功，3 已过期
+        if (body.getIntValue("status") != 2) return false;
+        if (!amountMatches(body.getBigDecimal("amount"), pending.order)) return false;
+        markPaid(pending.order, body.getString("trade_id"));
+        return true;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public boolean handleTokenpayNotify(String rawBody) {
+        com.alibaba.fastjson2.JSONObject body = parseBody(rawBody);
+        if (body == null) return false;
+        PendingNotify pending = loadOrder(body.getString("OutOrderId"), TYPE_TOKENPAY);
+        if (pending == null) return false;
+        if (pending.alreadyPaid) return true;
+        if (!PaymentGatewayUtil.tokenpayVerify(body, pending.config.getString("secret"))) return false;
+        // 状态 0 待支付，1 已支付，2 已过期
+        if (body.getIntValue("Status") != 1) return false;
+        if (!amountMatches(body.getBigDecimal("ActualAmount"), pending.order)) return false;
+        markPaid(pending.order, firstNonBlank(body.getString("Id"), body.getString("BlockTransactionId")));
+        return true;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public boolean handleCryptomusNotify(String rawBody) {
+        com.alibaba.fastjson2.JSONObject body = parseBody(rawBody);
+        if (body == null) return false;
+        PendingNotify pending = loadOrder(body.getString("order_id"), TYPE_CRYPTOMUS);
+        if (pending == null) return false;
+        if (pending.alreadyPaid) return true;
+        if (!PaymentGatewayUtil.cryptomusVerify(rawBody, pending.config.getString("secret"))) return false;
+        // paid 足额支付，paid_over 超额支付；其余状态（处理中、少付、取消等）不入账
+        String status = body.getString("status");
+        if (!"paid".equals(status) && !"paid_over".equals(status)) return false;
+        // 账单金额在下单时由本系统确定并经网关签名回传，验签通过即可信，这里不再按人民币金额比对
+        markPaid(pending.order, body.getString("uuid"));
+        return true;
+    }
+
+    /** 回调对应的待处理订单及其渠道配置 */
+    private static class PendingNotify {
+        Order order;
+        JSONObject config;
+        boolean alreadyPaid;
+    }
+
+    /** 查订单并校验渠道类型；订单不存在、渠道已删除或类型不符时返回 null */
+    private PendingNotify loadOrder(String orderNo, String expectedType) {
+        if (StringUtils.isBlank(orderNo)) return null;
+        Order order = this.getOne(new QueryWrapper<Order>().eq("order_no", orderNo));
+        if (order == null || !ORDER_TYPE_RECHARGE.equals(order.getType())) return null;
+        PendingNotify pending = new PendingNotify();
+        pending.order = order;
+        // 已经处理过（网关重试通知），直接幂等返回成功，不再重复加值
+        if (order.getOrderStatus() != null && order.getOrderStatus() == ORDER_STATUS_PAID) {
+            pending.alreadyPaid = true;
+            return pending;
+        }
+        JSONObject channel = findChannel(order.getChannelId());
+        if (channel == null || !expectedType.equals(channel.getString("type"))) return null;
+        JSONObject config = channel.getJSONObject("config");
+        if (config == null || StringUtils.isBlank(config.getString("secret"))) return null;
+        pending.config = config;
+        return pending;
+    }
+
+    private static com.alibaba.fastjson2.JSONObject parseBody(String rawBody) {
+        if (StringUtils.isBlank(rawBody)) return null;
+        try {
+            return com.alibaba.fastjson2.JSON.parseObject(rawBody);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** 回调金额必须等于含手续费的实付金额（升级前的旧订单按到账金额） */
+    private static boolean amountMatches(BigDecimal paid, Order order) {
+        BigDecimal expected = order.getPayAmount() != null ? order.getPayAmount() : order.getAmount();
+        return paid != null && expected != null && paid.compareTo(expected) == 0;
+    }
+
+    /**
+     * 原子地把订单从待支付改为已支付并加值；已被并发请求处理时什么也不做。
+     * 加值失败时抛出异常，让订单状态一起回滚，网关重试时还能重新处理，不会出现已支付却没加值
+     */
+    private void markPaid(Order order, String tradeNo) {
         long now = System.currentTimeMillis();
-        // 原子条件更新：仅当仍为待支付状态时才转为已支付，避免并发重复通知重复加值
         boolean updated = this.update(new UpdateWrapper<Order>()
-                .eq("order_no", outTradeNo)
+                .eq("id", order.getId())
                 .eq("order_status", ORDER_STATUS_PENDING)
                 .set("order_status", ORDER_STATUS_PAID)
-                .set("trade_no", params.get("trade_no"))
+                .set("trade_no", tradeNo)
                 .set("paid_time", now)
                 .set("updated_time", now));
-
         if (!updated) {
-            // 竞争条件下已被其他请求处理，幂等返回成功
-            return "success";
+            return;
         }
-
         if (!creditWallet(order, now)) {
-            // 抛出异常让订单状态一起回滚，网关重试时还能重新处理，不会出现已支付却没加值
-            throw new IllegalStateException("充值加值失败，订单 " + outTradeNo);
+            throw new IllegalStateException("充值加值失败，订单 " + order.getOrderNo());
         }
-
-        return "success";
     }
 
     @Override
@@ -356,14 +496,54 @@ public class RechargeServiceImpl extends ServiceImpl<OrderMapper, Order> impleme
         if (channel == null || !channel.getBooleanValue("enabled")) {
             return false;
         }
-        if (!"epay".equals(channel.getString("type"))) {
+        return isConfigComplete(channel.getString("type"), channel.getJSONObject("config"));
+    }
+
+    /** 各类型必填项：EPay 需 URL、PID、密钥；EPUSDT 需 URL、Token；TokenPay 需 URL、ApiToken、币种；Cryptomus 需商户 UUID、API Key */
+    static boolean isConfigComplete(String type, JSONObject config) {
+        if (config == null || !SUPPORTED_TYPES.contains(type) || StringUtils.isBlank(config.getString("secret"))) {
             return false;
         }
-        JSONObject config = channel.getJSONObject("config");
-        String url = config == null ? null : config.getString("url");
-        String pid = config == null ? null : config.getString("pid");
-        String secret = config == null ? null : config.getString("secret");
-        return StringUtils.isNotBlank(url) && StringUtils.isNotBlank(pid) && StringUtils.isNotBlank(secret);
+        switch (type) {
+            case TYPE_EPAY:
+                return StringUtils.isNotBlank(config.getString("url")) && StringUtils.isNotBlank(config.getString("pid"));
+            case TYPE_EPUSDT:
+                return StringUtils.isNotBlank(config.getString("url"));
+            case TYPE_TOKENPAY:
+                return StringUtils.isNotBlank(config.getString("url")) && StringUtils.isNotBlank(config.getString("currency"));
+            case TYPE_CRYPTOMUS:
+                return StringUtils.isNotBlank(config.getString("pid"));
+            default:
+                return false;
+        }
+    }
+
+    /** Cryptomus 账单币种，留空为 CNY */
+    static String cryptomusCurrency(JSONObject config) {
+        String currency = config.getString("currency");
+        return StringUtils.isBlank(currency) ? "CNY" : currency.trim().toUpperCase();
+    }
+
+    /**
+     * Cryptomus 账单金额：币种为 CNY 时直接用人民币实付金额；
+     * 其他币种需配置汇率（1 单位该币种 = 多少元），按 实付 ÷ 汇率 向上取整到分，返回 null 表示汇率无效
+     */
+    static BigDecimal cryptomusAmount(BigDecimal payAmount, String currency, String rate) {
+        if ("CNY".equals(currency)) {
+            return payAmount.setScale(2, RoundingMode.HALF_UP);
+        }
+        if (StringUtils.isBlank(rate)) return null;
+        try {
+            BigDecimal value = new BigDecimal(rate.trim());
+            if (value.compareTo(BigDecimal.ZERO) <= 0) return null;
+            return payAmount.divide(value, 2, RoundingMode.UP);
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private static String firstNonBlank(String value, String fallback) {
+        return StringUtils.isNotBlank(value) ? value : fallback;
     }
 
     private JSONObject findChannel(String channelId) {

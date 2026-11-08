@@ -54,7 +54,9 @@ public class RechargeServiceImpl extends ServiceImpl<OrderMapper, Order> impleme
     static final String TYPE_TOKENPAY = "tokenpay";
     static final String TYPE_CRYPTOMUS = "cryptomus";
     static final String TYPE_ALIPAY_F2F = "alipayf2f";
-    static final List<String> SUPPORTED_TYPES = java.util.Arrays.asList(TYPE_EPAY, TYPE_EPUSDT, TYPE_TOKENPAY, TYPE_CRYPTOMUS, TYPE_ALIPAY_F2F);
+    static final String TYPE_WECHAT_NATIVE = "wechatnative";
+    static final List<String> SUPPORTED_TYPES = java.util.Arrays.asList(TYPE_EPAY, TYPE_EPUSDT, TYPE_TOKENPAY, TYPE_CRYPTOMUS,
+            TYPE_ALIPAY_F2F, TYPE_WECHAT_NATIVE);
 
     /** 易支付通用的付款方式及名称，渠道未配置 payTypes 时只允许支付宝（兼容旧配置） */
     static final Map<String, String> PAY_TYPE_LABELS = new LinkedHashMap<>();
@@ -163,6 +165,11 @@ public class RechargeServiceImpl extends ServiceImpl<OrderMapper, Order> impleme
             switch (type) {
                 case TYPE_ALIPAY_F2F:
                     payUrl = PaymentGatewayUtil.alipayPrecreate(url, pid, secret, orderNo, payAmount, "钱包充值", notifyUrl);
+                    qrCode = true;
+                    break;
+                case TYPE_WECHAT_NATIVE:
+                    payUrl = PaymentGatewayUtil.wechatNativeCreate(url, config.getString("appId"), pid,
+                            config.getString("serialNo"), secret, orderNo, payAmount, "钱包充值", notifyUrl);
                     qrCode = true;
                     break;
                 case TYPE_EPUSDT:
@@ -355,6 +362,42 @@ public class RechargeServiceImpl extends ServiceImpl<OrderMapper, Order> impleme
         if (!amountMatches(parseAmount(params.get("total_amount")), pending.order)) return false;
         markPaid(pending.order, params.get("trade_no"));
         return true;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public boolean handleWechatNativeNotify(String timestamp, String nonce, String signature, String rawBody) {
+        com.alibaba.fastjson2.JSONObject body = parseBody(rawBody);
+        if (body == null || !"TRANSACTION.SUCCESS".equals(body.getString("event_type"))) return false;
+        // 订单号在加密的 resource 里，先找出用这些密钥能解密并验签的微信支付渠道
+        for (JSONObject channel : channelsOfType(TYPE_WECHAT_NATIVE)) {
+            JSONObject config = channel.getJSONObject("config");
+            if (config == null) continue;
+            if (!PaymentGatewayUtil.wechatVerifyNotify(timestamp, nonce, rawBody, signature, config.getString("publicKey"),
+                    System.currentTimeMillis() / 1000)) {
+                continue;
+            }
+            com.alibaba.fastjson2.JSONObject transaction = PaymentGatewayUtil.wechatDecryptResource(
+                    body.getJSONObject("resource"), config.getString("apiV3Key"));
+            if (transaction == null) continue;
+
+            PendingNotify pending = loadOrder(transaction.getString("out_trade_no"), TYPE_WECHAT_NATIVE);
+            if (pending == null) return false;
+            if (pending.alreadyPaid) return true;
+            // 订单必须属于验签通过的这个渠道（商户号一致）
+            if (!StringUtils.equals(transaction.getString("mchid"), pending.config.getString("pid"))
+                    || !StringUtils.equals(transaction.getString("appid"), pending.config.getString("appId"))) {
+                return false;
+            }
+            if (!"SUCCESS".equals(transaction.getString("trade_state"))) return false;
+            com.alibaba.fastjson2.JSONObject amount = transaction.getJSONObject("amount");
+            BigDecimal paid = amount == null || amount.get("total") == null ? null
+                    : new BigDecimal(amount.getLongValue("total")).movePointLeft(2);
+            if (!amountMatches(paid, pending.order)) return false;
+            markPaid(pending.order, transaction.getString("transaction_id"));
+            return true;
+        }
+        return false;
     }
 
     @Override
@@ -557,6 +600,10 @@ public class RechargeServiceImpl extends ServiceImpl<OrderMapper, Order> impleme
                 return StringUtils.isNotBlank(config.getString("pid"));
             case TYPE_ALIPAY_F2F:
                 return StringUtils.isNotBlank(config.getString("pid")) && StringUtils.isNotBlank(config.getString("publicKey"));
+            case TYPE_WECHAT_NATIVE:
+                return StringUtils.isNotBlank(config.getString("pid")) && StringUtils.isNotBlank(config.getString("appId"))
+                        && StringUtils.isNotBlank(config.getString("serialNo")) && StringUtils.isNotBlank(config.getString("apiV3Key"))
+                        && StringUtils.isNotBlank(config.getString("publicKey"));
             default:
                 return false;
         }
@@ -588,6 +635,25 @@ public class RechargeServiceImpl extends ServiceImpl<OrderMapper, Order> impleme
 
     private static String firstNonBlank(String value, String fallback) {
         return StringUtils.isNotBlank(value) ? value : fallback;
+    }
+
+    private List<JSONObject> channelsOfType(String type) {
+        List<JSONObject> result = new ArrayList<>();
+        String json = getConfigValue(CONFIG_PAYMENT_CHANNELS);
+        if (StringUtils.isBlank(json)) {
+            return result;
+        }
+        try {
+            JSONArray channels = JSONArray.parseArray(json);
+            for (int i = 0; i < channels.size(); i++) {
+                JSONObject channel = channels.getJSONObject(i);
+                if (type.equals(channel.getString("type"))) {
+                    result.add(channel);
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return result;
     }
 
     private JSONObject findChannel(String channelId) {

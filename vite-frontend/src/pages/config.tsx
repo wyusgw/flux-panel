@@ -37,7 +37,7 @@ interface ConfigItem {
 interface PaymentChannel {
   id: string;
   name: string;
-  type: 'epay' | 'epusdt' | 'tokenpay' | 'cryptomus' | 'alipayf2f';
+  type: 'epay' | 'epusdt' | 'tokenpay' | 'cryptomus' | 'alipayf2f' | 'wechatnative';
   enabled: boolean;
   payTypes?: string[];
   config?: Record<string, string>;
@@ -80,6 +80,15 @@ const CHANNEL_FIELDS: Record<string, ChannelField[]> = {
     { key: 'secret', label: '应用私钥', help: 'RSA2 应用私钥，需为 PKCS8 格式（支付宝密钥工具中的「PKCS8(Java适用)」）', password: true, required: true },
     { key: 'publicKey', label: '支付宝公钥', help: '开放平台「接口加签方式」中的支付宝公钥（不是应用公钥）', password: true, required: true },
     { key: 'url', label: '网关地址', help: '留空使用正式环境 https://openapi.alipay.com/gateway.do；沙箱填 https://openapi-sandbox.dl.alipaydev.com/gateway.do', placeholder: 'https://openapi.alipay.com/gateway.do' }
+  ],
+  wechatnative: [
+    { key: 'pid', label: '商户号 MchID', help: '微信支付商户平台的商户号，需已开通 Native 支付', required: true },
+    { key: 'appId', label: 'AppID', help: '与商户号绑定的公众号、小程序或开放平台应用的 AppID', required: true },
+    { key: 'serialNo', label: '商户证书序列号', help: '商户平台「API安全」中商户 API 证书的序列号', required: true },
+    { key: 'secret', label: '商户 API 私钥', help: '商户 API 证书中 apiclient_key.pem 的全部内容', password: true, required: true },
+    { key: 'apiV3Key', label: 'APIv3 密钥', help: '商户平台「API安全」中设置的 32 位 APIv3 密钥，用于解密支付通知', password: true, required: true },
+    { key: 'publicKey', label: '微信支付公钥', help: '商户平台「API安全」中的微信支付公钥（pub_key.pem）；使用平台证书的商户可填平台证书内容', password: true, required: true },
+    { key: 'url', label: 'API 地址', help: '留空使用 https://api.mch.weixin.qq.com', placeholder: 'https://api.mch.weixin.qq.com' }
   ]
 };
 
@@ -95,7 +104,8 @@ const PAYMENT_TYPES: { label: string; value: PaymentChannel['type'] }[] = [
   { label: 'EPUSDT', value: 'epusdt' },
   { label: 'TokenPay', value: 'tokenpay' },
   { label: 'Cryptomus', value: 'cryptomus' },
-  { label: 'AlipayF2F', value: 'alipayf2f' }
+  { label: 'AlipayF2F', value: 'alipayf2f' },
+  { label: 'WechatPayNative', value: 'wechatnative' }
 ];
 
 
@@ -478,6 +488,10 @@ export default function ConfigPage() {
       .filter(field => field.required && !configuringChannel.config?.[field.key]?.trim());
     if (missing.length > 0) {
       toast.error(`请填写${missing.map(field => field.label).join('、')}`);
+      return;
+    }
+    if (configuringChannel.type === 'wechatnative' && new TextEncoder().encode(configuringChannel.config?.apiV3Key?.trim() ?? '').length !== 32) {
+      toast.error('APIv3 密钥应为 32 个字符');
       return;
     }
     if (configuringChannel.type === 'cryptomus') {

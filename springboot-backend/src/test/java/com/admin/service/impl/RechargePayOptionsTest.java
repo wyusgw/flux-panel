@@ -52,6 +52,10 @@ class RechargePayOptionsTest {
         assertTrue(RechargeServiceImpl.isConfigComplete("cryptomus", JSONObject.parseObject("{\"pid\":\"m\",\"secret\":\"s\"}")));
         assertTrue(RechargeServiceImpl.isConfigComplete("alipayf2f", JSONObject.parseObject("{\"pid\":\"2021\",\"secret\":\"k\",\"publicKey\":\"p\"}")));
         assertFalse(RechargeServiceImpl.isConfigComplete("alipayf2f", JSONObject.parseObject("{\"pid\":\"2021\",\"secret\":\"k\"}")));
+        assertTrue(RechargeServiceImpl.isConfigComplete("wechatnative", JSONObject.parseObject(
+                "{\"pid\":\"1900\",\"appId\":\"wx\",\"serialNo\":\"S\",\"secret\":\"k\",\"apiV3Key\":\"v\",\"publicKey\":\"p\"}")));
+        assertFalse(RechargeServiceImpl.isConfigComplete("wechatnative", JSONObject.parseObject(
+                "{\"pid\":\"1900\",\"appId\":\"wx\",\"secret\":\"k\",\"apiV3Key\":\"v\",\"publicKey\":\"p\"}")));
         assertFalse(RechargeServiceImpl.isConfigComplete("unknown", JSONObject.parseObject("{\"url\":\"u\",\"pid\":\"1\",\"secret\":\"s\"}")));
     }
 

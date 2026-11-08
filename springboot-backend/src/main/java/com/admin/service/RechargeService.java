@@ -40,6 +40,9 @@ public interface RechargeService {
     /** 处理支付宝当面付异步通知（表单参数），返回是否已成功处理（含重复通知） */
     boolean handleAlipayF2fNotify(Map<String, String> params);
 
+    /** 处理微信支付 Native 回调（APIv3，需请求头中的时间戳、随机串、签名），返回是否已成功处理（含重复通知） */
+    boolean handleWechatNativeNotify(String timestamp, String nonce, String signature, String rawBody);
+
     /** 查询当前用户某笔充值订单的状态，供当面付扫码页轮询 */
     R getRechargeOrderStatus(String orderNo);
 

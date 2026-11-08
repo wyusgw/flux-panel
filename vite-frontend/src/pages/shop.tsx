@@ -25,13 +25,13 @@ interface PackagePlanItem {
 interface PaymentChannel {
   id: string;
   name: string;
-  type: 'epay' | 'epusdt' | 'tokenpay' | 'cryptomus' | 'alipayf2f';
+  type: 'epay' | 'epusdt' | 'tokenpay' | 'cryptomus' | 'alipayf2f' | 'wechatnative';
   enabled: boolean;
   payTypes?: string[];
   feeRate?: string | number;
 }
 
-const SUPPORTED_CHANNEL_TYPES: string[] = ['epay', 'epusdt', 'tokenpay', 'cryptomus', 'alipayf2f'];
+const SUPPORTED_CHANNEL_TYPES: string[] = ['epay', 'epusdt', 'tokenpay', 'cryptomus', 'alipayf2f', 'wechatnative'];
 
 const PAY_TYPE_NAMES: Record<string, string> = {
   alipay: '支付宝',
@@ -59,7 +59,8 @@ const PAYMENT_TYPE_LABELS: Record<PaymentChannel['type'], string> = {
   epusdt: 'EPUSDT',
   tokenpay: 'TokenPay',
   cryptomus: 'Cryptomus',
-  alipayf2f: '支付宝当面付'
+  alipayf2f: '支付宝当面付',
+  wechatnative: '微信支付'
 };
 
 const NoPaymentIcon = () => (
@@ -122,7 +123,7 @@ export default function ShopPage() {
   const [purchaseLoading, setPurchaseLoading] = useState(false);
   const [successModalOpen, setSuccessModalOpen] = useState(false);
   // 支付宝当面付：展示收款码并轮询订单状态
-  const [qrPay, setQrPay] = useState<{ orderNo: string; code: string; payAmount: number } | null>(null);
+  const [qrPay, setQrPay] = useState<{ orderNo: string; code: string; payAmount: number; wechat: boolean } | null>(null);
   const [qrPaid, setQrPaid] = useState(false);
   const qrPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -218,7 +219,7 @@ export default function ShopPage() {
       const res = await createRechargeOrder(amount, channel.id, payType || undefined);
       if (res.code === 0 && res.data?.payUrl && res.data?.qrCode) {
         setQrPaid(false);
-        setQrPay({ orderNo: res.data.orderNo, code: res.data.payUrl, payAmount: Number(res.data.payAmount ?? amount) });
+        setQrPay({ orderNo: res.data.orderNo, code: res.data.payUrl, payAmount: Number(res.data.payAmount ?? amount), wechat: channel.type === 'wechatnative' });
       } else if (res.code === 0 && res.data?.payUrl) {
         window.location.href = res.data.payUrl;
       } else {
@@ -438,7 +439,7 @@ export default function ShopPage() {
         <ModalContent>
           {(onClose) => (
             <>
-              <ModalHeader>{qrPaid ? '充值成功' : '支付宝扫码支付'}</ModalHeader>
+              <ModalHeader>{qrPaid ? '充值成功' : qrPay?.wechat ? '微信扫码支付' : '支付宝扫码支付'}</ModalHeader>
               <ModalBody className="items-center gap-3">
                 {qrPaid ? (
                   <p className="text-small text-default-600">已到账，当前余额 {Number(walletBalance)} 元</p>
@@ -448,8 +449,14 @@ export default function ShopPage() {
                     <div className="rounded-medium bg-white p-3">
                       <QRCodeSVG value={qrPay.code} size={200} marginSize={0} />
                     </div>
-                    <p className="text-small text-default-500 text-center">请使用支付宝扫码付款，付款后页面会自动更新</p>
-                    <Button as="a" href={qrPay.code} size="sm" variant="bordered" className="sm:hidden">打开支付宝付款</Button>
+                    <p className="text-small text-default-500 text-center">
+                      {qrPay.wechat
+                        ? '请使用微信扫码付款，付款后页面会自动更新。手机上可截图后在微信中识别二维码'
+                        : '请使用支付宝扫码付款，付款后页面会自动更新'}
+                    </p>
+                    {!qrPay.wechat && (
+                      <Button as="a" href={qrPay.code} size="sm" variant="bordered" className="sm:hidden">打开支付宝付款</Button>
+                    )}
                   </>
                 )}
               </ModalBody>

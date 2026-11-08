@@ -366,6 +366,127 @@ public final class PaymentGatewayUtil {
         return alipayRsaVerify(alipaySignContent(params, true), sign, alipayPublicKey);
     }
 
+    // ========== 微信支付 Native（APIv3，生成 weixin://wxpay/... 收款码） ==========
+
+    public static final String WECHAT_DEFAULT_API = "https://api.mch.weixin.qq.com";
+    private static final String WECHAT_NATIVE_PATH = "/v3/pay/transactions/native";
+    /** 回调时间戳与当前时间相差超过 5 分钟视为重放 */
+    private static final long WECHAT_NOTIFY_MAX_SKEW_SECONDS = 300;
+
+    static java.security.PrivateKey loadPkcs8PrivateKey(String privateKey) throws Exception {
+        return java.security.KeyFactory.getInstance("RSA")
+                .generatePrivate(new java.security.spec.PKCS8EncodedKeySpec(Base64.getDecoder().decode(keyBody(privateKey))));
+    }
+
+    /** 支持直接填公钥，也支持填平台证书（-----BEGIN CERTIFICATE-----） */
+    static java.security.PublicKey loadPublicKeyOrCertificate(String value) throws Exception {
+        byte[] der = Base64.getDecoder().decode(keyBody(value));
+        if (value.contains("CERTIFICATE")) {
+            return java.security.cert.CertificateFactory.getInstance("X.509")
+                    .generateCertificate(new java.io.ByteArrayInputStream(der)).getPublicKey();
+        }
+        return java.security.KeyFactory.getInstance("RSA").generatePublic(new java.security.spec.X509EncodedKeySpec(der));
+    }
+
+    static String sha256RsaSign(String message, String privateKey) throws GatewayException {
+        try {
+            java.security.Signature signature = java.security.Signature.getInstance("SHA256withRSA");
+            signature.initSign(loadPkcs8PrivateKey(privateKey));
+            signature.update(message.getBytes(StandardCharsets.UTF_8));
+            return Base64.getEncoder().encodeToString(signature.sign());
+        } catch (Exception e) {
+            log.warn("微信支付签名失败: {}", e.getClass().getSimpleName());
+            throw new GatewayException("商户 API 私钥格式有误，请填写 apiclient_key.pem 的内容");
+        }
+    }
+
+    /** APIv3 请求签名串：请求方法\nURL 路径\n时间戳\n随机串\n请求体\n */
+    static String wechatAuthorization(String mchId, String serialNo, String privateKey, String method, String path,
+                                      String body, long timestamp, String nonce) throws GatewayException {
+        String message = method + "\n" + path + "\n" + timestamp + "\n" + nonce + "\n" + body + "\n";
+        String signature = sha256RsaSign(message, privateKey);
+        return "WECHATPAY2-SHA256-RSA2048 mchid=\"" + mchId + "\",nonce_str=\"" + nonce + "\",signature=\"" + signature
+                + "\",timestamp=\"" + timestamp + "\",serial_no=\"" + serialNo + "\"";
+    }
+
+    /** 金额单位为分 */
+    static String wechatNativeBody(String appId, String mchId, String orderNo, BigDecimal payAmount, String description, String notifyUrl) {
+        JSONObject amount = new JSONObject();
+        amount.put("total", payAmount.movePointRight(2).setScale(0, java.math.RoundingMode.HALF_UP).intValueExact());
+        amount.put("currency", "CNY");
+        JSONObject body = new JSONObject();
+        body.put("appid", appId);
+        body.put("mchid", mchId);
+        body.put("description", description);
+        body.put("out_trade_no", orderNo);
+        body.put("notify_url", notifyUrl);
+        body.put("amount", amount);
+        return body.toJSONString();
+    }
+
+    private static String randomNonce() {
+        return java.util.UUID.randomUUID().toString().replace("-", "");
+    }
+
+    /** Native 下单，返回 code_url（weixin://wxpay/bizpayurl?pr=...），需用微信扫码 */
+    public static String wechatNativeCreate(String apiUrl, String appId, String mchId, String serialNo, String privateKey,
+                                            String orderNo, BigDecimal payAmount, String description, String notifyUrl) throws GatewayException {
+        String body = wechatNativeBody(appId, mchId, orderNo, payAmount, description, notifyUrl);
+        String authorization = wechatAuthorization(mchId, serialNo, privateKey, "POST", WECHAT_NATIVE_PATH, body,
+                System.currentTimeMillis() / 1000, randomNonce());
+        String base = stripTrailingSlash(apiUrl == null || apiUrl.isEmpty() ? WECHAT_DEFAULT_API : apiUrl.trim());
+        Map<String, String> headers = new TreeMap<>();
+        headers.put("Authorization", authorization);
+        headers.put("Accept", "application/json");
+        JSONObject resp = postJson(base + WECHAT_NATIVE_PATH, headers, body, "微信支付");
+        String codeUrl = resp.getString("code_url");
+        if (codeUrl == null || codeUrl.isEmpty()) {
+            log.warn("微信支付 Native 下单失败: {}", resp.toJSONString());
+            throw new GatewayException("微信支付下单失败：" + firstNonBlank(resp.getString("message"), "未知错误"));
+        }
+        return codeUrl;
+    }
+
+    /** 回调验签：时间戳\n随机串\n请求体\n，用微信支付公钥（或平台证书）验 SHA256withRSA */
+    public static boolean wechatVerifyNotify(String timestamp, String nonce, String body, String signature, String publicKey,
+                                             long nowSeconds) {
+        if (timestamp == null || nonce == null || body == null || signature == null || publicKey == null || publicKey.isEmpty()) {
+            return false;
+        }
+        try {
+            if (Math.abs(nowSeconds - Long.parseLong(timestamp.trim())) > WECHAT_NOTIFY_MAX_SKEW_SECONDS) {
+                return false;
+            }
+            java.security.Signature verifier = java.security.Signature.getInstance("SHA256withRSA");
+            verifier.initVerify(loadPublicKeyOrCertificate(publicKey));
+            verifier.update((timestamp + "\n" + nonce + "\n" + body + "\n").getBytes(StandardCharsets.UTF_8));
+            return verifier.verify(Base64.getDecoder().decode(signature.trim()));
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** 用 APIv3 密钥解密回调里的 resource（AEAD_AES_256_GCM），返回交易 JSON；失败返回 null */
+    public static JSONObject wechatDecryptResource(JSONObject resource, String apiV3Key) {
+        if (resource == null || apiV3Key == null || apiV3Key.getBytes(StandardCharsets.UTF_8).length != 32) {
+            return null;
+        }
+        try {
+            javax.crypto.Cipher cipher = javax.crypto.Cipher.getInstance("AES/GCM/NoPadding");
+            cipher.init(javax.crypto.Cipher.DECRYPT_MODE,
+                    new javax.crypto.spec.SecretKeySpec(apiV3Key.getBytes(StandardCharsets.UTF_8), "AES"),
+                    new javax.crypto.spec.GCMParameterSpec(128, resource.getString("nonce").getBytes(StandardCharsets.UTF_8)));
+            String aad = resource.getString("associated_data");
+            if (aad != null) {
+                cipher.updateAAD(aad.getBytes(StandardCharsets.UTF_8));
+            }
+            byte[] plain = cipher.doFinal(Base64.getDecoder().decode(resource.getString("ciphertext")));
+            return JSON.parseObject(new String(plain, StandardCharsets.UTF_8));
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     private static String firstNonBlank(String value, String fallback) {
         return value == null || value.trim().isEmpty() ? fallback : value;
     }

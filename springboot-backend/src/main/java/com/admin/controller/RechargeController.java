@@ -65,6 +65,18 @@ public class RechargeController {
         return safely(() -> rechargeService.handleAlipayF2fNotify(params)) ? "success" : "fail";
     }
 
+    /** 微信支付 Native 回调：成功返回 200，失败返回 4xx 和 FAIL，微信支付会重试 */
+    @PostMapping("/notify/wechatnative")
+    public ResponseEntity<String> notifyWechatNative(HttpServletRequest request, @RequestBody(required = false) String body) {
+        boolean ok = safely(() -> rechargeService.handleWechatNativeNotify(
+                request.getHeader("Wechatpay-Timestamp"), request.getHeader("Wechatpay-Nonce"),
+                request.getHeader("Wechatpay-Signature"), body));
+        return ok
+                ? ResponseEntity.ok().contentType(org.springframework.http.MediaType.APPLICATION_JSON).body("{\"code\":\"SUCCESS\"}")
+                : ResponseEntity.badRequest().contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                    .body("{\"code\":\"FAIL\",\"message\":\"处理失败\"}");
+    }
+
     /** EPUSDT 回调：返回 ok 表示已处理，其他内容网关会重试 */
     @PostMapping("/notify/epusdt")
     public String notifyEpusdt(@RequestBody(required = false) String body) {

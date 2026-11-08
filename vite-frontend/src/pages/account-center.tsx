@@ -41,7 +41,7 @@ interface UserInfo {
   walletBalance: number;
   autoRenew: number;
   telegramBound: boolean;
-  telegramChatId?: string | null;
+  telegramBindCount?: number;
   notifyPaymentMode: number;
   notifyDeviceMode: number;
   notifyDeviceGroupIds: number[];
@@ -531,7 +531,7 @@ export default function AccountCenterPage() {
           />
           <Row
             label="Telegram 关联"
-            value={userInfo.telegramBound ? `已关联 ${userInfo.telegramChatId ?? ''}`.trim() : '未关联'}
+            value={userInfo.telegramBound ? `已关联（共 ${userInfo.telegramBindCount ?? 1} 个账号）` : '未关联'}
             action={
               <>
                 <PopConfirm title="关联 Telegram 帐号" onConfirm={handleOpenBind}>

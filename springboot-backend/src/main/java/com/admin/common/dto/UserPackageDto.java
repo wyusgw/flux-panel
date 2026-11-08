@@ -57,7 +57,6 @@ public class UserPackageDto {
         private BigDecimal walletBalance; // 钱包余额
         private Integer autoRenew;   // 自动续费
         private Boolean telegramBound;      // 是否已绑定Telegram
-        private Long telegramBindCount;     // 同一 Telegram 已关联的账号数，未绑定为 0
         private Integer notifyPaymentMode;  // 收款信息推送模式（0-不接收，1-接收）
         private Integer notifyDeviceMode;   // 设备离线与恢复推送模式（0-不接收，1-白名单，2-黑名单）
         private List<Long> notifyDeviceGroupIds; // 设备离线推送范围（设备组ID）

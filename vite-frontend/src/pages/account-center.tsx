@@ -531,7 +531,7 @@ export default function AccountCenterPage() {
           />
           <Row
             label="Telegram 关联"
-            value={userInfo.telegramBound ? `已关联（共 ${userInfo.telegramBindCount ?? 1} 个账号）` : '未关联'}
+            value={userInfo.telegramBound ? `已绑定（共 ${userInfo.telegramBindCount ?? 1} 个账号）` : '未绑定'}
             action={
               <>
                 <PopConfirm title="关联 Telegram 帐号" onConfirm={handleOpenBind}>

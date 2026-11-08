@@ -15,8 +15,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class RechargePayOptionsTest {
 
     @Test
-    void payTypesDefaultToAlipayAndDropUnknown() {
-        assertEquals(Collections.singletonList("alipay"), RechargeServiceImpl.allowedPayTypes(new JSONObject()));
+    void payTypesDefaultToNoneAndDropUnknown() {
+        assertEquals(Collections.emptyList(), RechargeServiceImpl.allowedPayTypes(new JSONObject()));
         JSONObject channel = JSONObject.parseObject("{\"payTypes\":[\"wxpay\",\"bank\",\"alipay\",\"wxpay\"]}");
         assertEquals(Arrays.asList("wxpay", "alipay"), RechargeServiceImpl.allowedPayTypes(channel));
         assertEquals(Collections.emptyList(), RechargeServiceImpl.allowedPayTypes(JSONObject.parseObject("{\"payTypes\":[]}")));

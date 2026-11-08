@@ -468,22 +468,18 @@ export default function ConfigPage() {
   const addPaymentChannel = () => {
     setConfiguringChannel({
       id: crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`,
-      name: '', type: 'epay', enabled: true, payTypes: ['alipay'], config: {}
+      name: '', type: 'epay', enabled: true, payTypes: [], config: {}
     });
     onChannelConfigOpen();
   };
 
   const openChannelConfig = (channel: PaymentChannel) => {
-    setConfiguringChannel({ ...channel, payTypes: channel.payTypes ?? ['alipay'], config: { ...channel.config } });
+    setConfiguringChannel({ ...channel, payTypes: channel.payTypes ?? [], config: { ...channel.config } });
     onChannelConfigOpen();
   };
 
   const saveChannelConfig = () => {
     if (!configuringChannel) return;
-    if (configuringChannel.type === 'epay' && !(configuringChannel.payTypes?.length)) {
-      toast.error('请至少选择一种付款方式');
-      return;
-    }
     const missing = (CHANNEL_FIELDS[configuringChannel.type] ?? [])
       .filter(field => field.required && !configuringChannel.config?.[field.key]?.trim());
     if (missing.length > 0) {
@@ -839,8 +835,8 @@ export default function ConfigPage() {
                 </div>
                 {configuringChannel?.type === 'epay' && (
                   <Select labelPlacement="outside-top" size="sm" selectionMode="multiple"
-                    label={<HelpTooltip content="用户充值时可选的付款方式，需支付服务商已开通">付款方式</HelpTooltip>}
-                    placeholder="请选择付款方式"
+                    label={<HelpTooltip content="用户充值时可选的付款方式（易支付的 type 参数），需支付服务商已开通；不选则下单时不传 type，由易支付收银台让用户选择">付款方式</HelpTooltip>}
+                    placeholder="不选则由易支付收银台选择"
                     selectedKeys={new Set(configuringChannel?.payTypes ?? [])}
                     onSelectionChange={(keys) => {
                       const selected = Array.from(keys) as string[];

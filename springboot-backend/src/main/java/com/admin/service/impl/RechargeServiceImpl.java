@@ -128,13 +128,13 @@ public class RechargeServiceImpl extends ServiceImpl<OrderMapper, Order> impleme
 
         String payType = null;
         if (TYPE_EPAY.equals(type)) {
+            // 未设置付款方式时不传 type，由易支付收银台让用户自己选择
             List<String> allowedPayTypes = allowedPayTypes(channel);
-            if (allowedPayTypes.isEmpty()) {
-                return R.err("该支付渠道未配置可用的付款方式");
-            }
-            payType = StringUtils.isBlank(dto.getPayType()) ? allowedPayTypes.get(0) : dto.getPayType();
-            if (!allowedPayTypes.contains(payType)) {
-                return R.err("该支付渠道不支持此付款方式");
+            if (!allowedPayTypes.isEmpty()) {
+                payType = StringUtils.isBlank(dto.getPayType()) ? allowedPayTypes.get(0) : dto.getPayType();
+                if (!allowedPayTypes.contains(payType)) {
+                    return R.err("该支付渠道不支持此付款方式");
+                }
             }
         } else if (TYPE_TOKENPAY.equals(type)) {
             payType = config.getString("currency").trim();
@@ -194,7 +194,9 @@ public class RechargeServiceImpl extends ServiceImpl<OrderMapper, Order> impleme
                 default: {
                     Map<String, String> params = new LinkedHashMap<>();
                     params.put("pid", pid);
-                    params.put("type", payType);
+                    if (payType != null) {
+                        params.put("type", payType);
+                    }
                     params.put("out_trade_no", orderNo);
                     params.put("notify_url", notifyUrl);
                     params.put("return_url", returnUrl);
@@ -220,7 +222,7 @@ public class RechargeServiceImpl extends ServiceImpl<OrderMapper, Order> impleme
         order.setPayType(payType);
         order.setOrderStatus(ORDER_STATUS_PENDING);
         String info = "钱包充值（" + channel.getString("name");
-        if (TYPE_EPAY.equals(type)) {
+        if (TYPE_EPAY.equals(type) && payType != null) {
             info += " · " + PAY_TYPE_LABELS.get(payType);
         } else if (TYPE_TOKENPAY.equals(type)) {
             info += " · " + payType;
@@ -677,12 +679,11 @@ public class RechargeServiceImpl extends ServiceImpl<OrderMapper, Order> impleme
         return null;
     }
 
-    /** 渠道允许的付款方式：取 payTypes 中受支持的值，未配置时默认支付宝 */
+    /** 渠道允许的付款方式：取 payTypes 中受支持的值；未配置时返回空列表，表示下单不传 type */
     static List<String> allowedPayTypes(JSONObject channel) {
         List<String> result = new ArrayList<>();
         Object raw = channel == null ? null : channel.get("payTypes");
         if (!(raw instanceof JSONArray)) {
-            result.add("alipay");
             return result;
         }
         JSONArray types = (JSONArray) raw;

@@ -39,9 +39,12 @@ const PAY_TYPE_NAMES: Record<string, string> = {
   qqpay: 'QQ钱包'
 };
 
-/** 渠道可选的付款方式，旧配置没有 payTypes 时默认支付宝 */
-const payTypesOf = (channel: PaymentChannel) =>
-  channel.type !== 'epay' ? [''] : (channel.payTypes ?? ['alipay']).filter(type => PAY_TYPE_NAMES[type]);
+/** 渠道可选的付款方式；EPay 未设置时只显示一个按钮，不传 type，由易支付收银台选择 */
+const payTypesOf = (channel: PaymentChannel) => {
+  if (channel.type !== 'epay') return [''];
+  const types = (channel.payTypes ?? []).filter(type => PAY_TYPE_NAMES[type]);
+  return types.length > 0 ? types : [''];
+};
 
 const feeRateOf = (channel: PaymentChannel) => {
   const rate = Number(channel.feeRate ?? 0);

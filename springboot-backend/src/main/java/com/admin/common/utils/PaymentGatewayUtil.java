@@ -244,6 +244,128 @@ public final class PaymentGatewayUtil {
         }
     }
 
+    // ========== 支付宝当面付（alipay.trade.precreate 生成收款码） ==========
+
+    public static final String ALIPAY_DEFAULT_GATEWAY = "https://openapi.alipay.com/gateway.do";
+
+    /** 去掉 PEM 头尾和空白，得到 Base64 密钥正文 */
+    static String keyBody(String key) {
+        return key.replaceAll("-----[A-Z ]+-----", "").replaceAll("\\s", "");
+    }
+
+    /** 支付宝待签名串：除 sign（回调验签时还排除 sign_type）外的非空参数按 key 升序拼成 k=v&k=v */
+    static String alipaySignContent(Map<String, String> params, boolean excludeSignType) {
+        TreeMap<String, String> sorted = new TreeMap<>();
+        for (Map.Entry<String, String> entry : params.entrySet()) {
+            String key = entry.getKey();
+            String value = entry.getValue();
+            if (value == null || value.isEmpty() || "sign".equals(key) || (excludeSignType && "sign_type".equals(key))) {
+                continue;
+            }
+            sorted.put(key, value);
+        }
+        StringBuilder sb = new StringBuilder();
+        for (Map.Entry<String, String> entry : sorted.entrySet()) {
+            if (sb.length() > 0) {
+                sb.append('&');
+            }
+            sb.append(entry.getKey()).append('=').append(entry.getValue());
+        }
+        return sb.toString();
+    }
+
+    /** RSA2（SHA256withRSA）签名，应用私钥为 PKCS8 格式 */
+    static String alipaySign(String content, String privateKey) throws GatewayException {
+        try {
+            java.security.PrivateKey key = java.security.KeyFactory.getInstance("RSA")
+                    .generatePrivate(new java.security.spec.PKCS8EncodedKeySpec(Base64.getDecoder().decode(keyBody(privateKey))));
+            java.security.Signature signature = java.security.Signature.getInstance("SHA256withRSA");
+            signature.initSign(key);
+            signature.update(content.getBytes(StandardCharsets.UTF_8));
+            return Base64.getEncoder().encodeToString(signature.sign());
+        } catch (Exception e) {
+            log.warn("支付宝签名失败: {}", e.getClass().getSimpleName());
+            throw new GatewayException("应用私钥格式有误，请使用 PKCS8 格式的 RSA2 私钥");
+        }
+    }
+
+    static boolean alipayRsaVerify(String content, String sign, String publicKey) {
+        try {
+            java.security.PublicKey key = java.security.KeyFactory.getInstance("RSA")
+                    .generatePublic(new java.security.spec.X509EncodedKeySpec(Base64.getDecoder().decode(keyBody(publicKey))));
+            java.security.Signature signature = java.security.Signature.getInstance("SHA256withRSA");
+            signature.initVerify(key);
+            signature.update(content.getBytes(StandardCharsets.UTF_8));
+            return signature.verify(Base64.getDecoder().decode(sign.replaceAll("\\s", "")));
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    static Map<String, String> alipayPrecreateParams(String appId, String orderNo, BigDecimal payAmount, String subject,
+                                                     String notifyUrl, String timestamp) {
+        JSONObject biz = new JSONObject();
+        biz.put("out_trade_no", orderNo);
+        biz.put("total_amount", payAmount.setScale(2, java.math.RoundingMode.HALF_UP).toPlainString());
+        biz.put("subject", subject);
+        Map<String, String> params = new TreeMap<>();
+        params.put("app_id", appId);
+        params.put("method", "alipay.trade.precreate");
+        params.put("format", "JSON");
+        params.put("charset", "utf-8");
+        params.put("sign_type", "RSA2");
+        params.put("timestamp", timestamp);
+        params.put("version", "1.0");
+        params.put("notify_url", notifyUrl);
+        params.put("biz_content", biz.toJSONString());
+        return params;
+    }
+
+    /** 当面付预下单，返回收款码内容（https://qr.alipay.com/...，手机上打开可直接唤起支付宝） */
+    public static String alipayPrecreate(String gateway, String appId, String privateKey, String orderNo, BigDecimal payAmount,
+                                         String subject, String notifyUrl) throws GatewayException {
+        String timestamp = java.time.LocalDateTime.now(java.time.ZoneId.of("Asia/Shanghai"))
+                .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+        Map<String, String> params = alipayPrecreateParams(appId, orderNo, payAmount, subject, notifyUrl, timestamp);
+        params.put("sign", alipaySign(alipaySignContent(params, false), privateKey));
+
+        String url = gateway == null || gateway.isEmpty() ? ALIPAY_DEFAULT_GATEWAY : gateway.trim();
+        String resp;
+        try {
+            Map<String, Object> form = new java.util.HashMap<>(params);
+            resp = HttpRequest.post(url + (url.contains("?") ? "&" : "?") + "charset=utf-8")
+                    .form(form).timeout(TIMEOUT_MS).execute().body();
+        } catch (Exception e) {
+            log.warn("支付宝当面付下单请求失败: {}", e.getMessage());
+            throw new GatewayException("连接支付宝失败，请稍后重试");
+        }
+        JSONObject result;
+        try {
+            result = JSON.parseObject(resp).getJSONObject("alipay_trade_precreate_response");
+        } catch (Exception e) {
+            result = null;
+        }
+        if (result == null) {
+            log.warn("支付宝当面付响应无法解析: {}", resp);
+            throw new GatewayException("支付宝返回了无法识别的响应");
+        }
+        String qrCode = result.getString("qr_code");
+        if (!"10000".equals(result.getString("code")) || qrCode == null || qrCode.isEmpty()) {
+            log.warn("支付宝当面付下单失败: {}", result.toJSONString());
+            throw new GatewayException("支付宝下单失败：" + firstNonBlank(result.getString("sub_msg"), firstNonBlank(result.getString("msg"), "未知错误")));
+        }
+        return qrCode;
+    }
+
+    /** 支付宝异步通知验签：排除 sign、sign_type 后按升序拼接，用支付宝公钥验 RSA2 签名 */
+    public static boolean alipayVerify(Map<String, String> params, String alipayPublicKey) {
+        String sign = params.get("sign");
+        if (sign == null || sign.isEmpty() || alipayPublicKey == null || alipayPublicKey.isEmpty()) {
+            return false;
+        }
+        return alipayRsaVerify(alipaySignContent(params, true), sign, alipayPublicKey);
+    }
+
     private static String firstNonBlank(String value, String fallback) {
         return value == null || value.trim().isEmpty() ? fallback : value;
     }

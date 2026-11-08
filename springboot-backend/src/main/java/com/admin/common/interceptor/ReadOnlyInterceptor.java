@@ -57,6 +57,7 @@ public class ReadOnlyInterceptor implements HandlerInterceptor {
             PREFIX + "order/admin/list",
             PREFIX + "order/list",
             PREFIX + "package/list",
+            PREFIX + "recharge/status",
             PREFIX + "redeemCode/list",
             PREFIX + "singleTunnelGroup/list",
             PREFIX + "speedLimit/list",

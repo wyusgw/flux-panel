@@ -53,7 +53,8 @@ public class RechargeServiceImpl extends ServiceImpl<OrderMapper, Order> impleme
     static final String TYPE_EPUSDT = "epusdt";
     static final String TYPE_TOKENPAY = "tokenpay";
     static final String TYPE_CRYPTOMUS = "cryptomus";
-    static final List<String> SUPPORTED_TYPES = java.util.Arrays.asList(TYPE_EPAY, TYPE_EPUSDT, TYPE_TOKENPAY, TYPE_CRYPTOMUS);
+    static final String TYPE_ALIPAY_F2F = "alipayf2f";
+    static final List<String> SUPPORTED_TYPES = java.util.Arrays.asList(TYPE_EPAY, TYPE_EPUSDT, TYPE_TOKENPAY, TYPE_CRYPTOMUS, TYPE_ALIPAY_F2F);
 
     /** 易支付通用的付款方式及名称，渠道未配置 payTypes 时只允许支付宝（兼容旧配置） */
     static final Map<String, String> PAY_TYPE_LABELS = new LinkedHashMap<>();
@@ -157,8 +158,13 @@ public class RechargeServiceImpl extends ServiceImpl<OrderMapper, Order> impleme
 
         // 先向网关下单，成功后再保存订单，网关报错时不会留下无法支付的订单
         String payUrl;
+        boolean qrCode = false;
         try {
             switch (type) {
+                case TYPE_ALIPAY_F2F:
+                    payUrl = PaymentGatewayUtil.alipayPrecreate(url, pid, secret, orderNo, payAmount, "钱包充值", notifyUrl);
+                    qrCode = true;
+                    break;
                 case TYPE_EPUSDT:
                     payUrl = PaymentGatewayUtil.epusdtCreate(url, secret, orderNo, payAmount, notifyUrl, returnUrl);
                     break;
@@ -233,6 +239,8 @@ public class RechargeServiceImpl extends ServiceImpl<OrderMapper, Order> impleme
         result.put("orderNo", orderNo);
         result.put("payUrl", payUrl);
         result.put("payAmount", payAmount);
+        // 当面付返回的是收款码内容，前端展示二维码并轮询订单状态
+        result.put("qrCode", qrCode);
         return R.ok(result);
     }
 
@@ -331,6 +339,40 @@ public class RechargeServiceImpl extends ServiceImpl<OrderMapper, Order> impleme
         // 账单金额在下单时由本系统确定并经网关签名回传，验签通过即可信，这里不再按人民币金额比对
         markPaid(pending.order, body.getString("uuid"));
         return true;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public boolean handleAlipayF2fNotify(Map<String, String> params) {
+        PendingNotify pending = loadOrder(params.get("out_trade_no"), TYPE_ALIPAY_F2F);
+        if (pending == null) return false;
+        if (pending.alreadyPaid) return true;
+        if (!PaymentGatewayUtil.alipayVerify(params, pending.config.getString("publicKey"))) return false;
+        String appId = params.get("app_id");
+        if (StringUtils.isNotBlank(appId) && !appId.equals(pending.config.getString("pid"))) return false;
+        String status = params.get("trade_status");
+        if (!"TRADE_SUCCESS".equals(status) && !"TRADE_FINISHED".equals(status)) return false;
+        if (!amountMatches(parseAmount(params.get("total_amount")), pending.order)) return false;
+        markPaid(pending.order, params.get("trade_no"));
+        return true;
+    }
+
+    @Override
+    public R getRechargeOrderStatus(String orderNo) {
+        Integer userId = JwtUtil.getUserIdFromToken();
+        if (userId == null) {
+            return R.err("用户未登录或token无效");
+        }
+        if (StringUtils.isBlank(orderNo)) {
+            return R.err("订单号不能为空");
+        }
+        Order order = this.getOne(new QueryWrapper<Order>().eq("order_no", orderNo).eq("user_id", userId));
+        if (order == null) {
+            return R.err("订单不存在");
+        }
+        JSONObject result = new JSONObject();
+        result.put("orderStatus", order.getOrderStatus());
+        return R.ok(result);
     }
 
     /** 回调对应的待处理订单及其渠道配置 */
@@ -513,6 +555,8 @@ public class RechargeServiceImpl extends ServiceImpl<OrderMapper, Order> impleme
                 return StringUtils.isNotBlank(config.getString("url")) && StringUtils.isNotBlank(config.getString("currency"));
             case TYPE_CRYPTOMUS:
                 return StringUtils.isNotBlank(config.getString("pid"));
+            case TYPE_ALIPAY_F2F:
+                return StringUtils.isNotBlank(config.getString("pid")) && StringUtils.isNotBlank(config.getString("publicKey"));
             default:
                 return false;
         }

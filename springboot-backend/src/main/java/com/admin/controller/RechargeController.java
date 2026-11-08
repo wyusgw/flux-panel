@@ -52,6 +52,19 @@ public class RechargeController {
         return handleNotify(request);
     }
 
+    /** 查询自己的充值订单状态（需登录），当面付扫码时轮询 */
+    @PostMapping("/status")
+    public R status(@RequestBody Map<String, String> body) {
+        return rechargeService.getRechargeOrderStatus(body == null ? null : body.get("orderNo"));
+    }
+
+    /** 支付宝当面付异步通知：表单参数，返回 success 表示已处理，其他内容支付宝会重试 */
+    @PostMapping("/notify/alipayf2f")
+    public String notifyAlipayF2f(HttpServletRequest request) {
+        Map<String, String> params = paramsFromRequest(request);
+        return safely(() -> rechargeService.handleAlipayF2fNotify(params)) ? "success" : "fail";
+    }
+
     /** EPUSDT 回调：返回 ok 表示已处理，其他内容网关会重试 */
     @PostMapping("/notify/epusdt")
     public String notifyEpusdt(@RequestBody(required = false) String body) {

@@ -100,7 +100,7 @@ public final class MenuPermission {
         gate(new String[]{"adminDashboard", "orderManagement"}, "order/admin/list");
         gate(new String[]{"orderManagement"}, "order/batchDelete", "order/manualCreate", "order/updateStatus");
         gate(new String[]{"orders"}, "order/list");
-        gate(new String[]{"shop"}, "order/redeem", "recharge/create");
+        gate(new String[]{"shop"}, "order/redeem", "recharge/create", "recharge/status");
         gate(new String[]{"package"}, "package/create", "package/update", "package/delete", "package/batchDelete", "package/reorder");
         gate(new String[]{"redeemCode"}, "redeemCode/batchCreate", "redeemCode/delete", "redeemCode/list");
         gate(new String[]{"inviteCode"}, "inviteCode/batchCreate", "inviteCode/delete", "inviteCode/list");

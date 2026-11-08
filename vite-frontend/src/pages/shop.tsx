@@ -1,5 +1,6 @@
 import { ExclamationCircleFilled, InfoCircleFilled, TagsOutlined } from "@/components/ant-icons";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import { QRCodeSVG } from "qrcode.react";
 import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Button } from "@heroui/button";
 import { Input } from "@heroui/input";
@@ -8,7 +9,7 @@ import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter } from "@herou
 import { Popover, PopoverTrigger, PopoverContent } from "@heroui/popover";
 import toast from 'react-hot-toast';
 
-import { getPackagePlanList, purchasePackage, getUserPackageInfo, redeemPackageCode, createRechargeOrder } from "@/api";
+import { getPackagePlanList, purchasePackage, getUserPackageInfo, redeemPackageCode, createRechargeOrder, getRechargeOrderStatus } from "@/api";
 import { getCachedConfigs } from "@/config/site";
 import { EmptyState } from "@/components/empty-state";
 
@@ -24,13 +25,13 @@ interface PackagePlanItem {
 interface PaymentChannel {
   id: string;
   name: string;
-  type: 'epay' | 'epusdt' | 'tokenpay' | 'cryptomus';
+  type: 'epay' | 'epusdt' | 'tokenpay' | 'cryptomus' | 'alipayf2f';
   enabled: boolean;
   payTypes?: string[];
   feeRate?: string | number;
 }
 
-const SUPPORTED_CHANNEL_TYPES: string[] = ['epay', 'epusdt', 'tokenpay', 'cryptomus'];
+const SUPPORTED_CHANNEL_TYPES: string[] = ['epay', 'epusdt', 'tokenpay', 'cryptomus', 'alipayf2f'];
 
 const PAY_TYPE_NAMES: Record<string, string> = {
   alipay: '支付宝',
@@ -57,7 +58,8 @@ const PAYMENT_TYPE_LABELS: Record<PaymentChannel['type'], string> = {
   epay: 'EPay',
   epusdt: 'EPUSDT',
   tokenpay: 'TokenPay',
-  cryptomus: 'Cryptomus'
+  cryptomus: 'Cryptomus',
+  alipayf2f: '支付宝当面付'
 };
 
 const NoPaymentIcon = () => (
@@ -119,6 +121,44 @@ export default function ShopPage() {
   const [planToPurchase, setPlanToPurchase] = useState<PackagePlanItem | null>(null);
   const [purchaseLoading, setPurchaseLoading] = useState(false);
   const [successModalOpen, setSuccessModalOpen] = useState(false);
+  // 支付宝当面付：展示收款码并轮询订单状态
+  const [qrPay, setQrPay] = useState<{ orderNo: string; code: string; payAmount: number } | null>(null);
+  const [qrPaid, setQrPaid] = useState(false);
+  const qrPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const stopQrPoll = () => {
+    if (qrPollRef.current) {
+      clearInterval(qrPollRef.current);
+      qrPollRef.current = null;
+    }
+  };
+
+  useEffect(() => stopQrPoll, []);
+
+  useEffect(() => {
+    stopQrPoll();
+    if (!qrPay || qrPaid) return;
+    const startedAt = Date.now();
+    qrPollRef.current = setInterval(async () => {
+      // 支付宝收款码默认 2 小时内有效，超过 30 分钟不再自动查询，用户可手动刷新
+      if (Date.now() - startedAt > 30 * 60 * 1000) {
+        stopQrPoll();
+        return;
+      }
+      try {
+        const res = await getRechargeOrderStatus(qrPay.orderNo);
+        if (res.code === 0 && res.data?.orderStatus === 1) {
+          stopQrPoll();
+          setQrPaid(true);
+          toast.success('充值成功');
+          loadData();
+        }
+      } catch (error) {
+        // 网络抖动时下次再查
+      }
+    }, 3000);
+    return stopQrPoll;
+  }, [qrPay, qrPaid]);
   const [purchasedPlanName, setPurchasedPlanName] = useState('');
 
   useEffect(() => {
@@ -176,7 +216,10 @@ export default function ShopPage() {
     setRechargeLoadingKey(`${channel.id}:${payType}`);
     try {
       const res = await createRechargeOrder(amount, channel.id, payType || undefined);
-      if (res.code === 0 && res.data?.payUrl) {
+      if (res.code === 0 && res.data?.payUrl && res.data?.qrCode) {
+        setQrPaid(false);
+        setQrPay({ orderNo: res.data.orderNo, code: res.data.payUrl, payAmount: Number(res.data.payAmount ?? amount) });
+      } else if (res.code === 0 && res.data?.payUrl) {
         window.location.href = res.data.payUrl;
       } else {
         toast.error(res.msg || '创建充值订单失败');
@@ -390,6 +433,45 @@ export default function ShopPage() {
           </div>
         </CardBody>
       </Card>
+
+      <Modal isOpen={qrPay !== null} onOpenChange={(open) => { if (!open) { stopQrPoll(); setQrPay(null); } }} size="sm" placement="center" backdrop="opaque" isDismissable={false}>
+        <ModalContent>
+          {(onClose) => (
+            <>
+              <ModalHeader>{qrPaid ? '充值成功' : '支付宝扫码支付'}</ModalHeader>
+              <ModalBody className="items-center gap-3">
+                {qrPaid ? (
+                  <p className="text-small text-default-600">已到账，当前余额 {Number(walletBalance)} 元</p>
+                ) : qrPay && (
+                  <>
+                    <p className="text-base font-semibold text-foreground">应付 {qrPay.payAmount.toFixed(2)} 元</p>
+                    <div className="rounded-medium bg-white p-3">
+                      <QRCodeSVG value={qrPay.code} size={200} marginSize={0} />
+                    </div>
+                    <p className="text-small text-default-500 text-center">请使用支付宝扫码付款，付款后页面会自动更新</p>
+                    <Button as="a" href={qrPay.code} size="sm" variant="bordered" className="sm:hidden">打开支付宝付款</Button>
+                  </>
+                )}
+              </ModalBody>
+              <ModalFooter>
+                {!qrPaid && (
+                  <Button size="sm" variant="bordered" onPress={async () => {
+                    if (!qrPay) return;
+                    const res = await getRechargeOrderStatus(qrPay.orderNo);
+                    if (res.code === 0 && res.data?.orderStatus === 1) {
+                      setQrPaid(true);
+                      loadData();
+                    } else {
+                      toast('尚未收到付款，请完成支付后再试');
+                    }
+                  }}>我已支付</Button>
+                )}
+                <Button size="sm" color="primary" onPress={onClose}>{qrPaid ? '知道了' : '关闭'}</Button>
+              </ModalFooter>
+            </>
+          )}
+        </ModalContent>
+      </Modal>
 
       <Modal isOpen={successModalOpen} onOpenChange={setSuccessModalOpen} size="sm" placement="center" backdrop="opaque">
         <ModalContent>

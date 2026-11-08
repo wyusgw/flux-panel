@@ -90,6 +90,7 @@ export const reorderPackagePlans = (plans: Array<{ id: number; sort: number }>) 
 // 订单相关操作 - 全部使用POST请求
 export const purchasePackage = (packageId: number, redeemCode?: string) => Network.post("/order/purchase", { packageId, redeemCode });
 export const redeemPackageCode = (redeemCode: string) => Network.post("/order/redeem", { redeemCode });
+export const getRechargeOrderStatus = (orderNo: string) => Network.post("/recharge/status", { orderNo });
 export const createRechargeOrder = (amount: number, channelId: string, payType?: string) => Network.post("/recharge/create", { amount, channelId, payType });
 export const getOrderList = () => Network.post("/order/list");
 export const getAdminOrderList = () => Network.post("/order/admin/list");

@@ -37,7 +37,7 @@ interface ConfigItem {
 interface PaymentChannel {
   id: string;
   name: string;
-  type: 'epay' | 'epusdt' | 'tokenpay' | 'cryptomus';
+  type: 'epay' | 'epusdt' | 'tokenpay' | 'cryptomus' | 'alipayf2f';
   enabled: boolean;
   payTypes?: string[];
   config?: Record<string, string>;
@@ -74,6 +74,12 @@ const CHANNEL_FIELDS: Record<string, ChannelField[]> = {
     { key: 'currency', label: '账单币种', help: '创建账单使用的币种，留空为 CNY；若 Cryptomus 不支持人民币，可填 USD 等并设置汇率', placeholder: 'CNY' },
     { key: 'rate', label: '汇率', help: '1 单位账单币种等于多少元人民币，例如 USD 填 7.2；账单币种为 CNY 时无需填写', placeholder: '7.2' },
     { key: 'url', label: 'API 地址', help: '留空使用 https://api.cryptomus.com', placeholder: 'https://api.cryptomus.com' }
+  ],
+  alipayf2f: [
+    { key: 'pid', label: 'AppID', help: '支付宝开放平台中已签约「当面付」的应用 AppID', required: true },
+    { key: 'secret', label: '应用私钥', help: 'RSA2 应用私钥，需为 PKCS8 格式（支付宝密钥工具中的「PKCS8(Java适用)」）', password: true, required: true },
+    { key: 'publicKey', label: '支付宝公钥', help: '开放平台「接口加签方式」中的支付宝公钥（不是应用公钥）', password: true, required: true },
+    { key: 'url', label: '网关地址', help: '留空使用正式环境 https://openapi.alipay.com/gateway.do；沙箱填 https://openapi-sandbox.dl.alipaydev.com/gateway.do', placeholder: 'https://openapi.alipay.com/gateway.do' }
   ]
 };
 
@@ -88,7 +94,8 @@ const PAYMENT_TYPES: { label: string; value: PaymentChannel['type'] }[] = [
   { label: 'EPay', value: 'epay' },
   { label: 'EPUSDT', value: 'epusdt' },
   { label: 'TokenPay', value: 'tokenpay' },
-  { label: 'Cryptomus', value: 'cryptomus' }
+  { label: 'Cryptomus', value: 'cryptomus' },
+  { label: 'AlipayF2F', value: 'alipayf2f' }
 ];
 
 

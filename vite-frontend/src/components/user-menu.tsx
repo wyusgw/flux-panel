@@ -11,7 +11,8 @@ const LoginIcon = ({ className = 'w-4 h-4' }: { className?: string }) => (
 );
 
 // 顶栏右上角的两块式标识（登录前后共用）：文字与用户图标分别高亮。
-// 用户图标在鼠标悬停时展开菜单，触屏和键盘则点击展开、再点收起；文字默认同样点击展开，传了 onLabelClick 时改为执行它
+// 用户图标在鼠标悬停时展开菜单，触屏和键盘则点击展开、再点收起；
+// 文字点击后不做任何事，只让文字这一块高亮（用 tabIndex 保证 Safari 点击也会获得焦点），传了 onLabelClick（未登录）时才是可点击的按钮
 const ChipMenu = ({
   label,
   onLabelClick,
@@ -26,6 +27,8 @@ const ChipMenu = ({
   onItemClick: () => void;
 }) => {
   const [open, setOpen] = useState(false);
+  // 用户名这一块是否高亮；与头像图标（菜单展开时高亮）互斥，同一时间只有一边显示聚焦
+  const [nameActive, setNameActive] = useState(false);
   const hovering = useRef(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -43,14 +46,42 @@ const ChipMenu = ({
     };
   }, [open]);
 
+  // 点击用户名以外的地方，用户名的高亮消失
+  useEffect(() => {
+    if (!nameActive) return;
+    const onPointerDown = (e: PointerEvent) => {
+      if (!(e.target as Element | null)?.closest('.user-chip-name')) setNameActive(false);
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    return () => document.removeEventListener('pointerdown', onPointerDown);
+  }, [nameActive]);
+
+  const openMenu = (next: boolean) => {
+    if (next) setNameActive(false);
+    setOpen(next);
+  };
+
   return (
-    <div ref={rootRef} className="user-chip">
-      <button type="button" className="user-chip-name" title={label} onClick={onLabelClick ?? (() => setOpen(prev => !prev))}>
-        <span className="truncate">{label}</span>
-      </button>
+    <div ref={rootRef} className={`user-chip${open ? ' menu-open' : ''}`}>
+      {onLabelClick ? (
+        <button type="button" className="user-chip-name" title={label} onClick={onLabelClick}>
+          <span className="truncate">{label}</span>
+        </button>
+      ) : (
+        <div
+          className={`user-chip-name is-static${nameActive ? ' is-active' : ''}`}
+          title={label}
+          tabIndex={0}
+          onPointerDown={() => { setOpen(false); setNameActive(true); }}
+          onFocus={() => { setOpen(false); setNameActive(true); }}
+          onBlur={() => setNameActive(false)}
+        >
+          <span className="truncate">{label}</span>
+        </div>
+      )}
       <div
         className="user-chip-menu"
-        onPointerEnter={(e) => { if (e.pointerType === 'mouse') { hovering.current = true; setOpen(true); } }}
+        onPointerEnter={(e) => { if (e.pointerType === 'mouse') { hovering.current = true; openMenu(true); } }}
         onPointerLeave={(e) => { if (e.pointerType === 'mouse') { hovering.current = false; setOpen(false); } }}
       >
         <button
@@ -59,7 +90,8 @@ const ChipMenu = ({
           aria-label="用户菜单"
           aria-haspopup="menu"
           aria-expanded={open}
-          onClick={() => setOpen(prev => hovering.current || !prev)}
+          onFocus={() => setNameActive(false)}
+          onClick={() => openMenu(hovering.current || !open)}
         >
           <UserIcon className="w-4 h-4" />
         </button>

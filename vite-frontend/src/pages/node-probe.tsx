@@ -441,7 +441,6 @@ export default function NodeProbePage() {
         ) : visibleNodeGroups.length === 0 ? (
           <div className="probe-empty">
             <EmptyState className="pb-3" text="暂无节点数据" />
-            {!effectiveAdmin && <p>暂无可显示的节点</p>}
           </div>
         ) : (
           <div className="probe-groups">

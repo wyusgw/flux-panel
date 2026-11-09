@@ -16,6 +16,7 @@ import { PopConfirm } from '@/components/pop-confirm';
 import { getCachedConfigs } from '@/config/site';
 import { copyText } from '@/utils/clipboard';
 import { safeLogout } from '@/utils/logout';
+import { isTimeConfigured, formatExpiryTime } from '@/utils/time';
 import {
   getUserPackageInfo,
   updateAutoRenew,
@@ -491,6 +492,8 @@ export default function AccountCenterPage() {
   const usedFlowGiB = (userInfo.inFlow + userInfo.outFlow) / GB;
   // 没有流量配额或已用完时用橙色提醒
   const flowWarning = userInfo.flow <= 0 || usedFlowGiB >= userInfo.flow;
+  // 套餐已过期、没配置到期时间（显示的 1970 年也是过去的时间）或流量用完时，套餐失效时间用橙色提醒
+  const expiryWarning = !isTimeConfigured(userInfo.expTime) || userInfo.expTime < Date.now() || flowWarning;
 
   return (
     <div className="management-page px-4 lg:px-6 py-5 lg:py-6 max-w-[1600px] mx-auto space-y-4">
@@ -503,9 +506,12 @@ export default function AccountCenterPage() {
           <Row label="用户类型" value={isAdminUser ? '管理员' : '普通用户'} />
           <Row label="用户组" value={userInfo.groupName || '未分组'} />
           <Row label="套餐" value={userInfo.packageName || '无'} />
-          {userInfo.expTime && (
-            <Row label="套餐失效" value={new Date(userInfo.expTime).toLocaleString('zh-CN', { hour12: true })} />
-          )}
+          {/* 没有配置到期时间（后端默认 0，或留空）时也显示这一行，显示 1970/1/1 上午8:00:00 */}
+          <Row
+            label="套餐失效"
+            value={formatExpiryTime(userInfo.expTime)}
+            valueClassName={expiryWarning ? 'text-orange-500' : undefined}
+          />
           {currentPlan && (
             <Row
               label="续费价格"

@@ -74,6 +74,7 @@ import { ConfirmDialog } from '@/components/confirm-dialog';
 import { FieldLabel, UnitField } from '@/components/form-field';
 import RefreshButton from "@/components/refresh-button";
 import { DayOfMonthPicker } from "@/components/day-of-month-picker";
+import { isTimeConfigured, formatExpiryTime } from "@/utils/time";
 
 
 // 工具函数
@@ -905,7 +906,7 @@ export default function UserPage() {
   // 单元格渲染：按列 key 输出对应内容
   const renderUserCell = (user: User, key: string): React.ReactNode => {
     const userStatus = getUserStatus(user);
-    const expStatus = user.expTime ? getExpireStatus(user.expTime) : null;
+    const expStatus = isTimeConfigured(user.expTime) ? getExpireStatus(user.expTime) : null;
     const usedFlow = calculateUserTotalUsedFlow(user);
     // 没有流量配额（0）或已用完时用橙色提醒
     const flowWarning = user.flow <= 0 || usedFlow >= user.flow * 1024 * 1024 * 1024;
@@ -931,12 +932,16 @@ export default function UserPage() {
           </span>
         );
       case 'expTime':
-        return user.expTime ? (
+        return isTimeConfigured(user.expTime) ? (
           <div className="min-w-30">
             <p className={`text-sm whitespace-nowrap ${expStatus && expStatus.color !== 'success' ? 'text-warning-600' : ''}`}>{new Date(user.expTime).toLocaleString('zh-CN', { hour12: true })}</p>
-            {expStatus && expStatus.color !== 'success' && <p className="mt-0.5 text-xs text-warning-600">{expStatus.text}</p>}
+            {/* 已过期的不再写「已过期」，日期本身已是橙色；快到期的仍提示「N天后过期」 */}
+            {expStatus && expStatus.color === 'warning' && <p className="mt-0.5 text-xs text-warning-600">{expStatus.text}</p>}
           </div>
-        ) : <span className="text-default-500">永久</span>;
+        ) : (
+          // 没配置到期时间（为空或留空）时显示 1970/1/1 上午8:00:00，颜色与已过期一致
+          <p className="text-sm whitespace-nowrap text-warning-600">{formatExpiryTime(user.expTime)}</p>
+        );
       case 'flow':
         return (
           <div className="min-w-32">

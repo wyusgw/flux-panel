@@ -37,17 +37,76 @@ interface ConfigItem {
 interface PaymentChannel {
   id: string;
   name: string;
-  type: 'epay' | 'epusdt' | 'tokenpay' | 'cyber' | 'cryptomus';
+  type: 'epay' | 'epusdt' | 'tokenpay' | 'cryptomus' | 'alipayf2f' | 'wechatnative';
   enabled: boolean;
+  payTypes?: string[];
   config?: Record<string, string>;
 }
+
+interface ChannelField {
+  key: string;
+  label: string;
+  help?: string;
+  placeholder?: string;
+  password?: boolean;
+  required?: boolean;
+}
+
+/** 各支付类型需要填写的字段，必填项与后端 RechargeServiceImpl.isConfigComplete 一致 */
+const CHANNEL_FIELDS: Record<string, ChannelField[]> = {
+  epay: [
+    { key: 'url', label: 'URL', help: '易支付接口地址，例如 https://pay.example.com', required: true },
+    { key: 'pid', label: 'PID / 商户号', required: true },
+    { key: 'secret', label: '商户密钥', password: true, required: true }
+  ],
+  epusdt: [
+    { key: 'url', label: 'URL', help: 'EPUSDT 服务地址，例如 https://epusdt.example.com', required: true },
+    { key: 'secret', label: 'API Token', help: 'EPUSDT 配置文件中的 api_auth_token', password: true, required: true }
+  ],
+  tokenpay: [
+    { key: 'url', label: 'URL', help: 'TokenPay 服务地址，例如 https://tokenpay.example.com', required: true },
+    { key: 'secret', label: 'ApiToken', help: 'TokenPay 配置文件中的 ApiToken', password: true, required: true },
+    { key: 'currency', label: '币种', help: 'TokenPay 支持的币种代码，例如 USDT_TRC20、TRX、EVM_ETH_USDT_ERC20', placeholder: 'USDT_TRC20', required: true }
+  ],
+  cryptomus: [
+    { key: 'pid', label: 'Merchant UUID', help: 'Cryptomus 后台商户设置中的 Merchant ID', required: true },
+    { key: 'secret', label: 'Payment API Key', password: true, required: true },
+    { key: 'currency', label: '账单币种', help: '创建账单使用的币种，留空为 CNY；若 Cryptomus 不支持人民币，可填 USD 等并设置汇率', placeholder: 'CNY' },
+    { key: 'rate', label: '汇率', help: '1 单位账单币种等于多少元人民币，例如 USD 填 7.2；账单币种为 CNY 时无需填写', placeholder: '7.2' },
+    { key: 'url', label: 'API 地址', help: '留空使用 https://api.cryptomus.com', placeholder: 'https://api.cryptomus.com' }
+  ],
+  alipayf2f: [
+    { key: 'pid', label: 'AppID', help: '支付宝开放平台中已签约「当面付」的应用 AppID', required: true },
+    { key: 'secret', label: '应用私钥', help: 'RSA2 应用私钥，需为 PKCS8 格式（支付宝密钥工具中的「PKCS8(Java适用)」）', password: true, required: true },
+    { key: 'publicKey', label: '支付宝公钥', help: '开放平台「接口加签方式」中的支付宝公钥（不是应用公钥）', password: true, required: true },
+    { key: 'url', label: '网关地址', help: '留空使用正式环境 https://openapi.alipay.com/gateway.do；沙箱填 https://openapi-sandbox.dl.alipaydev.com/gateway.do', placeholder: 'https://openapi.alipay.com/gateway.do' }
+  ],
+  wechatnative: [
+    { key: 'pid', label: '商户号 MchID', help: '微信支付商户平台的商户号，需已开通 Native 支付', required: true },
+    { key: 'appId', label: 'AppID', help: '与商户号绑定的公众号、小程序或开放平台应用的 AppID', required: true },
+    { key: 'serialNo', label: '商户证书序列号', help: '商户平台「API安全」中商户 API 证书的序列号', required: true },
+    { key: 'secret', label: '商户 API 私钥', help: '商户 API 证书中 apiclient_key.pem 的全部内容', password: true, required: true },
+    { key: 'apiV3Key', label: 'APIv3 密钥', help: '商户平台「API安全」中设置的 32 位 APIv3 密钥，用于解密支付通知', password: true, required: true },
+    { key: 'publicKey', label: '微信支付公钥', help: '商户平台「API安全」中的微信支付公钥（pub_key.pem）；使用平台证书的商户可填平台证书内容', password: true, required: true },
+    { key: 'url', label: 'API 地址', help: '留空使用 https://api.mch.weixin.qq.com', placeholder: 'https://api.mch.weixin.qq.com' }
+  ]
+};
+
+/** 易支付付款方式，与后端 RechargeServiceImpl.PAY_TYPE_LABELS 一致 */
+const EPAY_PAY_TYPES = [
+  { value: 'alipay', label: '支付宝' },
+  { value: 'wxpay', label: '微信支付' },
+  { value: 'qqpay', label: 'QQ钱包' },
+  { value: 'usdt', label: 'USDT' }
+];
 
 const PAYMENT_TYPES: { label: string; value: PaymentChannel['type'] }[] = [
   { label: 'EPay', value: 'epay' },
   { label: 'EPUSDT', value: 'epusdt' },
   { label: 'TokenPay', value: 'tokenpay' },
-  { label: 'Cyber', value: 'cyber' },
-  { label: 'Cryptomus', value: 'cryptomus' }
+  { label: 'Cryptomus', value: 'cryptomus' },
+  { label: 'AlipayF2F', value: 'alipayf2f' },
+  { label: 'WechatPayNative', value: 'wechatnative' }
 ];
 
 
@@ -410,18 +469,41 @@ export default function ConfigPage() {
   const addPaymentChannel = () => {
     setConfiguringChannel({
       id: crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`,
-      name: '', type: 'epay', enabled: true, config: {}
+      name: '', type: 'epay', enabled: true, payTypes: [], config: {}
     });
     onChannelConfigOpen();
   };
 
   const openChannelConfig = (channel: PaymentChannel) => {
-    setConfiguringChannel({ ...channel, config: { ...channel.config } });
+    setConfiguringChannel({ ...channel, payTypes: channel.payTypes ?? [], config: { ...channel.config } });
     onChannelConfigOpen();
   };
 
   const saveChannelConfig = () => {
     if (!configuringChannel) return;
+    const missing = (CHANNEL_FIELDS[configuringChannel.type] ?? [])
+      .filter(field => field.required && !configuringChannel.config?.[field.key]?.trim());
+    if (missing.length > 0) {
+      toast.error(`请填写${missing.map(field => field.label).join('、')}`);
+      return;
+    }
+    if (configuringChannel.type === 'wechatnative' && new TextEncoder().encode(configuringChannel.config?.apiV3Key?.trim() ?? '').length !== 32) {
+      toast.error('APIv3 密钥应为 32 个字符');
+      return;
+    }
+    if (configuringChannel.type === 'cryptomus') {
+      const currency = (configuringChannel.config?.currency || 'CNY').trim().toUpperCase();
+      const rate = Number(configuringChannel.config?.rate);
+      if (currency !== 'CNY' && !(rate > 0)) {
+        toast.error('账单币种不是 CNY 时需要填写大于 0 的汇率');
+        return;
+      }
+    }
+    const feeRate = configuringChannel.config?.feeRate;
+    if (feeRate !== undefined && feeRate !== '' && !(Number(feeRate) >= 0 && Number(feeRate) <= 100)) {
+      toast.error('费率需在 0～100 之间');
+      return;
+    }
     const exists = paymentChannels.some(channel => channel.id === configuringChannel.id);
     updatePaymentChannels(exists
       ? paymentChannels.map(channel => channel.id === configuringChannel.id ? configuringChannel : channel)
@@ -698,7 +780,7 @@ export default function ConfigPage() {
                           <TableHeader><TableColumn className="w-16">排序</TableColumn><TableColumn className="w-32">类型</TableColumn><TableColumn>名称</TableColumn><TableColumn className="w-28">是否启用</TableColumn><TableColumn align="end" className="w-44 text-right">操作</TableColumn></TableHeader>
                           <TableBody emptyContent={<EmptyState text="暂无支付渠道" />}>
                             {paymentChannels.map((channel, index) => <TableRow key={channel.id}>
-                              <TableCell>{index + 1}</TableCell><TableCell>{PAYMENT_TYPES.find(type => type.value === channel.type)?.label}</TableCell><TableCell>{channel.name || '未命名渠道'}</TableCell><TableCell>{channel.enabled ? '启用' : '禁用'}</TableCell>
+                              <TableCell>{index + 1}</TableCell><TableCell>{PAYMENT_TYPES.find(type => type.value === channel.type)?.label ?? `${channel.type}（暂不支持）`}</TableCell><TableCell>{channel.name || '未命名渠道'}</TableCell><TableCell>{channel.enabled ? '启用' : '禁用'}</TableCell>
                               <TableCell><div className="flex justify-end gap-2"><Button size="sm" variant="flat" onPress={() => openChannelConfig(channel)}>编辑</Button><Button size="sm" variant="light" color="danger" onPress={() => updatePaymentChannels(paymentChannels.filter(item => item.id !== channel.id))}>删除</Button></div></TableCell>
                             </TableRow>)}
                           </TableBody>
@@ -752,26 +834,31 @@ export default function ConfigPage() {
                   <span className="text-sm font-medium text-foreground">启用</span>
                   <Switch isSelected={configuringChannel?.enabled ?? false} onValueChange={(enabled) => setConfiguringChannel(channel => channel ? { ...channel, enabled } : null)} />
                 </div>
-                <Input labelPlacement="outside-top"
-                  size="sm" autoComplete="off"
-                  label={<HelpTooltip content="支付服务商提供的 API 接口地址">URL</HelpTooltip>}
-                  value={configuringChannel?.config?.url || ''}
-                  onChange={(event) => setConfiguringChannel(channel => channel ? { ...channel, config: { ...channel.config, url: event.target.value } } : null)}
-                />
-                <Input labelPlacement="outside-top"
-                  size="sm" autoComplete="off"
-                  label="PID / 商户号"
-                  placeholder="只有部分支付类型需要填写"
-                  value={configuringChannel?.config?.pid || ''}
-                  onChange={(event) => setConfiguringChannel(channel => channel ? { ...channel, config: { ...channel.config, pid: event.target.value } } : null)}
-                />
-                <Input labelPlacement="outside-top"
-                  size="sm" autoComplete="off"
-                  label="Secret / 密钥"
-                  type="password"
-                  value={configuringChannel?.config?.secret || ''}
-                  onChange={(event) => setConfiguringChannel(channel => channel ? { ...channel, config: { ...channel.config, secret: event.target.value } } : null)}
-                />
+                {configuringChannel?.type === 'epay' && (
+                  <Select labelPlacement="outside-top" size="sm" selectionMode="multiple"
+                    label={<HelpTooltip content="用户充值时可选的付款方式（易支付的 type 参数），需支付服务商已开通；不选则下单时不传 type，由易支付收银台让用户选择">付款方式</HelpTooltip>}
+                    placeholder="不选则由易支付收银台选择"
+                    selectedKeys={new Set(configuringChannel?.payTypes ?? [])}
+                    onSelectionChange={(keys) => {
+                      const selected = Array.from(keys) as string[];
+                      // 按固定顺序保存，商城页按钮顺序稳定
+                      const payTypes = EPAY_PAY_TYPES.map(type => type.value).filter(value => selected.includes(value));
+                      setConfiguringChannel(channel => channel ? { ...channel, payTypes } : null);
+                    }}>
+                    {EPAY_PAY_TYPES.map(type => <SelectItem key={type.value}>{type.label}</SelectItem>)}
+                  </Select>
+                )}
+                {(CHANNEL_FIELDS[configuringChannel?.type ?? ''] ?? []).map(field => (
+                  <Input key={`${configuringChannel?.type}-${field.key}`} labelPlacement="outside-top"
+                    size="sm" autoComplete="off"
+                    label={field.help ? <HelpTooltip content={field.help}>{field.label}</HelpTooltip> : field.label}
+                    placeholder={field.placeholder}
+                    type={field.password ? 'password' : 'text'}
+                    isRequired={field.required}
+                    value={configuringChannel?.config?.[field.key] || ''}
+                    onChange={(event) => setConfiguringChannel(channel => channel ? { ...channel, config: { ...channel.config, [field.key]: event.target.value } } : null)}
+                  />
+                ))}
                 <Input labelPlacement="outside-top"
                   size="sm" autoComplete="off"
                   label="回调 Host"
@@ -781,7 +868,7 @@ export default function ConfigPage() {
                 />
                 <Input labelPlacement="outside-top"
                   size="sm" autoComplete="off"
-                  label={<HelpTooltip content="该支付渠道收取的手续费比例">费率</HelpTooltip>}
+                  label={<HelpTooltip content="用户充值时额外支付的手续费比例，例如 3 表示充值 100 元需付 103 元，钱包到账 100 元">费率</HelpTooltip>}
                   type="number"
                   value={configuringChannel?.config?.feeRate ?? '0.0'}
                   onChange={(event) => setConfiguringChannel(channel => channel ? { ...channel, config: { ...channel.config, feeRate: event.target.value } } : null)}

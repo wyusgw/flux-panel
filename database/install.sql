@@ -432,6 +432,8 @@ CREATE TABLE `orders` (
   `info` varchar(500) DEFAULT NULL,
   `amount` decimal(10,2) NOT NULL DEFAULT '0.00',
   `order_status` int(10) NOT NULL DEFAULT '1',
+  `pay_amount` decimal(10,2) DEFAULT NULL,
+  `pay_type` varchar(20) DEFAULT NULL,
   `paid_time` bigint(20) DEFAULT NULL,
   `created_time` bigint(20) NOT NULL,
   `updated_time` bigint(20) DEFAULT NULL,

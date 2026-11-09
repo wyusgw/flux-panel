@@ -138,6 +138,35 @@ public class TelegramBotUtil {
     }
 
     /**
+     * 设置机器人菜单命令（聊天输入框左侧的「菜单」按钮里列出的指令）。
+     * commands 的每一项为 {命令（不带斜杠）, 说明}。返回是否设置成功。
+     */
+    public static boolean setMyCommands(String token, List<String[]> commands) {
+        if (token == null || token.isEmpty() || commands == null || commands.isEmpty()) return false;
+        try {
+            JSONArray list = new JSONArray();
+            for (String[] c : commands) {
+                JSONObject item = new JSONObject();
+                item.put("command", c[0]);
+                item.put("description", c[1]);
+                list.add(item);
+            }
+            Map<String, Object> params = new HashMap<>();
+            params.put("commands", list.toJSONString());
+            String resp = HttpUtil.get(API_BASE + token + "/setMyCommands", params, TIMEOUT_MS);
+            JSONObject json = JSONObject.parseObject(resp);
+            boolean ok = json != null && json.getBooleanValue("ok");
+            if (!ok) {
+                log.warn("Telegram setMyCommands 失败: {}", resp);
+            }
+            return ok;
+        } catch (Exception e) {
+            log.warn("Telegram setMyCommands 异常: {}", LogSanitizer.maskBotToken(e.getMessage()));
+            return false;
+        }
+    }
+
+    /**
      * 取消 Webhook：Webhook URL 清空时调用，恢复为长轮询模式。返回是否成功。
      */
     public static boolean deleteWebhook(String token) {

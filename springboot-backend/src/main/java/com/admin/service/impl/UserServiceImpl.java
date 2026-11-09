@@ -1156,7 +1156,6 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         userInfo.setWalletBalance(user.getWalletBalance());
         userInfo.setAutoRenew(user.getAutoRenew());
         userInfo.setTelegramBound(StringUtils.isNotBlank(user.getTelegramChatId()));
-        userInfo.setTelegramChatId(user.getTelegramChatId());
         userInfo.setNotifyPaymentMode(user.getNotifyPaymentMode() != null ? user.getNotifyPaymentMode() : 0);
         userInfo.setNotifyDeviceMode(user.getNotifyDeviceMode() != null ? user.getNotifyDeviceMode() : 0);
         userInfo.setNotifyDeviceGroupIds(parseDeviceGroupIds(user.getNotifyDeviceGroups()));

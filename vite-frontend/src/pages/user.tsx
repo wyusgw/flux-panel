@@ -934,8 +934,8 @@ export default function UserPage() {
       case 'expTime':
         return isTimeConfigured(user.expTime) ? (
           <div className="min-w-30">
-            <p className={`text-sm whitespace-nowrap ${expStatus && expStatus.color !== 'success' ? 'text-warning-600' : ''}`}>{new Date(user.expTime).toLocaleString('zh-CN', { hour12: true })}</p>
-            {/* 已过期的不再写「已过期」，日期本身已是橙色；快到期的仍提示「N天后过期」 */}
+            <p className={`text-sm whitespace-nowrap ${(expStatus && expStatus.color !== 'success') || flowWarning ? 'text-warning-600' : ''}`}>{new Date(user.expTime).toLocaleString('zh-CN', { hour12: true })}</p>
+            {/* 已过期的不再写「已过期」，日期本身已是橙色；流量用完时日期同样橙色（与个人中心一致）；快到期的仍提示「N天后过期」 */}
             {expStatus && expStatus.color === 'warning' && <p className="mt-0.5 text-xs text-warning-600">{expStatus.text}</p>}
           </div>
         ) : (

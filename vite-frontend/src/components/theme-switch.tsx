@@ -32,7 +32,7 @@ export const ThemeSwitch = ({ className }: { className?: string }) => {
       <StyleThemeToggle className={className} />
     <button
       onClick={toggleTheme}
-      className={`p-1.5 rounded-lg text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:text-gray-200 dark:hover:bg-gray-800 transition-colors ${className || ''}`}
+      className={`p-1.5 rounded-lg text-gray-500 hover:text-gray-700 dark:text-gray-200 dark:hover:text-gray-200 transition-colors outline-none focus:outline-none focus-visible:outline-none active:bg-transparent [-webkit-tap-highlight-color:transparent] ${className || ''}`}
       title={isDark ? '切换到浅色模式' : '切换到深色模式'}
       aria-label="切换主题"
     >

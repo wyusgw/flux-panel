@@ -1784,3 +1784,94 @@ SET @sql = (
 PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
+
+-- device_group 表新增 allowed_out_group_ids：入口设备组限制可选的出口设备组（英文逗号分隔的 ID），为空表示不限制
+SET @sql = (
+    SELECT IF(
+        NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = DATABASE() AND table_name = 'device_group' AND column_name = 'allowed_out_group_ids'
+        ),
+        'ALTER TABLE `device_group` ADD COLUMN `allowed_out_group_ids` varchar(500) DEFAULT NULL COMMENT "限制出口：允许使用的出口设备组ID，英文逗号分隔，为空不限制";',
+        'SELECT "Column `allowed_out_group_ids` already exists in `device_group`";'
+    )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- device_group 表新增 allowed_in_group_ids：出口设备组限制可搭配的入口设备组（英文逗号分隔的 ID），为空表示不限制
+SET @sql = (
+    SELECT IF(
+        NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = DATABASE() AND table_name = 'device_group' AND column_name = 'allowed_in_group_ids'
+        ),
+        'ALTER TABLE `device_group` ADD COLUMN `allowed_in_group_ids` varchar(500) DEFAULT NULL COMMENT "限制入口：允许使用的入口设备组ID，英文逗号分隔，为空不限制";',
+        'SELECT "Column `allowed_in_group_ids` already exists in `device_group`";'
+    )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- device_group 表新增 udp_source_in_out：入口设备组开启后，UDP 服务监听每个网卡的 IP 地址，实现 UDP 源进源出
+SET @sql = (
+    SELECT IF(
+        NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = DATABASE() AND table_name = 'device_group' AND column_name = 'udp_source_in_out'
+        ),
+        'ALTER TABLE `device_group` ADD COLUMN `udp_source_in_out` tinyint(1) NOT NULL DEFAULT 0 COMMENT "UDP源进源出：1-入口UDP监听每个网卡的IP";',
+        'SELECT "Column `udp_source_in_out` already exists in `device_group`";'
+    )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- device_group 表新增 direct_forward_mode：入口直出策略（0-禁止直接转发，1-可选，2-强制），默认 1 与旧版行为一致
+SET @sql = (
+    SELECT IF(
+        NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = DATABASE() AND table_name = 'device_group' AND column_name = 'direct_forward_mode'
+        ),
+        'ALTER TABLE `device_group` ADD COLUMN `direct_forward_mode` tinyint(1) NOT NULL DEFAULT 1 COMMENT "直接转发策略：0-禁止，1-可选，2-强制";',
+        'SELECT "Column `direct_forward_mode` already exists in `device_group`";'
+    )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- device_group 表新增 failover_group_id：出口设备组的故障转移组（备用出口设备组 ID），为空表示无
+SET @sql = (
+    SELECT IF(
+        NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = DATABASE() AND table_name = 'device_group' AND column_name = 'failover_group_id'
+        ),
+        'ALTER TABLE `device_group` ADD COLUMN `failover_group_id` bigint(20) DEFAULT NULL COMMENT "故障转移组：备用出口设备组ID，为空表示无";',
+        'SELECT "Column `failover_group_id` already exists in `device_group`";'
+    )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- forward 表新增 backup_out_node_ids：出口设备组配置了故障转移组时，规则创建/更新时实际部署的备用出口节点（英文逗号分隔，按优先级），
+-- 暂停、恢复、删除时按它处理，不受之后修改故障转移组设置的影响
+SET @sql = (
+    SELECT IF(
+        NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = DATABASE() AND table_name = 'forward' AND column_name = 'backup_out_node_ids'
+        ),
+        'ALTER TABLE `forward` ADD COLUMN `backup_out_node_ids` varchar(100) DEFAULT NULL COMMENT "故障转移：实际部署的备用出口节点ID，英文逗号分隔，按优先级";',
+        'SELECT "Column `backup_out_node_ids` already exists in `forward`";'
+    )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;

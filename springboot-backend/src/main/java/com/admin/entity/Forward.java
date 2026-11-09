@@ -93,6 +93,14 @@ public class Forward extends BaseEntity{
     private Long outDeviceGroupId;
 
     /**
+     * 故障转移：实际部署的备用出口节点 ID（英文逗号分隔，按优先级）。
+     * 创建/更新规则时按出口设备组的故障转移组解析并记录，暂停、恢复、删除按它处理，
+     * 不受之后修改故障转移组设置的影响；为空表示没有备用出口
+     */
+    @TableField(updateStrategy = FieldStrategy.IGNORED)
+    private String backupOutNodeIds;
+
+    /**
      * 规则限速（Mbps，0 为不限速；与套餐用户限速、管理员指派的限速取较严格值）
      */
     private Integer speedLimit;

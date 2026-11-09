@@ -440,8 +440,7 @@ export default function NodeProbePage() {
           <div className="probe-loading"><div className="probe-loading-ring" /><p>加载节点状态…</p></div>
         ) : visibleNodeGroups.length === 0 ? (
           <div className="probe-empty">
-            <EmptyState className="pb-3" />
-            {!effectiveAdmin && <p>暂无可显示的节点</p>}
+            <EmptyState className="pb-3" text="暂无节点数据" />
           </div>
         ) : (
           <div className="probe-groups">

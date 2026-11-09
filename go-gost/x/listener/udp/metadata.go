@@ -19,6 +19,7 @@ type metadata struct {
 	readQueueSize          int
 	backlog                int
 	keepalive              bool
+	sourceInOut            bool
 	ttl                    time.Duration
 }
 
@@ -50,6 +51,7 @@ func (l *udpListener) parseMetadata(md mdata.Metadata) (err error) {
 		l.md.backlog = defaultBacklog
 	}
 	l.md.keepalive = mdutil.GetBool(md, keepalive)
+	l.md.sourceInOut = mdutil.GetBool(md, "sourceInOut")
 
 	return
 }

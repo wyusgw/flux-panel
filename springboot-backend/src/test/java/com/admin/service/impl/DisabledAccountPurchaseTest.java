@@ -123,7 +123,7 @@ class DisabledAccountPurchaseTest {
         request.setInPort(3001);
 
         com.admin.entity.Forward updated = ReflectionTestUtils.invokeMethod(service, "updateForwardEntity",
-                request, exist, new com.admin.entity.Tunnel());
+                request, exist, new com.admin.entity.Tunnel(), false);
 
         assertEquals(5, updated.getUserId());
         assertEquals(3001, updated.getInPort());

@@ -8,6 +8,8 @@ import com.alibaba.fastjson.JSONObject;
 import org.apache.commons.lang3.StringUtils;
 import org.aspectj.apache.bcel.generic.RET;
 
+import java.util.Collections;
+import java.util.List;
 import java.util.Objects;
 
 public class GostUtil {
@@ -190,81 +192,75 @@ public class GostUtil {
         return WebSocketServer.send_msg(node_id, data, "ResumeService");
     }
 
+    /** 备用出口连接失败后，把该出口摘除的时间（纳秒）：到期后重试，主出口恢复后自动切回 */
+    static final long FAILOVER_FAIL_TIMEOUT_NANOS = 30_000_000_000L;
+
     public static GostDto AddChains(Long node_id, String name, String remoteAddr, String protocol, String interfaceName) {
-        JSONObject dialer = new JSONObject();
-        dialer.put("type", protocol);
-        if (Objects.equals(protocol, "quic")){
-            JSONObject metadata = new JSONObject();
-            metadata.put("keepAlive", true);
-            metadata.put("ttl", "10s");
-            dialer.put("metadata", metadata);
-        }
+        return AddChains(node_id, name, Collections.singletonList(remoteAddr), protocol, interfaceName);
+    }
 
-
-
-
-        JSONObject connector = new JSONObject();
-        connector.put("type", "relay");
-
-        JSONObject node = new JSONObject();
-        node.put("name", "node-" + name);
-        node.put("addr", remoteAddr);
-        node.put("connector", connector);
-        node.put("dialer", dialer);
-
-        if (StringUtils.isNotBlank(interfaceName)) {
-            node.put("interface", interfaceName);
-        }
-
-
-        JSONArray nodes = new JSONArray();
-        nodes.add(node);
-
-        JSONObject hop = new JSONObject();
-        hop.put("name", "hop-" + name);
-        hop.put("nodes", nodes);
-
-        JSONArray hops = new JSONArray();
-        hops.add(hop);
-
-        JSONObject data = new JSONObject();
-        data.put("name", name + "_chains");
-        data.put("hops", hops);
-
-        return WebSocketServer.send_msg(node_id, data, "AddChains");
+    /**
+     * 多个出口地址时按顺序主备：remoteAddrs 第一个是主出口，其余是备用出口。
+     */
+    public static GostDto AddChains(Long node_id, String name, List<String> remoteAddrs, String protocol, String interfaceName) {
+        return WebSocketServer.send_msg(node_id, buildChain(name, remoteAddrs, protocol, interfaceName), "AddChains");
     }
 
     public static GostDto UpdateChains(Long node_id, String name, String remoteAddr, String protocol, String interfaceName) {
-        JSONObject dialer = new JSONObject();
-        dialer.put("type", protocol);
+        return UpdateChains(node_id, name, Collections.singletonList(remoteAddr), protocol, interfaceName);
+    }
 
-        if (Objects.equals(protocol, "quic")){
-            JSONObject metadata = new JSONObject();
-            metadata.put("keepAlive", true);
-            metadata.put("ttl", "10s");
-            dialer.put("metadata", metadata);
-        }
+    public static GostDto UpdateChains(Long node_id, String name, List<String> remoteAddrs, String protocol, String interfaceName) {
+        JSONObject data = buildChain(name, remoteAddrs, protocol, interfaceName);
+        JSONObject req = new JSONObject();
+        req.put("chain", name + "_chains");
+        req.put("data", data);
+        return WebSocketServer.send_msg(node_id, req, "UpdateChains");
+    }
 
-
-        JSONObject connector = new JSONObject();
-        connector.put("type", "relay");
-
-        JSONObject node = new JSONObject();
-        node.put("name", "node-" + name);
-        node.put("addr", remoteAddr);
-        node.put("connector", connector);
-        node.put("dialer", dialer);
-
-        if (StringUtils.isNotBlank(interfaceName)) {
-            node.put("interface", interfaceName);
-        }
-
+    /**
+     * 构建链配置。只有一个出口时与旧版完全一致（节点名 node-{name}，无 selector）；
+     * 有备用出口时同一跳里放多个节点，按 fifo 优先使用靠前的出口，连接失败 1 次就把它摘除
+     * {@link #FAILOVER_FAIL_TIMEOUT_NANOS} 纳秒，期间用后面的出口，到期后重新尝试主出口。
+     * 链配置不经过节点端的时长预处理，failTimeout 必须直接给纳秒数。
+     */
+    static JSONObject buildChain(String name, List<String> remoteAddrs, String protocol, String interfaceName) {
         JSONArray nodes = new JSONArray();
-        nodes.add(node);
+        for (int i = 0; i < remoteAddrs.size(); i++) {
+            JSONObject dialer = new JSONObject();
+            dialer.put("type", protocol);
+            if (Objects.equals(protocol, "quic")){
+                JSONObject metadata = new JSONObject();
+                metadata.put("keepAlive", true);
+                metadata.put("ttl", "10s");
+                dialer.put("metadata", metadata);
+            }
+
+            JSONObject connector = new JSONObject();
+            connector.put("type", "relay");
+
+            JSONObject node = new JSONObject();
+            node.put("name", i == 0 ? "node-" + name : "node-" + name + "-b" + i);
+            node.put("addr", remoteAddrs.get(i));
+            node.put("connector", connector);
+            node.put("dialer", dialer);
+
+            if (StringUtils.isNotBlank(interfaceName)) {
+                node.put("interface", interfaceName);
+            }
+            nodes.add(node);
+        }
 
         JSONObject hop = new JSONObject();
         hop.put("name", "hop-" + name);
         hop.put("nodes", nodes);
+        if (remoteAddrs.size() > 1) {
+            JSONObject selector = new JSONObject();
+            selector.put("strategy", "fifo");
+            selector.put("maxFails", 1);
+            selector.put("failTimeout", FAILOVER_FAIL_TIMEOUT_NANOS);
+            hop.put("selector", selector);
+        }
 
         JSONArray hops = new JSONArray();
         hops.add(hop);
@@ -272,10 +268,7 @@ public class GostUtil {
         JSONObject data = new JSONObject();
         data.put("name", name + "_chains");
         data.put("hops", hops);
-        JSONObject req = new JSONObject();
-        req.put("chain", name + "_chains");
-        req.put("data", data);
-       return WebSocketServer.send_msg(node_id, req, "UpdateChains");
+        return data;
     }
 
     public static GostDto DeleteChains(Long node_id, String name) {
@@ -348,11 +341,12 @@ public class GostUtil {
         }
 
         // 配置处理器
-        JSONObject handler = createHandler(protocol, name, fow_type, sendProxyProtocol);
+        JSONObject handler = createHandler(protocol, name, fow_type, sendProxyProtocol,
+                tunnel != null && tunnel.getBackupOutNodeIds() != null ? tunnel.getBackupOutNodeIds().size() : 0);
         service.put("handler", handler);
 
         // 配置监听器
-        JSONObject listener = createListener(protocol);
+        JSONObject listener = createListener(protocol, tunnel != null && Boolean.TRUE.equals(tunnel.getUdpSourceInOut()));
         service.put("listener", listener);
 
         // 端口转发需要配置转发器
@@ -363,13 +357,17 @@ public class GostUtil {
         return service;
     }
 
-    private static JSONObject createHandler(String protocol, String name, Integer fow_type, Integer sendProxyProtocol) {
+    static JSONObject createHandler(String protocol, String name, Integer fow_type, Integer sendProxyProtocol, int backupExitCount) {
         JSONObject handler = new JSONObject();
         handler.put("type", protocol);
 
         // 隧道转发需要添加链配置
         if (isTunnelForwarding(fow_type)) {
             handler.put("chain", name + "_chains");
+            // 有备用出口时允许重试：主出口连不上的那条连接也会立刻换到备用出口，而不是只有之后的连接才切过去
+            if (backupExitCount > 0) {
+                handler.put("retries", backupExitCount);
+            }
         }
 
         // 发送 Proxy Protocol（连接目标地址时携带 PP 头）
@@ -382,12 +380,16 @@ public class GostUtil {
         return handler;
     }
 
-    private static JSONObject createListener(String protocol) {
+    static JSONObject createListener(String protocol, boolean udpSourceInOut) {
         JSONObject listener = new JSONObject();
         listener.put("type", protocol);
         if (Objects.equals(protocol, "udp")){
             JSONObject metadata = new JSONObject();
             metadata.put("keepAlive", true);
+            // UDP 源进源出：节点（1.2.7 及以上）对监听 0.0.0.0 的 UDP 服务，改为在每个网卡的 IP 上各监听一个套接字
+            if (udpSourceInOut) {
+                metadata.put("sourceInOut", true);
+            }
             listener.put("metadata", metadata);
         }
         return listener;

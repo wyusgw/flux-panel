@@ -52,6 +52,7 @@ CREATE TABLE `forward` (
   `conn_limit` int(10) NOT NULL DEFAULT '0',
   `in_device_group_id` bigint(20) DEFAULT NULL,
   `out_device_group_id` bigint(20) DEFAULT NULL,
+  `backup_out_node_ids` varchar(100) DEFAULT NULL COMMENT '故障转移：实际部署的备用出口节点ID，英文逗号分隔，按优先级',
   `speed_limit` int(11) NOT NULL DEFAULT '0'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -74,6 +75,11 @@ CREATE TABLE `device_group` (
   `hide_in_probe` int(10) NOT NULL DEFAULT '0',
   `remark` varchar(500) DEFAULT NULL,
   `config` longtext COMMENT '高级编辑保存的 JSON 配置',
+  `allowed_out_group_ids` varchar(500) DEFAULT NULL COMMENT '限制出口：允许使用的出口设备组ID，英文逗号分隔，为空不限制',
+  `direct_forward_mode` tinyint(1) NOT NULL DEFAULT '1' COMMENT '直接转发策略：0-禁止，1-可选，2-强制',
+  `udp_source_in_out` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'UDP源进源出：1-入口UDP监听每个网卡的IP',
+  `failover_group_id` bigint(20) DEFAULT NULL COMMENT '故障转移组：备用出口设备组ID，为空表示无',
+  `allowed_in_group_ids` varchar(500) DEFAULT NULL COMMENT '限制入口：允许使用的入口设备组ID，英文逗号分隔，为空不限制',
   `sort` int(10) NOT NULL DEFAULT '0',
   `offline_grace_enabled` tinyint(1) DEFAULT NULL,
   `offline_grace_seconds` int(10) DEFAULT NULL,

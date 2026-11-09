@@ -46,10 +46,12 @@ import {
   deleteForwardGroup,
   getDeviceGroupList,
   getUserPackageInfo,
+  getAllUsers,
   getForwardDailyFlow
 } from "@/api";
 import { JwtUtil } from "@/utils/jwt";
 import { isAdmin } from "@/utils/auth";
+import { isTimeConfigured, formatExpiryTime } from "@/utils/time";
 import RefreshButton from "@/components/refresh-button";
 
 // ========== 图标（转发规则页专用的一批简单线性小图标） ==========
@@ -155,7 +157,29 @@ interface DeviceGroupOption {
   direction?: 'inbound' | 'outbound' | 'monitor' | 'both';
   node?: { status?: number };
   ownerUserId?: number | null;
+  allowedOutGroupIds?: string | null;
+  allowedInGroupIds?: string | null;
+  directForwardMode?: number;
 }
+
+// 入口设备组设置了「限制出口」（英文逗号分隔的出口设备组 ID）时，只能选择列表内的出口；为空表示不限制
+const isOutAllowedForEntry = (entry: DeviceGroupOption | undefined, outId: number): boolean => {
+  const allowed = (entry?.allowedOutGroupIds || '').split(',').map(s => s.trim()).filter(Boolean);
+  return allowed.length === 0 || allowed.includes(String(outId));
+};
+
+// 出口设备组设置了「限制入口」时，只有列表内的入口才能选到它；为空表示不限制
+const isInAllowedForExit = (exit: DeviceGroupOption | undefined, inId: number): boolean => {
+  const allowed = (exit?.allowedInGroupIds || '').split(',').map(s => s.trim()).filter(Boolean);
+  return allowed.length === 0 || allowed.includes(String(inId));
+};
+
+// 入口的直接转发策略：0-禁止（必须选出口），1-可选（默认），2-强制（不能选出口）
+const getDirectMode = (entry?: DeviceGroupOption): number => entry?.directForwardMode ?? 1;
+
+// 入口与出口的搭配是否同时满足两边的限制
+const isPairAllowed = (entry: DeviceGroupOption | undefined, exit: DeviceGroupOption | undefined): boolean =>
+  !!entry && !!exit && isOutAllowedForEntry(entry, exit.id) && isInAllowedForExit(exit, entry.id);
 
 const isDeviceGroupOnline = (group?: DeviceGroupOption) => !!group?.nodeName && group.node?.status === 1;
 
@@ -392,9 +416,21 @@ export default function ForwardPage() {
   // 加载套餐流量/到期/规则数上限，用于顶部信息条
   const loadPackageInfo = async () => {
     try {
-      const res = await getUserPackageInfo();
-      if (res.code === 0 && res.data?.userInfo) {
-        const info = res.data.userInfo;
+      // 管理员代管用户时，/user/package 返回的是管理员自己的套餐；改从用户列表里取目标用户本人的数据
+      // （字段和单位与套餐信息一致：流量上限 GiB、已用上下行字节、到期时间戳、最大规则数）
+      let info: any = null;
+      if (isImpersonating) {
+        const res = await getAllUsers();
+        if (res.code === 0) {
+          info = (res.data || []).find((u: any) => u.id === impersonateUserId) ?? null;
+        }
+      } else {
+        const res = await getUserPackageInfo();
+        if (res.code === 0) {
+          info = res.data?.userInfo ?? null;
+        }
+      }
+      if (info) {
         setPackageInfo({
           flow: info.flow ?? 0,
           inFlow: info.inFlow ?? 0,
@@ -567,6 +603,8 @@ export default function ForwardPage() {
     } else {
       if (!form.inDeviceGroupId) {
         newErrors.inDeviceGroupId = '入口设备组不能为空';
+      } else if (getDirectMode(deviceGroups.find(g => g.id === form.inDeviceGroupId)) === 0 && !form.outDeviceGroupId) {
+        newErrors.outDeviceGroupId = '该入口不允许直接转发，请选择出口';
       }
     }
 
@@ -1479,21 +1517,20 @@ export default function ForwardPage() {
         </CardHeader>
         <CardBody className="p-4 space-y-3">
 
-        {/* 信息 / 分组筛选条：管理员代管其他用户规则时，账号级流量/到期时间是当前登录管理员自己的数据，
-            跟目标用户无关，容易造成误解，这里不展示；分组是按 scopeUserId（目标用户）过滤好的数据，
+        {/* 信息 / 分组筛选条：流量、到期时间、规则数都是当前页面所属用户（scopeUserId）的数据，
+            管理员代管其他用户时显示的是目标用户本人的套餐信息，不是管理员自己的；
             管理分组、按分组筛选、未分组数量在代管模式下同样可用 */}
         <div className="flex flex-wrap items-center gap-2">
-          {!isImpersonating && (
-            <>
-              <span className="rounded-small border border-default-200 px-2 py-0.5 text-xs text-foreground">
-                流量: <span className={(packageInfo?.flow ?? 0) <= 0 || usedGiB >= (packageInfo?.flow ?? 0) ? 'text-orange-500' : ''}>{usedGiB.toFixed(2)} GiB / {(packageInfo?.flow ?? 0).toFixed(2)} GiB</span>
-              </span>
-              {packageInfo?.expTime && (
-                <span className="rounded-small border border-default-200 px-2 py-0.5 text-xs text-foreground">到期: {new Date(packageInfo.expTime).toLocaleString('zh-CN', { hour12: true })}</span>
-              )}
-              <span className="rounded-small border border-default-200 px-2 py-0.5 text-xs text-foreground">规则数: {myForwardsAll.length} / {packageInfo?.num ?? '-'}</span>
-            </>
-          )}
+          <span className="rounded-small border border-default-200 px-2 py-0.5 text-xs text-foreground">
+            流量: <span className={(packageInfo?.flow ?? 0) <= 0 || usedGiB >= (packageInfo?.flow ?? 0) ? 'text-orange-500' : ''}>{usedGiB.toFixed(2)} GiB / {(packageInfo?.flow ?? 0).toFixed(2)} GiB</span>
+          </span>
+          {/* 没有到期时间表示永久，与用户管理、仪表盘的显示一致 */}
+          {/* 套餐已过期或流量用完时，到期时间用橙色提醒（与个人中心的套餐失效一致）；
+              没配置到期时间（为空或留空）时显示 1970/1/1 上午8:00:00，同样用橙色 */}
+          <span className="rounded-small border border-default-200 px-2 py-0.5 text-xs text-foreground">
+            到期: <span className={!isTimeConfigured(packageInfo?.expTime) || packageInfo.expTime < Date.now() || (packageInfo?.flow ?? 0) <= 0 || usedGiB >= (packageInfo?.flow ?? 0) ? 'text-orange-500' : ''}>{formatExpiryTime(packageInfo?.expTime)}</span>
+          </span>
+          <span className="rounded-small border border-default-200 px-2 py-0.5 text-xs text-foreground">规则数: {myForwardsAll.length} / {packageInfo?.num ?? '-'}</span>
           <Button size="sm" variant="bordered" className="border-dashed" startContent={<SettingOutlined />} onPress={() => setGroupManageModalOpen(true)}>管理分组</Button>
           <Chip
             size="sm"
@@ -1773,7 +1810,10 @@ export default function ForwardPage() {
                           onSelectionChange={(keys) => {
                             const selectedKey = Array.from(keys)[0] as string;
                             // 入口被清空时，出口选择会被隐藏，同时清掉已选的出口，避免提交隐藏的值
-                            setForm(prev => ({ ...prev, inDeviceGroupId: selectedKey ? parseInt(selectedKey) : null, ...(selectedKey ? {} : { outDeviceGroupId: null }) }));
+                            const nextInId = selectedKey ? parseInt(selectedKey) : null;
+                            const nextEntry = deviceGroups.find(g => g.id === nextInId);
+                            // 换入口后，已选出口若不在新入口的限制出口内，同样清掉
+                            setForm(prev => ({ ...prev, inDeviceGroupId: nextInId, ...(nextInId && (prev.outDeviceGroupId == null || (getDirectMode(nextEntry) !== 2 && isPairAllowed(nextEntry, deviceGroups.find(g => g.id === prev.outDeviceGroupId)))) ? {} : { outDeviceGroupId: null }) }));
                           }}
                           isInvalid={!!errors.inDeviceGroupId}
                           errorMessage={errors.inDeviceGroupId}
@@ -1796,13 +1836,16 @@ export default function ForwardPage() {
                         </Select>
 
                         {/* 先选择入口后才显示出口选择 */}
-                        {form.inDeviceGroupId && (
+                        {form.inDeviceGroupId && getDirectMode(deviceGroups.find(g => g.id === form.inDeviceGroupId)) !== 2 && (
                         <Select
                           size="sm"
                           labelPlacement="outside-top"
                           label={<HelpTooltip content="不选择出口时，流量将直接从入口转发至目标地址">出口</HelpTooltip>}
                           listboxProps={{ emptyContent: <EmptyState compact /> }}
-                          placeholder="留空则为直接端口转发"
+                          placeholder={getDirectMode(deviceGroups.find(g => g.id === form.inDeviceGroupId)) === 0 ? '请选择出口' : '留空则为直接端口转发'}
+                          disallowEmptySelection={getDirectMode(deviceGroups.find(g => g.id === form.inDeviceGroupId)) === 0}
+                          isInvalid={!!errors.outDeviceGroupId}
+                          errorMessage={errors.outDeviceGroupId}
                           selectedKeys={form.outDeviceGroupId ? [form.outDeviceGroupId.toString()] : []}
                           onSelectionChange={(keys) => {
                             const selectedKey = Array.from(keys)[0] as string;
@@ -1813,7 +1856,8 @@ export default function ForwardPage() {
                         >
                           {deviceGroups.filter((group) => {
                             const direction = group.direction || 'inbound';
-                            return direction === 'outbound' || direction === 'both';
+                            return (direction === 'outbound' || direction === 'both')
+                              && isPairAllowed(deviceGroups.find(g => g.id === form.inDeviceGroupId), group);
                           }).map((group) => (
                             <SelectItem key={group.id.toString()} textValue={group.name}>
                               <div className="flex items-center gap-1.5 flex-wrap">

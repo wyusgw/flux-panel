@@ -263,6 +263,10 @@ html.dark:not(.theme-transparent) .app-topbar {
   max-width: 160px;
   border-radius: 6px 0 0 6px;
 }
+/* 只显示用户名、点击不触发任何操作的一块：鼠标保持默认指针 */
+.user-chip-name.is-static {
+  cursor: default;
+}
 .user-chip-menu {
   position: relative;
   height: 100%;
@@ -273,8 +277,8 @@ html.dark:not(.theme-transparent) .app-topbar {
   border-radius: 0 6px 6px 0;
 }
 /* 高亮的一块盖在相邻边框上面，四条边才都显示为蓝色 */
-.user-chip-name:hover,
-.user-chip-name:focus,
+.user-chip-name.is-active,
+.user-chip:not(.menu-open) .user-chip-name:hover,
 .user-chip-icon:hover,
 .user-chip-icon:focus-visible,
 .user-chip-icon.is-active {

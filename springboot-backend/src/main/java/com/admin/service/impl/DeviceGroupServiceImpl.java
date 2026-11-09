@@ -89,6 +89,24 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
     public R createDeviceGroup(DeviceGroupDto dto) {
         boolean isChain = "chain".equals(dto.getDirection());
 
+        String allowedOut = normalizeAllowedOutGroupIds(dto.getAllowedOutGroupIds());
+        if (ALLOWED_OUT_INVALID.equals(allowedOut)) {
+            return R.err(ERROR_ALLOWED_OUT_FORMAT);
+        }
+        String allowedIn = normalizeAllowedOutGroupIds(dto.getAllowedInGroupIds());
+        if (ALLOWED_OUT_INVALID.equals(allowedIn)) {
+            return R.err(ERROR_ALLOWED_IN_FORMAT);
+        }
+        if (dto.getDirectForwardMode() != null && (dto.getDirectForwardMode() < 0 || dto.getDirectForwardMode() > 2)) {
+            return R.err("直接转发策略不正确");
+        }
+        Long failoverId = isExitDirection(normalizeDirection(dto.getDirection())) && dto.getFailoverGroupId() != null && dto.getFailoverGroupId() > 0
+                ? dto.getFailoverGroupId() : null;
+        R failoverCheck = validateFailoverGroupId(failoverId, null);
+        if (failoverCheck.getCode() != 0) {
+            return failoverCheck;
+        }
+
         if (isChain) {
             R hopsCheck = validateChainHops(dto.getChainHops(), null);
             if (hopsCheck.getCode() != 0) {
@@ -111,10 +129,16 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
         group.setName(dto.getName());
         group.setNodeId(isChain ? null : dto.getNodeId());
         group.setDirection(normalizeDirection(dto.getDirection()));
-        group.setProtocol(dto.getProtocol() != null && !dto.getProtocol().isEmpty() ? dto.getProtocol() : "tls");
+        // 协议留空表示未选择（保存为空串），实际建立隧道时由 TunnelResolver 按 TLS 处理
+        group.setProtocol(dto.getProtocol() == null ? "" : dto.getProtocol().trim());
         group.setRatio(dto.getRatio() != null ? dto.getRatio() : BigDecimal.ONE);
         group.setHideInProbe(dto.getHideInProbe() != null ? dto.getHideInProbe() : 0);
         group.setRemark(dto.getRemark());
+        group.setAllowedOutGroupIds(isEntryDirection(group.getDirection()) ? allowedOut : null);
+        group.setAllowedInGroupIds(isExitDirection(group.getDirection()) ? allowedIn : null);
+        group.setFailoverGroupId(failoverId);
+        group.setDirectForwardMode(isEntryDirection(group.getDirection()) && dto.getDirectForwardMode() != null ? dto.getDirectForwardMode() : 1);
+        group.setUdpSourceInOut(isEntryDirection(group.getDirection()) && Boolean.TRUE.equals(dto.getUdpSourceInOut()) ? 1 : 0);
         group.setSort(dto.getSort() != null ? dto.getSort() : 0);
 
         long currentTime = System.currentTimeMillis();
@@ -285,6 +309,11 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
                 item.put("nodeName", "未知节点");
             }
             item.put("userGroupIds", group.getUserGroupIds());
+            item.put("allowedOutGroupIds", group.getAllowedOutGroupIds());
+            item.put("allowedInGroupIds", group.getAllowedInGroupIds());
+            item.put("failoverGroupId", group.getFailoverGroupId() == null ? 0 : group.getFailoverGroupId());
+            item.put("directForwardMode", group.getDirectForwardMode() == null ? 1 : group.getDirectForwardMode());
+            item.put("udpSourceInOut", group.getUdpSourceInOut() != null && group.getUdpSourceInOut() == 1);
             item.put("ratio", group.getRatio());
             item.put("hideInProbe", group.getHideInProbe());
             item.put("sort", group.getSort());
@@ -360,6 +389,24 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
 
         boolean isChain = "chain".equals(dto.getDirection());
 
+        String allowedOut = normalizeAllowedOutGroupIds(dto.getAllowedOutGroupIds());
+        if (ALLOWED_OUT_INVALID.equals(allowedOut)) {
+            return R.err(ERROR_ALLOWED_OUT_FORMAT);
+        }
+        String allowedIn = normalizeAllowedOutGroupIds(dto.getAllowedInGroupIds());
+        if (ALLOWED_OUT_INVALID.equals(allowedIn)) {
+            return R.err(ERROR_ALLOWED_IN_FORMAT);
+        }
+        if (dto.getDirectForwardMode() != null && (dto.getDirectForwardMode() < 0 || dto.getDirectForwardMode() > 2)) {
+            return R.err("直接转发策略不正确");
+        }
+        Long failoverId = isExitDirection(normalizeDirection(dto.getDirection())) && dto.getFailoverGroupId() != null && dto.getFailoverGroupId() > 0
+                ? dto.getFailoverGroupId() : null;
+        R failoverCheck = validateFailoverGroupId(failoverId, dto.getId());
+        if (failoverCheck.getCode() != 0) {
+            return failoverCheck;
+        }
+
         if (isChain) {
             R hopsCheck = validateChainHops(dto.getChainHops(), dto.getId());
             if (hopsCheck.getCode() != 0) {
@@ -383,10 +430,16 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
         group.setName(dto.getName());
         group.setNodeId(isChain ? null : dto.getNodeId());
         group.setDirection(normalizeDirection(dto.getDirection()));
-        group.setProtocol(dto.getProtocol() != null && !dto.getProtocol().isEmpty() ? dto.getProtocol() : "tls");
+        // 协议留空表示未选择（保存为空串），实际建立隧道时由 TunnelResolver 按 TLS 处理
+        group.setProtocol(dto.getProtocol() == null ? "" : dto.getProtocol().trim());
         group.setRatio(dto.getRatio() != null ? dto.getRatio() : BigDecimal.ONE);
         group.setHideInProbe(dto.getHideInProbe() != null ? dto.getHideInProbe() : 0);
         group.setRemark(dto.getRemark());
+        group.setAllowedOutGroupIds(isEntryDirection(group.getDirection()) ? allowedOut : null);
+        group.setAllowedInGroupIds(isExitDirection(group.getDirection()) ? allowedIn : null);
+        group.setFailoverGroupId(failoverId);
+        group.setDirectForwardMode(isEntryDirection(group.getDirection()) && dto.getDirectForwardMode() != null ? dto.getDirectForwardMode() : 1);
+        group.setUdpSourceInOut(isEntryDirection(group.getDirection()) && Boolean.TRUE.equals(dto.getUdpSourceInOut()) ? 1 : 0);
         if (dto.getSort() != null) {
             group.setSort(dto.getSort());
         }
@@ -446,6 +499,11 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
                 .eq("target_device_group_id", id));
         if (hopUsageCount > 0) {
             return R.err(ERROR_IN_USE_AS_HOP);
+        }
+
+        boolean usedAsFailover = this.count(new QueryWrapper<DeviceGroup>().eq("failover_group_id", id)) > 0;
+        if (usedAsFailover) {
+            return R.err(ERROR_IN_USE_AS_FAILOVER);
         }
 
         boolean result = this.removeById(id);
@@ -774,6 +832,64 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
             relation.setCreatedTime(now);
             userGroupRelationMapper.insert(relation);
         }
+    }
+
+    /** 标记限制出口格式不合法的内部哨兵值（正常结果只会是 null 或纯数字逗号串） */
+    private static final String ALLOWED_OUT_INVALID = "!invalid";
+    private static final String ERROR_ALLOWED_OUT_FORMAT = "限制出口格式不正确，应为英文逗号分隔的设备组 ID，如 3,5,8";
+
+    private static final String ERROR_IN_USE_AS_FAILOVER = "该设备组仍被其他出口设备组用作故障转移组，请先修改相关出口设备组的故障转移组";
+
+    private static final String ERROR_ALLOWED_IN_FORMAT = "限制入口格式不正确，应为英文逗号分隔的设备组 ID，如 3,5,8";
+
+    /** 出口类设备组（出口、入口＋出口）才会被入口选择，限制入口只对它们有意义 */
+    private static boolean isExitDirection(String direction) {
+        return "outbound".equals(direction) || "both".equals(direction);
+    }
+
+    /**
+     * 校验故障转移组：备用出口必须存在、是出口或入口＋出口设备组，且不能是本出口自身
+     * （selfId 为空表示新建，尚无 ID）。id 为空表示无。
+     */
+    private R validateFailoverGroupId(Long id, Long selfId) {
+        if (id == null) {
+            return R.ok();
+        }
+        if (selfId != null && selfId.equals(id)) {
+            return R.err("故障转移组不能选择本出口自身");
+        }
+        DeviceGroup target = this.getById(id);
+        if (target == null) {
+            return R.err("故障转移组选择的设备组不存在");
+        }
+        if (!isExitDirection(target.getDirection())) {
+            return R.err("故障转移组「" + target.getName() + "」不是出口设备组");
+        }
+        return R.ok();
+    }
+
+    /** 入口类设备组（入口、入口＋出口）才会被用来选择出口，限制出口只对它们有意义 */
+    private static boolean isEntryDirection(String direction) {
+        return "inbound".equals(direction) || "both".equals(direction);
+    }
+
+    /**
+     * 整理限制出口：去掉空白，空串返回 null（不限制），每段必须是正整数，去重并保留顺序；
+     * 格式不对返回 {@link #ALLOWED_OUT_INVALID}，避免存入脏数据后导致无法创建转发规则。
+     */
+    static String normalizeAllowedOutGroupIds(String raw) {
+        if (raw == null || raw.trim().isEmpty()) {
+            return null;
+        }
+        java.util.LinkedHashSet<Long> ids = new java.util.LinkedHashSet<>();
+        for (String part : raw.split(",", -1)) {
+            String s = part.trim();
+            if (!s.matches("\\d{1,18}") || Long.parseLong(s) <= 0) {
+                return ALLOWED_OUT_INVALID;
+            }
+            ids.add(Long.parseLong(s));
+        }
+        return ids.stream().map(String::valueOf).collect(Collectors.joining(","));
     }
 
     private String normalizeDirection(String direction) {

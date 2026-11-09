@@ -69,6 +69,22 @@ public class Tunnel extends BaseEntity {
 
     private String udpListenAddr;
 
+    /**
+     * UDP 源进源出（非持久化）：由入口设备组的设置带入，下发 UDP 服务时写入监听器元数据
+     */
+    @com.baomidou.mybatisplus.annotation.TableField(exist = false)
+    private Boolean udpSourceInOut;
+
+    /**
+     * 故障转移（非持久化）：备用出口节点 ID 及其连接地址（serverIp），按优先级排列，两个列表等长。
+     * 只有设备组模式的转发才会有；为空表示没有备用出口
+     */
+    @com.baomidou.mybatisplus.annotation.TableField(exist = false)
+    private java.util.List<Long> backupOutNodeIds;
+
+    @com.baomidou.mybatisplus.annotation.TableField(exist = false)
+    private java.util.List<String> backupOutIps;
+
     private String interfaceName;
 
     /**

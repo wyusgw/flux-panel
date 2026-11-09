@@ -41,7 +41,6 @@ interface UserInfo {
   walletBalance: number;
   autoRenew: number;
   telegramBound: boolean;
-  telegramChatId?: string | null;
   notifyPaymentMode: number;
   notifyDeviceMode: number;
   notifyDeviceGroupIds: number[];
@@ -531,18 +530,17 @@ export default function AccountCenterPage() {
           />
           <Row
             label="Telegram 关联"
-            value={userInfo.telegramBound ? `已关联 ${userInfo.telegramChatId ?? ''}`.trim() : '未关联'}
+            value={userInfo.telegramBound ? '已绑定' : '未绑定'}
             action={
-              <>
+              userInfo.telegramBound ? (
+                <PopConfirm title="取消绑定 Telegram 帐号" onConfirm={handleUnbind}>
+                  <Button size="sm" variant="bordered" className={DANGER_OUTLINE_BUTTON} startContent={<UnlinkIcon />} isLoading={unbindLoading}>取消绑定</Button>
+                </PopConfirm>
+              ) : (
                 <PopConfirm title="关联 Telegram 帐号" onConfirm={handleOpenBind}>
                   <Button size="sm" variant="bordered" className={OUTLINE_BUTTON} startContent={<LinkIcon />} isLoading={bindLoading}>关联</Button>
                 </PopConfirm>
-                {userInfo.telegramBound && (
-                  <PopConfirm title="取消关联 Telegram 帐号" onConfirm={handleUnbind}>
-                    <Button size="sm" variant="bordered" className={DANGER_OUTLINE_BUTTON} startContent={<UnlinkIcon />} isLoading={unbindLoading}>取消关联</Button>
-                  </PopConfirm>
-                )}
-              </>
+              )
             }
           />
           <Row

@@ -13,6 +13,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
 
 import javax.annotation.Resource;
+import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -34,6 +35,20 @@ public class TelegramPollingTask {
     @Resource
     ViteConfigService viteConfigService;
 
+    /** 机器人菜单命令：{命令, 说明}，与 handleUpdate 支持的指令保持一致 */
+    static final List<String[]> MENU_COMMANDS = Arrays.asList(
+            new String[]{"start", "开始使用"},
+            new String[]{"bind", "绑定账号：/bind 绑定码"},
+            new String[]{"unbind", "解除这个 Telegram 绑定的全部账号"},
+            new String[]{"help", "查看可用指令"}
+    );
+
+    /** 已成功设置菜单命令的 Bot Token，Token 变化（或面板重启）后重新设置一次 */
+    private volatile String menuCommandsToken;
+    /** 上次设置失败的时间，失败后 10 分钟内不重试，避免每 3 秒刷一次告警日志 */
+    private volatile long menuCommandsFailedAt;
+    private static final long MENU_COMMANDS_RETRY_MS = 10 * 60 * 1000L;
+
     @Scheduled(fixedDelay = 3000)
     public void poll() {
         try {
@@ -44,6 +59,7 @@ public class TelegramPollingTask {
             if (token == null || token.isEmpty()) {
                 return;
             }
+            ensureMenuCommands(token);
             String webhookUrl = getConfigValue("telegram_webhook_url");
             if (webhookUrl != null && !webhookUrl.isEmpty()) {
                 // 已配置 Webhook：Telegram 不允许同一个 Bot 同时使用 getUpdates 长轮询，跳过本次轮询
@@ -75,6 +91,19 @@ public class TelegramPollingTask {
         }
     }
 
+    /** 菜单命令在 Webhook 与长轮询模式下都需要，Token 未变时不重复请求 */
+    private void ensureMenuCommands(String token) {
+        if (token.equals(menuCommandsToken)) return;
+        long now = System.currentTimeMillis();
+        if (now - menuCommandsFailedAt < MENU_COMMANDS_RETRY_MS) return;
+        if (TelegramBotUtil.setMyCommands(token, MENU_COMMANDS)) {
+            menuCommandsToken = token;
+            menuCommandsFailedAt = 0L;
+        } else {
+            menuCommandsFailedAt = now;
+        }
+    }
+
     private static final String HELP_TEXT = "可用指令：\n/bind <绑定码> 绑定账号（在个人中心获取绑定码，可绑定多个账号）\n/unbind 解除这个 Telegram 绑定的全部账号\n/help 查看本帮助";
 
     /**
@@ -82,7 +111,13 @@ public class TelegramPollingTask {
      */
     public void handleUpdate(String token, TelegramBotUtil.TelegramUpdate update) {
         if (update.text == null) return;
-        String text = update.text.trim();
+        String text = normalizeCommand(update.text.trim());
+
+        if (text.equals("/bind")) {
+            // 从菜单点选 /bind 时不带绑定码，提示用法
+            TelegramBotUtil.sendMessage(token, update.chatId, "请发送 /bind <绑定码>，绑定码在个人中心获取");
+            return;
+        }
 
         if (text.equals("/unbind") || text.startsWith("/unbind ")) {
             handleUnbind(token, update);
@@ -125,6 +160,16 @@ public class TelegramPollingTask {
                 .set("updated_time", System.currentTimeMillis()));
 
         TelegramBotUtil.sendMessage(token, update.chatId, "账号 " + user.getUser() + " 绑定成功！后续将通过 Telegram 接收该账号的推送通知。可以用其他账号的绑定码继续绑定。");
+    }
+
+    /** 去掉指令后的 @机器人用户名（如 /help@xxx_bot），群组里点选菜单命令时会带上 */
+    static String normalizeCommand(String text) {
+        if (!text.startsWith("/")) return text;
+        int space = text.indexOf(' ');
+        String command = space < 0 ? text : text.substring(0, space);
+        int at = command.indexOf('@');
+        if (at < 0) return text;
+        return command.substring(0, at) + (space < 0 ? "" : text.substring(space));
     }
 
     /** 一个 Telegram 可以关联多个账号，/unbind 解除它关联的全部账号；只解除某一个账号在个人中心操作 */

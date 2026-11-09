@@ -206,7 +206,14 @@ public class ViteConfigServiceImpl extends ServiceImpl<ViteConfigMapper, ViteCon
                 return "[]";
             }
             for (int i = 0; i < channels.size(); i++) {
-                channels.getJSONObject(i).remove("config");
+                com.alibaba.fastjson2.JSONObject channel = channels.getJSONObject(i);
+                com.alibaba.fastjson2.JSONObject config = channel.getJSONObject("config");
+                // 费率要在商城页显示实付金额，单独保留；其余配置（地址、商户号、密钥）去掉
+                Object feeRate = config == null ? null : config.get("feeRate");
+                channel.remove("config");
+                if (feeRate != null) {
+                    channel.put("feeRate", feeRate);
+                }
             }
             return channels.toJSONString();
         } catch (Exception e) {

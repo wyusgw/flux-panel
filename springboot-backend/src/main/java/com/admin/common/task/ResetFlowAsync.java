@@ -1,5 +1,6 @@
 package com.admin.common.task;
 
+import com.admin.common.utils.ExitFailover;
 import com.admin.common.utils.GostUtil;
 import com.admin.common.utils.TunnelResolver;
 import com.admin.entity.Forward;
@@ -258,7 +259,9 @@ public class ResetFlowAsync {
 
         GostUtil.PauseService(tunnel.getInNodeId(), buildServiceName(forward.getId(), forward.getUserId(), userTunnelId));
         if (tunnel.getType() == 2){
-            GostUtil.PauseRemoteService(tunnel.getOutNodeId(), buildServiceName(forward.getId(), forward.getUserId(), userTunnelId));
+            for (Long outNodeId : ExitFailover.allOutNodeIds(tunnel)) {
+                GostUtil.PauseRemoteService(outNodeId, buildServiceName(forward.getId(), forward.getUserId(), userTunnelId));
+            }
         }
     }
 

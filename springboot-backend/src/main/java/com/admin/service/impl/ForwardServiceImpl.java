@@ -6,6 +6,7 @@ import com.admin.common.dto.ForwardWithTunnelDto;
 import com.admin.common.dto.GostDto;
 import com.admin.common.dto.TcpPingDiagnosisResult;
 import com.admin.common.lang.R;
+import com.admin.common.utils.ExitFailover;
 import com.admin.common.utils.GostUtil;
 import com.admin.common.utils.JwtUtil;
 import com.admin.common.utils.TcpPingDiagnosisUtil;
@@ -195,6 +196,7 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
 
             // 5. 创建并保存Forward对象（归属 effectiveUser，即目标用户）
             forward = createForwardEntity(forwardDto, effectiveUser, portAllocation);
+            forward.setBackupOutNodeIds(ExitFailover.join(tunnel.getBackupOutNodeIds()));
             if (!this.save(forward)) {
                 return R.err("端口转发创建失败");
             }
@@ -254,7 +256,11 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             nodeIds.add(tunnel.getInNodeId());
         }
         if (tunnel.getType() == TUNNEL_TYPE_TUNNEL_FORWARD && tunnel.getOutNodeId() != null) {
-            nodeIds.add(tunnel.getOutNodeId());
+            for (Long outNodeId : ExitFailover.allOutNodeIds(tunnel)) {
+                if (!nodeIds.contains(outNodeId)) {
+                    nodeIds.add(outNodeId);
+                }
+            }
         }
         JSONObject payload = new JSONObject();
         payload.put("forwardId", forward.getId());
@@ -344,6 +350,9 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             return R.err(RULE_SERVICE_BLOCKED_CODE, targetBlocked);
         }
         boolean tunnelChanged = isTunnelChanged(existForward, forwardUpdateDto);
+        // 出口设备组的故障转移组变了（或规则创建后才给出口配了故障转移组）：备用出口节点与已部署的不一致，
+        // 需要像换隧道一样重新分配出口端口并重建配置，旧备用出口上的服务才会被清理
+        boolean backupsChanged = isBackupSetChanged(existForward, tunnel);
 
         // 4. 解析新隧道选择对应的UserTunnel（即使隧道未变化也需要，用于权限检查和构建服务名称）
         UserTunnel userTunnel;
@@ -407,7 +416,7 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         // 请求都读到目标端口空闲、各自往同一物理端口下发监听（见 portAllocationLock 上的说明）
         synchronized (portAllocationLock) {
             // 6. 更新Forward对象
-            Forward updatedForward = updateForwardEntity(forwardUpdateDto, existForward, tunnel);
+            Forward updatedForward = updateForwardEntity(forwardUpdateDto, existForward, tunnel, backupsChanged);
 
             // 7. 获取所需的节点信息
             NodeInfo nodeInfo = getRequiredNodes(tunnel);
@@ -417,7 +426,7 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
 
             // 8. 调用Gost服务更新转发
             R gostResult;
-            if (tunnelChanged) {
+            if (tunnelChanged || backupsChanged) {
                 // 隧道变化时：先删除原配置，再创建新配置
                 gostResult = updateGostServicesWithTunnelChange(existForward, updatedForward, tunnel, permissionResult != null ? permissionResult.getLimiter() : null, nodeInfo, userTunnel);
             } else {
@@ -644,9 +653,12 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
 
             // 隧道转发需要同时暂停远端服务
             if (tunnel.getType() == TUNNEL_TYPE_TUNNEL_FORWARD && nodeInfo.getOutNode() != null) {
-                GostDto remoteResult = GostUtil.PauseRemoteService(nodeInfo.getOutNode().getId(), serviceName);
-                if (!isGostOperationSuccess(remoteResult)) {
-                    return R.err(operation + "远端服务失败：" + remoteResult.getMsg());
+                // 主出口和备用出口上的远端服务一起暂停
+                for (Long outNodeId : ExitFailover.allOutNodeIds(tunnel)) {
+                    GostDto remoteResult = GostUtil.PauseRemoteService(outNodeId, serviceName);
+                    if (!isGostOperationSuccess(remoteResult)) {
+                        return R.err(operation + "远端服务失败：" + remoteResult.getMsg());
+                    }
                 }
             }
         } else {
@@ -654,9 +666,11 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
 
             // 隧道转发需要同时恢复远端服务
             if (tunnel.getType() == TUNNEL_TYPE_TUNNEL_FORWARD && nodeInfo.getOutNode() != null) {
-                GostDto remoteResult = GostUtil.ResumeRemoteService(nodeInfo.getOutNode().getId(), serviceName);
-                if (!isGostOperationSuccess(remoteResult)) {
-                    return R.err(operation + "远端服务失败：" + remoteResult.getMsg());
+                for (Long outNodeId : ExitFailover.allOutNodeIds(tunnel)) {
+                    GostDto remoteResult = GostUtil.ResumeRemoteService(outNodeId, serviceName);
+                    if (!isGostOperationSuccess(remoteResult)) {
+                        return R.err(operation + "远端服务失败：" + remoteResult.getMsg());
+                    }
                 }
             }
         }
@@ -796,6 +810,24 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
                     throw new IllegalArgumentException("无法解析目标地址: " + remoteAddress);
                 }
                 probes.add(new TcpPingDiagnosisUtil.Probe(outNode, targetIp, targetPort, "出口->目标", "outbound", forward.getOutDeviceGroupId()));
+            }
+            // 故障转移：备用出口也要能被入口连上、能连上目标，否则主出口故障时切过去也不通
+            List<Long> backupIds = tunnel.getBackupOutNodeIds() == null ? Collections.<Long>emptyList() : tunnel.getBackupOutNodeIds();
+            for (int i = 0; i < backupIds.size(); i++) {
+                Node backupNode = nodeService.getNodeById(backupIds.get(i));
+                if (backupNode == null) {
+                    continue;
+                }
+                String label = "备用出口" + (i + 1);
+                probes.add(new TcpPingDiagnosisUtil.Probe(inNode, backupNode.getServerIp(), forward.getOutPort(), "入口->" + label, "inbound", forward.getInDeviceGroupId()));
+                for (String remoteAddress : remoteAddresses) {
+                    String targetIp = extractIpFromAddress(remoteAddress);
+                    int targetPort = extractPortFromAddress(remoteAddress);
+                    if (targetIp == null || targetPort == -1) {
+                        throw new IllegalArgumentException("无法解析目标地址: " + remoteAddress);
+                    }
+                    probes.add(new TcpPingDiagnosisUtil.Probe(backupNode, targetIp, targetPort, label + "->目标", "outbound", null));
+                }
             }
         }
         return probes;
@@ -1012,6 +1044,21 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             return R.err(typeError);
         }
 
+        String directError = directForwardError(inGroup, outGroup);
+        if (directError != null) {
+            return R.err(directError);
+        }
+
+        String allowedOutError = allowedOutGroupError(inGroup, outGroup);
+        if (allowedOutError != null) {
+            return R.err(allowedOutError);
+        }
+
+        String allowedInError = allowedInGroupError(inGroup, outGroup);
+        if (allowedInError != null) {
+            return R.err(allowedInError);
+        }
+
         if (currentUser.getRoleId() != ADMIN_ROLE_ID) {
             R visibilityCheck = checkDeviceGroupVisibility(inGroup, currentUser.getUserId());
             if (visibilityCheck.getCode() != 0) {
@@ -1041,6 +1088,63 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             return "设备组「" + outGroup.getName() + "」不能作为出口使用";
         }
         return null;
+    }
+
+    /**
+     * 入口设备组的直接转发策略：0-禁止（必须选择出口），1-可选，2-强制（不能选择出口）；
+     * 没有配置（旧数据）按可选处理。
+     */
+    static String directForwardError(DeviceGroup inGroup, DeviceGroup outGroup) {
+        Integer mode = inGroup.getDirectForwardMode();
+        if (mode == null) {
+            return null;
+        }
+        if (mode == 0 && outGroup == null) {
+            return "入口设备组「" + inGroup.getName() + "」不允许直接转发，请选择出口设备组";
+        }
+        if (mode == 2 && outGroup != null) {
+            return "入口设备组「" + inGroup.getName() + "」只能直接转发，不能选择出口设备组";
+        }
+        return null;
+    }
+
+    /**
+     * 入口设备组设置了限制出口时，出口只能在允许列表内选择；列表为空表示不限制。
+     * 前端已按同样规则过滤出口选项，这里防止绕过前端。
+     */
+    static String allowedOutGroupError(DeviceGroup inGroup, DeviceGroup outGroup) {
+        if (outGroup == null) {
+            return null;
+        }
+        String allowed = inGroup.getAllowedOutGroupIds();
+        if (allowed == null || allowed.trim().isEmpty()) {
+            return null;
+        }
+        for (String part : allowed.split(",")) {
+            if (part.trim().equals(String.valueOf(outGroup.getId()))) {
+                return null;
+            }
+        }
+        return "入口设备组「" + inGroup.getName() + "」不允许使用出口设备组「" + outGroup.getName() + "」";
+    }
+
+    /**
+     * 出口设备组设置了限制入口时，入口只能在允许列表内选择；列表为空表示不限制。
+     */
+    static String allowedInGroupError(DeviceGroup inGroup, DeviceGroup outGroup) {
+        if (outGroup == null) {
+            return null;
+        }
+        String allowed = outGroup.getAllowedInGroupIds();
+        if (allowed == null || allowed.trim().isEmpty()) {
+            return null;
+        }
+        for (String part : allowed.split(",")) {
+            if (part.trim().equals(String.valueOf(inGroup.getId()))) {
+                return null;
+            }
+        }
+        return "出口设备组「" + outGroup.getName() + "」不允许使用入口设备组「" + inGroup.getName() + "」";
     }
 
     /**
@@ -1269,7 +1373,7 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
     /**
      * 更新Forward实体对象
      */
-    private Forward updateForwardEntity(ForwardUpdateDto forwardUpdateDto, Forward existForward, Tunnel tunnel) {
+    private Forward updateForwardEntity(ForwardUpdateDto forwardUpdateDto, Forward existForward, Tunnel tunnel, boolean backupsChanged) {
         Forward forward = new Forward();
         BeanUtils.copyProperties(forwardUpdateDto, forward);
         // 归属不能由请求决定：否则普通用户改掉 userId 就能把规则转给别人，流量也计到对方账上
@@ -1281,8 +1385,8 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         boolean inPortChanged = forwardUpdateDto.getInPort() != null &&
                 !Objects.equals(forwardUpdateDto.getInPort(), existForward.getInPort());
 
-        if (tunnelChanged || inPortChanged) {
-            // 隧道变化或入口端口变化时需要重新分配
+        if (tunnelChanged || backupsChanged || inPortChanged) {
+            // 隧道变化、备用出口变化或入口端口变化时需要重新分配
             Integer specifiedInPort = forwardUpdateDto.getInPort();
             // 如果没有指定新端口但隧道未变化，保持原端口
             if (specifiedInPort == null && !tunnelChanged) {
@@ -1301,8 +1405,21 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             forward.setOutPort(existForward.getOutPort());
         }
 
+        forward.setBackupOutNodeIds(ExitFailover.join(tunnel.getBackupOutNodeIds()));
         forward.setUpdatedTime(System.currentTimeMillis());
         return forward;
+    }
+
+    /**
+     * 设备组模式下，按当前出口设备组配置解析出的备用出口节点，与规则上记录的已部署备用出口是否不同
+     */
+    private boolean isBackupSetChanged(Forward existForward, Tunnel tunnel) {
+        if (existForward.getTunnelId() != null || tunnel.getId() != null) {
+            return false;
+        }
+        return !Objects.equals(
+                ExitFailover.join(ExitFailover.parse(existForward.getBackupOutNodeIds())),
+                ExitFailover.join(tunnel.getBackupOutNodeIds()));
     }
 
     /**
@@ -1313,17 +1430,23 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
 
         // 隧道转发需要创建链和远程服务
         if (tunnel.getType() == TUNNEL_TYPE_TUNNEL_FORWARD) {
-            R chainResult = createChainService(nodeInfo.getInNode(), serviceName, tunnel.getOutIp(), forward.getOutPort(), tunnel.getProtocol(), tunnel.getInterfaceName());
+            R chainResult = createChainService(nodeInfo.getInNode(), serviceName, ExitFailover.allOutIps(tunnel), forward.getOutPort(), tunnel.getProtocol(), tunnel.getInterfaceName());
             if (chainResult.getCode() != 0) {
                 GostUtil.DeleteChains(nodeInfo.getInNode().getId(), serviceName);
                 return chainResult;
             }
 
-            R remoteResult = createRemoteService(nodeInfo.getOutNode(), serviceName, forward, tunnel.getProtocol(), forward.getInterfaceName());
-            if (remoteResult.getCode() != 0) {
-                GostUtil.DeleteChains(nodeInfo.getInNode().getId(), serviceName);
-                GostUtil.DeleteRemoteService(nodeInfo.getOutNode().getId(), serviceName);
-                return remoteResult;
+            // 主出口和每个备用出口都部署同一个远端服务（同一个出口端口），任何一个失败都整体回滚
+            for (Long outNodeId : ExitFailover.allOutNodeIds(tunnel)) {
+                Node outNode = Objects.equals(outNodeId, nodeInfo.getOutNode().getId()) ? nodeInfo.getOutNode() : nodeService.getNodeById(outNodeId);
+                R remoteResult = outNode == null
+                        ? R.err("备用出口节点不存在")
+                        : createRemoteService(outNode, serviceName, forward, tunnel.getProtocol(), forward.getInterfaceName());
+                if (remoteResult.getCode() != 0) {
+                    GostUtil.DeleteChains(nodeInfo.getInNode().getId(), serviceName);
+                    deleteRemoteOnAllOutNodes(tunnel, serviceName);
+                    return remoteResult;
+                }
             }
         }
 
@@ -1338,11 +1461,18 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         if (serviceResult.getCode() != 0) {
             GostUtil.DeleteChains(nodeInfo.getInNode().getId(), serviceName);
             if (nodeInfo.getOutNode() != null) {
-                GostUtil.DeleteRemoteService(nodeInfo.getOutNode().getId(), serviceName);
+                deleteRemoteOnAllOutNodes(tunnel, serviceName);
             }
             return serviceResult;
         }
         return R.ok();
+    }
+
+    /** 删除主出口和全部备用出口上的远端服务（尽力而为，不存在或节点离线都忽略，由节点上线后的孤立配置清理兜底） */
+    private void deleteRemoteOnAllOutNodes(Tunnel tunnel, String serviceName) {
+        for (Long outNodeId : ExitFailover.allOutNodeIds(tunnel)) {
+            GostUtil.DeleteRemoteService(outNodeId, serviceName);
+        }
     }
 
     /**
@@ -1353,16 +1483,21 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
 
         // 隧道转发需要更新链和远程服务
         if (tunnel.getType() == TUNNEL_TYPE_TUNNEL_FORWARD) {
-            R chainResult = updateChainService(nodeInfo.getInNode(), serviceName, tunnel.getOutIp(), forward.getOutPort(), tunnel.getProtocol(), tunnel.getInterfaceName());
+            R chainResult = updateChainService(nodeInfo.getInNode(), serviceName, ExitFailover.allOutIps(tunnel), forward.getOutPort(), tunnel.getProtocol(), tunnel.getInterfaceName());
             if (chainResult.getCode() != 0) {
                 updateForwardStatusToError(forward);
                 return chainResult;
             }
 
-            R remoteResult = updateRemoteService(nodeInfo.getOutNode(), serviceName, forward, tunnel.getProtocol(), forward.getInterfaceName());
-            if (remoteResult.getCode() != 0) {
-                updateForwardStatusToError(forward);
-                return remoteResult;
+            for (Long outNodeId : ExitFailover.allOutNodeIds(tunnel)) {
+                Node outNode = Objects.equals(outNodeId, nodeInfo.getOutNode().getId()) ? nodeInfo.getOutNode() : nodeService.getNodeById(outNodeId);
+                R remoteResult = outNode == null
+                        ? R.err("备用出口节点不存在")
+                        : updateRemoteService(outNode, serviceName, forward, tunnel.getProtocol(), forward.getInterfaceName());
+                if (remoteResult.getCode() != 0) {
+                    updateForwardStatusToError(forward);
+                    return remoteResult;
+                }
             }
         }
         String interfaceName = null;
@@ -1454,6 +1589,13 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
                     log.info("删除远程服务失败: {}", remoteResult.getMsg());
                 }
             }
+            // 原来部署的备用出口上的远端服务也要清掉（原隧道里的备用出口取自规则上记录的已部署清单）
+            for (Long backupId : oldTunnel.getBackupOutNodeIds() == null ? Collections.<Long>emptyList() : oldTunnel.getBackupOutNodeIds()) {
+                GostDto backupResult = GostUtil.DeleteRemoteService(backupId, serviceName);
+                if (!isGostOperationSuccess(backupResult)) {
+                    log.info("删除备用出口 {} 上的远程服务失败: {}", backupId, backupResult.getMsg());
+                }
+            }
         }
 
         return R.ok();
@@ -1492,6 +1634,14 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
                     return R.err(remoteResult.getMsg());
                 }
             }
+            // 备用出口上的远端服务尽力清理：备用节点离线或服务已不存在不影响删除规则，
+            // 节点重新上线后孤立配置清理会把残留的服务删掉
+            for (Long backupId : tunnel.getBackupOutNodeIds() == null ? Collections.<Long>emptyList() : tunnel.getBackupOutNodeIds()) {
+                GostDto backupResult = GostUtil.DeleteRemoteService(backupId, serviceName);
+                if (!isGostOperationSuccess(backupResult)) {
+                    log.info("删除备用出口 {} 上的远程服务失败: {}", backupId, backupResult.getMsg());
+                }
+            }
         }
 
         return R.ok();
@@ -1500,13 +1650,18 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
     /**
      * 创建链服务
      */
-    private R createChainService(Node inNode, String serviceName, String outIp, Integer outPort, String protocol, String interfaceName) {
-        String remoteAddr = outIp + ":" + outPort;
-        if (outIp.contains(":")) {
-            remoteAddr = "[" + outIp + "]:" + outPort;
-        }
-        GostDto result = GostUtil.AddChains(inNode.getId(), serviceName, remoteAddr, protocol, interfaceName);
+    private R createChainService(Node inNode, String serviceName, List<String> outIps, Integer outPort, String protocol, String interfaceName) {
+        GostDto result = GostUtil.AddChains(inNode.getId(), serviceName, buildOutAddrs(outIps, outPort), protocol, interfaceName);
         return isGostOperationSuccess(result) ? R.ok() : R.err(result.getMsg());
+    }
+
+    /** 出口地址加上出口端口；IPv6 地址要加方括号。主出口在前，备用出口按优先级在后 */
+    static List<String> buildOutAddrs(List<String> outIps, Integer outPort) {
+        List<String> addrs = new ArrayList<>();
+        for (String outIp : outIps) {
+            addrs.add(outIp.contains(":") ? "[" + outIp + "]:" + outPort : outIp + ":" + outPort);
+        }
+        return addrs;
     }
 
     /**
@@ -1603,15 +1758,12 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
     /**
      * 更新链服务
      */
-    private R updateChainService(Node inNode, String serviceName, String outIp, Integer outPort, String protocol, String interfaceName) {
+    private R updateChainService(Node inNode, String serviceName, List<String> outIps, Integer outPort, String protocol, String interfaceName) {
         // 创建新链
-        String remoteAddr = outIp + ":" + outPort;
-        if (outIp.contains(":")) {
-            remoteAddr = "[" + outIp + "]:" + outPort;
-        }
-        GostDto createResult = GostUtil.UpdateChains(inNode.getId(), serviceName, remoteAddr, protocol, interfaceName);
+        List<String> remoteAddrs = buildOutAddrs(outIps, outPort);
+        GostDto createResult = GostUtil.UpdateChains(inNode.getId(), serviceName, remoteAddrs, protocol, interfaceName);
         if (createResult.getMsg().contains(GOST_NOT_FOUND_MSG)) {
-            createResult = GostUtil.AddChains(inNode.getId(), serviceName, remoteAddr, protocol, interfaceName);
+            createResult = GostUtil.AddChains(inNode.getId(), serviceName, remoteAddrs, protocol, interfaceName);
         }
         return isGostOperationSuccess(createResult) ? R.ok() : R.err(createResult.getMsg());
     }
@@ -1720,7 +1872,41 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
      * 为隧道分配一个可用的出口端口（可排除指定的转发ID）
      */
     private Integer allocateOutPort(Tunnel tunnel, Long excludeForwardId) {
-        return allocatePortForNode(tunnel.getOutNodeId(), excludeForwardId);
+        List<Long> outNodeIds = ExitFailover.allOutNodeIds(tunnel);
+        if (outNodeIds.size() <= 1) {
+            return allocatePortForNode(tunnel.getOutNodeId(), excludeForwardId);
+        }
+        // 有备用出口时，主出口和备用出口使用同一个出口端口：要在每个出口节点的端口范围里都可用
+        return allocatePortForNodes(outNodeIds, excludeForwardId);
+    }
+
+    /**
+     * 在多个节点上找同一个都空闲、且都在各自端口范围内的端口；没有则返回 null
+     */
+    private Integer allocatePortForNodes(List<Long> nodeIds, Long excludeForwardId) {
+        int low = 1;
+        int high = 65535;
+        Set<Integer> usedPorts = new HashSet<>();
+        for (Long nodeId : nodeIds) {
+            Node node = nodeService.getNodeById(nodeId);
+            if (node == null) {
+                return null;
+            }
+            low = Math.max(low, node.getPortSta());
+            high = Math.min(high, node.getPortEnd());
+            usedPorts.addAll(getAllUsedPortsOnNode(nodeId, excludeForwardId));
+        }
+        return firstFreePort(low, high, usedPorts);
+    }
+
+    /** low..high 范围内第一个不在 usedPorts 里的端口，没有则返回 null */
+    static Integer firstFreePort(int low, int high, Set<Integer> usedPorts) {
+        for (int port = low; port <= high; port++) {
+            if (!usedPorts.contains(port)) {
+                return port;
+            }
+        }
+        return null;
     }
 
     /**
@@ -1820,6 +2006,19 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
                 if (forward.getOutDeviceGroupId() != null && groupIds.contains(forward.getOutDeviceGroupId()) && forward.getOutPort() != null) {
                     usedPorts.add(forward.getOutPort());
                 }
+            }
+        }
+
+        // 4. 收集该节点作为故障转移备用出口时占用的端口（备用出口上部署的远端服务用的也是规则的出口端口）
+        QueryWrapper<Forward> backupQuery = new QueryWrapper<Forward>()
+                .isNotNull("backup_out_node_ids")
+                .ne("backup_out_node_ids", "");
+        if (excludeForwardId != null) {
+            backupQuery.ne("id", excludeForwardId);
+        }
+        for (Forward forward : this.list(backupQuery)) {
+            if (forward.getOutPort() != null && ExitFailover.parse(forward.getBackupOutNodeIds()).contains(nodeId)) {
+                usedPorts.add(forward.getOutPort());
             }
         }
 
@@ -1957,9 +2156,11 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             return R.err("重新暂停服务失败：" + pauseResult.getMsg());
         }
         if (tunnel.getType() == TUNNEL_TYPE_TUNNEL_FORWARD) {
-            GostDto remoteResult = pauseRemoteOnNode(tunnel.getOutNodeId(), serviceName);
-            if (!isGostOperationSuccess(remoteResult)) {
-                return R.err("重新暂停远端服务失败：" + remoteResult.getMsg());
+            for (Long outNodeId : ExitFailover.allOutNodeIds(tunnel)) {
+                GostDto remoteResult = pauseRemoteOnNode(outNodeId, serviceName);
+                if (!isGostOperationSuccess(remoteResult)) {
+                    return R.err("重新暂停远端服务失败：" + remoteResult.getMsg());
+                }
             }
         }
         return pushResult;

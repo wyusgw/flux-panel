@@ -35,7 +35,7 @@ public class DeviceGroup extends BaseEntity {
      */
     private Long nodeId;
 
-    /** 设备角色：inbound-入口，outbound-出口 */
+    /** 设备角色：inbound-入口，outbound-出口，monitor-仅监控，both-入口＋出口，chain-链式出口 */
     private String direction;
 
     /**
@@ -49,6 +49,37 @@ public class DeviceGroup extends BaseEntity {
      */
     @TableField(exist = false)
     private List<Long> userGroupIds;
+
+    /**
+     * 限制出口：允许搭配本入口使用的出口设备组 ID，英文逗号分隔；为空表示不限制。
+     * 仅 direction 为 inbound/both 时有意义
+     */
+    private String allowedOutGroupIds;
+
+    /**
+     * 限制入口：允许搭配本出口使用的入口设备组 ID，英文逗号分隔；为空表示不限制。
+     * 仅 direction 为 outbound/both 时有意义
+     */
+    private String allowedInGroupIds;
+
+    /**
+     * 故障转移组：本出口故障时切换到的备用出口设备组 ID；为空（或 0）表示无。
+     * 仅 direction 为 outbound/both 时有意义。设备组模式的转发规则创建/更新时，沿着它依次解析出备用出口（最多 3 个），
+     * 入口节点的链里放多个出口节点，按 fifo 优先主出口，连接失败后自动切到备用出口
+     */
+    private Long failoverGroupId;
+
+    /**
+     * UDP 源进源出（0-关闭，1-开启）：开启后入口的 UDP 服务改为监听每个网卡的 IP 地址，
+     * 回包从收到请求的同一个 IP 发出；仅 direction 为 inbound/both 时有意义
+     */
+    private Integer udpSourceInOut;
+
+    /**
+     * 直接转发 / 入口直出策略（仅入口类设备组有意义）：0-禁止直接转发（必须选择出口），
+     * 1-可选直接转发（出口可选，默认，与旧版行为一致），2-强制直接转发（不能选择出口）
+     */
+    private Integer directForwardMode;
 
     /**
      * 单端隧道：用户自建设备组的拥有者用户ID；管理员建立的设备组此字段为空

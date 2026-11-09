@@ -7,6 +7,7 @@ import com.admin.common.dto.GostDto;
 import com.admin.common.lang.R;
 import com.admin.common.task.CheckGostConfigAsync;
 import com.admin.common.utils.AESCrypto;
+import com.admin.common.utils.ExitFailover;
 import com.admin.common.utils.GostUtil;
 import com.admin.common.utils.TunnelResolver;
 import com.admin.entity.*;
@@ -428,9 +429,12 @@ public class FlowController extends BaseController {
             log.warn("暂停节点 {} 上的服务 {} 失败: {}", tunnel.getInNodeId(), serviceName, result.getMsg());
         }
         if (tunnel.getType() == 2) {
-            GostDto remoteResult = GostUtil.PauseRemoteService(tunnel.getOutNodeId(), serviceName);
-            if (!Objects.equals(remoteResult.getMsg(), "OK")) {
-                log.warn("暂停节点 {} 上的远端服务 {} 失败: {}", tunnel.getOutNodeId(), serviceName, remoteResult.getMsg());
+            // 主出口和备用出口上的远端服务都要暂停
+            for (Long outNodeId : ExitFailover.allOutNodeIds(tunnel)) {
+                GostDto remoteResult = GostUtil.PauseRemoteService(outNodeId, serviceName);
+                if (!Objects.equals(remoteResult.getMsg(), "OK")) {
+                    log.warn("暂停节点 {} 上的远端服务 {} 失败: {}", outNodeId, serviceName, remoteResult.getMsg());
+                }
             }
         }
     }

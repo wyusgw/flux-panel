@@ -76,6 +76,11 @@ interface DeviceGroupItem {
   protocol?: string;
   config?: string;
   remark?: string;
+  allowedOutGroupIds?: string | null;
+  allowedInGroupIds?: string | null;
+  failoverGroupId?: number | null;
+  udpSourceInOut?: boolean;
+  directForwardMode?: number;
   sort?: number;
   chainHops?: ChainHopItem[];
 }
@@ -133,6 +138,11 @@ interface DeviceGroupForm {
   direction: 'inbound' | 'outbound' | 'monitor' | 'both' | 'chain';
   protocol: string;
   remark: string;
+  allowedOutGroupIds: string;
+  allowedInGroupIds: string;
+  failoverGroupId: number;
+  udpSourceInOut: boolean;
+  directForwardMode: number;
   chainHops: ChainHopForm[];
   nodeGroupIds: number[];
 }
@@ -147,6 +157,13 @@ const parseEntryIps = (value?: string | null): string[] => {
 };
 const joinEntryIps = (values: string[]): string => values.map(v => v.trim()).filter(Boolean).join(',');
 
+// 限制出口 / 限制入口存进后端是英文逗号分隔的设备组 ID 字符串；下拉框用字符串集合，
+// 这里只保留仍存在且类型合适的设备组，已被删除或改了类型的旧 ID 不会显示，重新改动选择后会被去掉
+const idListToKeys = (value: string, groups: DeviceGroupItem[], allowed: (g: DeviceGroupItem) => boolean): string[] => {
+  const valid = new Set(groups.filter(allowed).map(g => g.id.toString()));
+  return value.split(',').map(s => s.trim()).filter(id => id && valid.has(id));
+};
+
 const DEFAULT_FORM: DeviceGroupForm = {
   name: '',
   nodeId: null,
@@ -158,8 +175,13 @@ const DEFAULT_FORM: DeviceGroupForm = {
   ratio: 1,
   hideInProbe: 0,
   direction: 'inbound',
-  protocol: 'tls',
+  protocol: '',
   remark: '',
+  allowedOutGroupIds: '',
+  allowedInGroupIds: '',
+  failoverGroupId: 0,
+  udpSourceInOut: false,
+  directForwardMode: 1,
   chainHops: [],
   nodeGroupIds: []
 };
@@ -239,7 +261,8 @@ export default function DeviceGroupPage() {
   const [userCountry, setUserCountry] = useState<string | null>(null);
 
   useEffect(() => {
-    if (modalOpen) setPortRangeText(`${form.portSta}-${form.portEnd}`);
+    // 新建时端口范围默认留空（提交时按默认 1000-65535 处理）；编辑或补全已有设备时显示它当前的范围
+    if (modalOpen) setPortRangeText(!isEdit && !form.nodeId ? '' : `${form.portSta}-${form.portEnd}`);
     // 只在弹窗打开时按当前表单初始化输入框文字
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modalOpen]);
@@ -314,8 +337,13 @@ export default function DeviceGroupPage() {
       ratio: group.ratio,
       hideInProbe: group.hideInProbe,
       direction: group.direction || 'inbound',
-      protocol: group.protocol || 'tls',
+      protocol: group.protocol || '',
       remark: group.remark || '',
+      allowedOutGroupIds: group.allowedOutGroupIds || '',
+      allowedInGroupIds: group.allowedInGroupIds || '',
+      failoverGroupId: group.failoverGroupId || 0,
+      udpSourceInOut: !!group.udpSourceInOut,
+      directForwardMode: group.directForwardMode ?? 1,
       nodeGroupIds: nodes.find(node => node.id === group.nodeId)?.nodeGroupIds || [],
       chainHops: (group.chainHops || [])
         .slice()
@@ -339,7 +367,7 @@ export default function DeviceGroupPage() {
       }
     } else if (form.direction !== 'monitor') {
       if (!form.serverIp.trim()) newErrors.serverIp = '请输入服务器 IP 或域名';
-      if (!parsePortRange(portRangeText)) newErrors.portRange = '端口范围格式应为「起始-结束」，如 2000-65535，且在 1-65535 之间、起始不大于结束';
+      if (portRangeText.trim() && !parsePortRange(portRangeText)) newErrors.portRange = '端口范围格式应为「起始-结束」，如 2000-65535，且在 1-65535 之间、起始不大于结束';
     }
     if (form.ratio < 0) newErrors.ratio = '流量倍率不能小于0';
     setErrors(newErrors);
@@ -781,7 +809,7 @@ export default function DeviceGroupPage() {
                       errorMessage={errors.ratio}
                       variant="bordered"
                       classNames={{ inputWrapper: 'pr-0 overflow-hidden' }}
-                      endContent={<span className="flex h-full items-center border-l-1 border-default-300 bg-default-100 px-3 text-xs font-semibold text-foreground">x</span>}
+                      endContent={<span className="flex h-full items-center border-l-1 border-default-300 bg-default-100 px-3 text-xs font-semibold text-foreground">倍</span>}
                     />
                   )}
 
@@ -806,6 +834,38 @@ export default function DeviceGroupPage() {
                     <SelectItem key="chain">链式出口</SelectItem>
                   </Select>
 
+                  {typeChosen && (form.direction === 'inbound' || form.direction === 'both') && (
+                    <Select listboxProps={{ emptyContent: <EmptyState compact /> }} labelPlacement="outside-top"
+                      size="sm"
+                      selectionMode="multiple"
+                      label={<HelpTooltip content="选填，允许使用的「出口」设备组。设置后，用户选择本入口时，未允许使用的出口将不会出现在出口选项中；留空表示不限制">限制出口</HelpTooltip>}
+                      placeholder="留空则不限制"
+                      selectedKeys={new Set(idListToKeys(form.allowedOutGroupIds, groups, g => (g.direction === 'outbound' || g.direction === 'both') && g.id !== form.id))}
+                      onSelectionChange={(keys) => setForm(prev => ({ ...prev, allowedOutGroupIds: Array.from(keys as Set<string>).join(',') }))}
+                      variant="bordered"
+                    >
+                      {groups.filter(g => (g.direction === 'outbound' || g.direction === 'both') && g.id !== form.id).map(g => (
+                        <SelectItem key={g.id.toString()} textValue={`${g.name} (#${g.id})`}>{`${g.name} (#${g.id})`}</SelectItem>
+                      ))}
+                    </Select>
+                  )}
+
+                  {typeChosen && (form.direction === 'outbound' || form.direction === 'both') && (
+                    <Select listboxProps={{ emptyContent: <EmptyState compact /> }} labelPlacement="outside-top"
+                      size="sm"
+                      selectionMode="multiple"
+                      label={<HelpTooltip content="选填，允许使用的「入口」设备组。设置后，用户选择某个入口时，若本出口不允许使用，则不会出现在出口选项中；留空表示不限制">限制入口</HelpTooltip>}
+                      placeholder="留空则不限制"
+                      selectedKeys={new Set(idListToKeys(form.allowedInGroupIds, groups, g => (g.direction === 'inbound' || g.direction === 'both') && g.id !== form.id))}
+                      onSelectionChange={(keys) => setForm(prev => ({ ...prev, allowedInGroupIds: Array.from(keys as Set<string>).join(',') }))}
+                      variant="bordered"
+                    >
+                      {groups.filter(g => (g.direction === 'inbound' || g.direction === 'both') && g.id !== form.id).map(g => (
+                        <SelectItem key={g.id.toString()} textValue={`${g.name} (#${g.id})`}>{`${g.name} (#${g.id})`}</SelectItem>
+                      ))}
+                    </Select>
+                  )}
+
                   {/* 选择类型之后才显示该类型对应的选项 */}
                   {typeChosen && (
                     <>
@@ -825,8 +885,8 @@ export default function DeviceGroupPage() {
 
                       <Input
                         labelPlacement="outside-top" size="sm" autoComplete="off"
-                        label={<HelpTooltip content="该设备可分配给转发规则使用的监听端口范围，用 - 连接起止端口，例如 2000-65535">端口范围</HelpTooltip>}
-                        placeholder="2000-65535"
+                        label={<HelpTooltip content="该设备可分配给转发规则使用的监听端口范围，用 - 连接起止端口，例如 2000-65535；留空时使用默认的 1000-65535">端口范围</HelpTooltip>}
+                        placeholder="1000-65535"
                         value={portRangeText}
                         onChange={(e) => {
                           const text = e.target.value;
@@ -834,6 +894,7 @@ export default function DeviceGroupPage() {
                           // 输入形如「起始-结束」时同步到表单；格式不对时保留文字，提交校验时再提示
                           const parsed = parsePortRange(text);
                           if (parsed) setForm(prev => ({ ...prev, portSta: parsed[0], portEnd: parsed[1] }));
+                          else if (!text.trim()) setForm(prev => ({ ...prev, portSta: DEFAULT_FORM.portSta, portEnd: DEFAULT_FORM.portEnd }));
                         }}
                         isInvalid={!!errors.portRange}
                         errorMessage={errors.portRange}
@@ -862,13 +923,11 @@ export default function DeviceGroupPage() {
                       {(form.direction === 'outbound' || form.direction === 'both') && (
                         <Select listboxProps={{ emptyContent: <EmptyState compact /> }} labelPlacement="outside-top"
                           size="sm"
-                          label={<HelpTooltip content="该出口设备组作为隧道转发出口节点时使用的传输协议">协议</HelpTooltip>}
-                          selectedKeys={[form.protocol]}
+                          label={<HelpTooltip content="该出口设备组作为隧道转发出口节点时使用的传输协议；不选择时按 TLS 处理">协议</HelpTooltip>}
+                          selectedKeys={form.protocol ? [form.protocol] : []}
                           onSelectionChange={(keys) => {
-                            const selectedKey = Array.from(keys)[0] as string;
-                            if (selectedKey) {
-                              setForm(prev => ({ ...prev, protocol: selectedKey }));
-                            }
+                            const selectedKey = Array.from(keys)[0] as string | undefined;
+                            setForm(prev => ({ ...prev, protocol: selectedKey || '' }));
                           }}
                           variant="bordered"
                         >
@@ -887,6 +946,60 @@ export default function DeviceGroupPage() {
                   )}
 
 
+
+                  {typeChosen && (form.direction === 'outbound' || form.direction === 'both') && (
+                    <Select listboxProps={{ emptyContent: <EmptyState compact /> }} labelPlacement="outside-top"
+                      size="sm"
+                      label="故障转移组"
+                      disallowEmptySelection
+                      selectedKeys={[(form.failoverGroupId || 0).toString()]}
+                      onSelectionChange={(keys) => {
+                        const selectedKey = Array.from(keys)[0] as string;
+                        if (selectedKey !== undefined) setForm(prev => ({ ...prev, failoverGroupId: parseInt(selectedKey) || 0 }));
+                      }}
+                      variant="bordered"
+                    >
+                      {[
+                        <SelectItem key="0" textValue="无 (#0)">无 (#0)</SelectItem>,
+                        ...groups
+                          .filter(g => (g.direction === 'outbound' || g.direction === 'both') && g.id !== form.id)
+                          .map(g => <SelectItem key={g.id.toString()} textValue={`${g.name} (#${g.id})`}>{`${g.name} (#${g.id})`}</SelectItem>)
+                      ]}
+                    </Select>
+                  )}
+
+                  {typeChosen && (form.direction === 'inbound' || form.direction === 'both') && (
+                    <div className="flex items-center gap-3">
+                      <span className="whitespace-nowrap text-sm font-semibold text-foreground">
+                        <HelpTooltip content="直接转发 / 入口直出策略无需出口节点，不使用隧道，而是由入口直接转发。适用于入口机器可以直接访问国际互联网的情景。禁止：转发规则必须选择出口；可选：出口可选可不选（默认）；强制：只能直接转发，不能选择出口。修改后不影响已创建的转发规则，编辑这些规则时才会按新策略校验">直接转发 / 入口直出策略</HelpTooltip>
+                      </span>
+                      <Select listboxProps={{ emptyContent: <EmptyState compact /> }}
+                        size="sm"
+                        aria-label="直接转发 / 入口直出策略"
+                        className="flex-1"
+                        disallowEmptySelection
+                        selectedKeys={[form.directForwardMode.toString()]}
+                        onSelectionChange={(keys) => {
+                          const selectedKey = Array.from(keys)[0] as string;
+                          if (selectedKey) setForm(prev => ({ ...prev, directForwardMode: parseInt(selectedKey) }));
+                        }}
+                        variant="bordered"
+                      >
+                        <SelectItem key="0">禁止直接转发</SelectItem>
+                        <SelectItem key="1">可选直接转发</SelectItem>
+                        <SelectItem key="2">强制直接转发</SelectItem>
+                      </Select>
+                    </div>
+                  )}
+
+                  {typeChosen && (form.direction === 'inbound' || form.direction === 'both') && (
+                    <div className="flex items-center gap-3">
+                      <span className="whitespace-nowrap text-sm font-semibold text-foreground">
+                        <HelpTooltip content="通过监听每个网卡的 IP 地址实现 UDP 源进源出，优先级高于 BIND_INBOUND。双 IP 的机器且对 UDP 有需求的，建议打开。需要节点版本 1.2.7 及以上；修改后，已有的转发规则需要重新保存或重启后才会生效">UDP 智能绑定 (源进源出)</HelpTooltip>
+                      </span>
+                      <Switch size="sm" aria-label="UDP 智能绑定 (源进源出)" isSelected={form.udpSourceInOut} onValueChange={(v) => setForm(prev => ({ ...prev, udpSourceInOut: v }))} />
+                    </div>
+                  )}
 
                   {form.direction !== 'chain' && (
                     <div className="flex items-center gap-3">

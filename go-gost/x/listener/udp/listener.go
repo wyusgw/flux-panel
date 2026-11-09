@@ -55,9 +55,18 @@ func (l *udpListener) Init(md md.Metadata) (err error) {
 	}
 
 	var conn net.PacketConn
-	conn, err = net.ListenUDP(network, laddr)
-	if err != nil {
-		return
+	// 源进源出：仅对监听通配地址的服务生效，改为在每个网卡的 IP 上各监听一个套接字，回包原路返回；
+	// 取不到可用地址时退回普通监听
+	if l.md.sourceInOut && (laddr.IP == nil || laddr.IP.IsUnspecified()) {
+		if mc := listenSourceInOut(laddr.Port, network == "udp4"); mc != nil {
+			conn = mc
+		}
+	}
+	if conn == nil {
+		conn, err = net.ListenUDP(network, laddr)
+		if err != nil {
+			return
+		}
 	}
 	conn = metrics.WrapPacketConn(l.options.Service, conn)
 	conn = stats.WrapPacketConn(conn, l.options.Stats)

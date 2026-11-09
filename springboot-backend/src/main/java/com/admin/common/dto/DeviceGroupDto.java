@@ -42,6 +42,31 @@ public class DeviceGroupDto {
     private Integer sort;
 
     /**
+     * 限制出口：允许使用的出口设备组 ID（英文逗号分隔），为空表示不限制；仅入口类设备组有效
+     */
+    private String allowedOutGroupIds;
+
+    /**
+     * 限制入口：允许使用的入口设备组 ID（英文逗号分隔），为空表示不限制；仅出口类设备组有效
+     */
+    private String allowedInGroupIds;
+
+    /**
+     * 故障转移组：备用出口设备组 ID，为空或 0 表示无；仅出口类设备组有效
+     */
+    private Long failoverGroupId;
+
+    /**
+     * UDP 源进源出：开启后入口的 UDP 服务监听每个网卡的 IP 地址；仅入口类设备组有效
+     */
+    private Boolean udpSourceInOut;
+
+    /**
+     * 直接转发 / 入口直出策略：0-禁止，1-可选（默认），2-强制；仅入口类设备组有效
+     */
+    private Integer directForwardMode;
+
+    /**
      * 链式出口配置：direction = "chain" 时必填，最多 3 跳，列表顺序即为跳序号
      */
     @Valid

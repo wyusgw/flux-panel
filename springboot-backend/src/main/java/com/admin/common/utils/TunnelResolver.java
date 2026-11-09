@@ -16,6 +16,10 @@ import org.springframework.stereotype.Component;
 
 import javax.annotation.Resource;
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
 /**
  * 转发规则的隧道/用户隧道解析器。
@@ -57,7 +61,13 @@ public class TunnelResolver {
      */
     public Tunnel resolveTunnel(Forward forward) {
         if (forward == null) return null;
-        return resolveTunnel(forward.getTunnelId(), forward.getInDeviceGroupId(), forward.getOutDeviceGroupId());
+        Tunnel tunnel = resolveTunnel(forward.getTunnelId(), forward.getInDeviceGroupId(), forward.getOutDeviceGroupId());
+        // 已有规则的备用出口以创建/更新时记录的为准（暂停、恢复、删除、重新推送都按它），
+        // 不随出口设备组之后的故障转移组设置变化
+        if (tunnel != null && forward.getTunnelId() == null && tunnel.getOutNodeId() != null) {
+            applyBackups(tunnel, ExitFailover.parse(forward.getBackupOutNodeIds()));
+        }
+        return tunnel;
     }
 
     /**
@@ -100,14 +110,70 @@ public class TunnelResolver {
         tunnel.setOutNodeId(outGroup != null ? outGroup.getNodeId() : null);
         tunnel.setOutIp(outNode != null ? outNode.getServerIp() : inNode.getServerIp());
         tunnel.setType(outGroup != null ? 2 : 1); // 2-隧道转发，1-端口转发
-        // 协议由出口设备组自身配置决定（未配置时默认 tls）；仅端口转发（无出口组）时该值不会被实际用到
-        tunnel.setProtocol(outGroup != null && outGroup.getProtocol() != null ? outGroup.getProtocol() : "tls");
+        // 协议由出口设备组自身配置决定（未配置或未选择时默认 tls）；仅端口转发（无出口组）时该值不会被实际用到
+        tunnel.setProtocol(outGroup != null && outGroup.getProtocol() != null && !outGroup.getProtocol().trim().isEmpty() ? outGroup.getProtocol() : "tls");
         tunnel.setTcpListenAddr("0.0.0.0");
         tunnel.setUdpListenAddr("0.0.0.0");
+        tunnel.setUdpSourceInOut(inGroup.getUdpSourceInOut() != null && inGroup.getUdpSourceInOut() == 1);
         tunnel.setFlow(2);
         tunnel.setTrafficRatio(inGroup.getRatio() != null ? inGroup.getRatio() : BigDecimal.ONE);
         tunnel.setStatus(1);
+        if (outGroup != null) {
+            applyBackups(tunnel, resolveBackupNodeIds(outGroup, inGroup.getNodeId(), outGroup.getNodeId()));
+        }
         return tunnel;
+    }
+
+    /**
+     * 按出口设备组的「故障转移组」解析备用出口节点：沿着 failoverGroupId 依次往下找，
+     * 最多 {@link ExitFailover#MAX_BACKUPS} 个；遇到没配置、已被删除、不是出口类型、节点不存在、
+     * 循环引用，或与入口节点、前面已选的出口是同一个节点时，该项和之后的都不要。
+     */
+    List<Long> resolveBackupNodeIds(DeviceGroup outGroup, Long inNodeId, Long primaryNodeId) {
+        List<Long> result = new ArrayList<>();
+        Set<Long> visitedGroups = new HashSet<>();
+        Set<Long> usedNodes = new HashSet<>();
+        usedNodes.add(primaryNodeId);
+        if (inNodeId != null) {
+            usedNodes.add(inNodeId);
+        }
+        visitedGroups.add(outGroup.getId());
+        Long nextId = outGroup.getFailoverGroupId();
+        while (nextId != null && nextId > 0 && result.size() < ExitFailover.MAX_BACKUPS) {
+            if (!visitedGroups.add(nextId)) {
+                break;
+            }
+            DeviceGroup backup = deviceGroupService.getById(nextId);
+            if (backup == null || backup.getNodeId() == null
+                    || !("outbound".equals(backup.getDirection()) || "both".equals(backup.getDirection()))) {
+                break;
+            }
+            if (nodeService.getById(backup.getNodeId()) == null || !usedNodes.add(backup.getNodeId())) {
+                break;
+            }
+            result.add(backup.getNodeId());
+            nextId = backup.getFailoverGroupId();
+        }
+        return result;
+    }
+
+    /** 把备用出口节点 ID 按优先级写进隧道（连同各自的连接地址）；节点已不存在的跳过 */
+    private void applyBackups(Tunnel tunnel, List<Long> backupNodeIds) {
+        List<Long> ids = new ArrayList<>();
+        List<String> ips = new ArrayList<>();
+        for (Long nodeId : backupNodeIds) {
+            if (nodeId == null || nodeId.equals(tunnel.getOutNodeId()) || ids.contains(nodeId)) {
+                continue;
+            }
+            Node node = nodeService.getById(nodeId);
+            if (node == null || node.getServerIp() == null || node.getServerIp().isEmpty()) {
+                continue;
+            }
+            ids.add(nodeId);
+            ips.add(node.getServerIp());
+        }
+        tunnel.setBackupOutNodeIds(ids);
+        tunnel.setBackupOutIps(ips);
     }
 
     /**

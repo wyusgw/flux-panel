@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Button } from "@heroui/button";
-import { Input } from "@heroui/input";
+import { Textarea } from "@heroui/input";
 import { Select, SelectItem } from "@heroui/select";
 import { Spinner } from "@heroui/spinner";
 import { Chip } from "@heroui/chip";
@@ -9,6 +9,8 @@ import toast from 'react-hot-toast';
 
 import { getNodeList, runLookingGlass } from "@/api";
 import { EmptyState } from "@/components/empty-state";
+import { TerminalBox, TERM_TEXT, TERM_DIM, TERM_ERR } from "@/components/terminal-box";
+import { renderDiagnosisLines } from "@/components/tcp-ping-diagnosis";
 
 interface NodeOption {
   id: number;
@@ -48,6 +50,20 @@ interface LookingGlassResult {
 
 type DiagnosisType = 'ping' | 'traceroute' | 'mtr' | 'dns' | 'icmp_ping';
 
+interface TargetRun {
+  target: string;
+  status: 'pending' | 'running' | 'done';
+  result?: LookingGlassResult;
+  error?: string;
+}
+
+// 一次最多诊断的目标数：后端一次只诊断一个目标，这里逐个发起，限制数量避免长时间占用节点
+const MAX_TARGETS = 10;
+
+// 目标按换行、逗号、分号或空格拆分，去掉空项和重复项
+const parseTargets = (text: string): string[] =>
+  Array.from(new Set(text.split(/[\s,;，；]+/).map(t => t.trim()).filter(Boolean)));
+
 const TARGET_PLACEHOLDERS: Record<DiagnosisType, string> = {
   ping: 'example.com:443 或 1.2.3.4（不填端口默认 80）',
   traceroute: 'example.com 或 1.2.3.4',
@@ -63,7 +79,8 @@ export default function LookingGlassPage() {
   const [type, setType] = useState<DiagnosisType>('ping');
   const [target, setTarget] = useState('');
   const [running, setRunning] = useState(false);
-  const [result, setResult] = useState<LookingGlassResult | null>(null);
+  // 每个目标一项：按顺序逐个诊断，诊断完一个显示一个
+  const [items, setItems] = useState<TargetRun[]>([]);
 
   useEffect(() => {
     (async () => {
@@ -85,61 +102,67 @@ export default function LookingGlassPage() {
       toast.error('请选择发起诊断的节点');
       return;
     }
-    if (!target.trim()) {
+    const targets = parseTargets(target);
+    if (targets.length === 0) {
       toast.error('请输入目标地址');
       return;
     }
+    if (targets.length > MAX_TARGETS) {
+      toast.error(`一次最多诊断 ${MAX_TARGETS} 个目标`);
+      return;
+    }
     setRunning(true);
-    setResult(null);
+    const runs: TargetRun[] = targets.map(t => ({ target: t, status: 'pending' }));
+    setItems(runs);
+    const update = (index: number, patch: Partial<TargetRun>) => {
+      runs[index] = { ...runs[index], ...patch };
+      setItems([...runs]);
+    };
     try {
-      const res = await runLookingGlass({ nodeId, type, target: target.trim() });
-      if (res.code === 0) {
-        setResult(res.data);
-      } else {
-        toast.error(res.msg || '诊断失败');
+      for (let i = 0; i < targets.length; i++) {
+        update(i, { status: 'running' });
+        try {
+          const res = await runLookingGlass({ nodeId, type, target: targets[i] });
+          if (res.code === 0) {
+            update(i, { status: 'done', result: res.data });
+          } else {
+            update(i, { status: 'done', error: res.msg || '诊断失败' });
+          }
+        } catch (error) {
+          update(i, { status: 'done', error: '诊断失败，请重试' });
+        }
       }
-    } catch (error) {
-      toast.error('诊断失败，请重试');
     } finally {
       setRunning(false);
     }
   };
 
-  const renderPingResult = (data: PingResultData) => (
-    <div className="space-y-1">
-      {data.attempts && data.attempts.length > 0 ? (
-        <>
-          {data.attempts.map((attempt) => (
-            <div key={attempt.seq} className="font-mono text-xs text-default-500">
-              {attempt.success
-                ? `连接 ${attempt.seq}: 来自 ${result?.target} 时间=${attempt.timeMs?.toFixed(0)}ms`
-                : `连接 ${attempt.seq}: 来自 ${result?.target} 失败${attempt.error ? `（${attempt.error}）` : ''}`}
-            </div>
-          ))}
-          <div className="text-xs text-default-500 pt-1">
-            平均延迟 {data.averageTime !== undefined && data.averageTime >= 0 ? `${data.averageTime.toFixed(0)}ms` : '-'} · 丢包 {data.packetLoss?.toFixed(0) ?? 0}%
-          </div>
-        </>
-      ) : (
-        <div className="text-xs text-default-500">{data.errorMessage || (data.success ? 'TCP 连接成功' : '连接失败')}</div>
-      )}
-    </div>
-  );
+  // 目标形如 example.com:443 / 1.2.3.4（不填端口默认 80）；拆成地址和端口，用与转发诊断相同的终端 ping 样式展示
+  const splitTarget = (value: string): { host: string; port: number } => {
+    const m = value.match(/^(.*):(\d{1,5})$/);
+    return m && !m[1].includes(':') ? { host: m[1], port: Number(m[2]) } : { host: value, port: 80 };
+  };
 
+  const renderPingResult = (data: PingResultData, targetText: string) => {
+    const { host, port } = splitTarget(targetText);
+    return renderDiagnosisLines({
+      success: data.success,
+      description: '',
+      nodeName: '',
+      targetIp: host,
+      targetPort: port,
+      attempts: data.attempts,
+      message: data.errorMessage || (data.success ? 'TCP 连接成功' : '连接失败'),
+    });
+  };
+
+  // traceroute / mtr / dns / icmp ping 本来就是命令行输出，原样放进终端框，保留列对齐
   const renderRawOutputResult = (data: RawOutputResultData) => (
-    <div className="space-y-2">
-      {data.errorMessage && (
-        <div className="text-xs text-danger">{data.errorMessage}</div>
-      )}
-      {data.output && (
-        <pre className="text-xs font-mono text-default-600 bg-default-100 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap break-all max-h-96 overflow-y-auto">
-          {data.output}
-        </pre>
-      )}
-      {!data.output && !data.errorMessage && (
-        <div className="text-xs text-default-500">无输出</div>
-      )}
-    </div>
+    <TerminalBox className="max-h-96 overflow-y-auto">
+      {data.errorMessage && <div className={TERM_ERR}>{data.errorMessage}</div>}
+      {data.output && <div className={TERM_TEXT}>{data.output}</div>}
+      {!data.output && !data.errorMessage && <div className={TERM_DIM}>no output</div>}
+    </TerminalBox>
   );
 
   if (loading) {
@@ -213,24 +236,27 @@ export default function LookingGlassPage() {
                   isDisabled={running}
                   disallowEmptySelection
                 >
-                  <SelectItem key="ping">Ping（TCP 连通性）</SelectItem>
+                  <SelectItem key="ping">TCP Ping</SelectItem>
                   <SelectItem key="icmp_ping">ICMP Ping</SelectItem>
-                  <SelectItem key="traceroute">Traceroute（路由跟踪）</SelectItem>
-                  <SelectItem key="mtr">MTR（路由质量）</SelectItem>
+                  <SelectItem key="traceroute">Traceroute</SelectItem>
+                  <SelectItem key="mtr">MTR</SelectItem>
                   <SelectItem key="dns">DNS 查询</SelectItem>
                 </Select>
 
-                <Input
+                <Textarea
                   size="sm"
                   labelPlacement="outside-top"
                   autoComplete="off"
                   label="目标地址"
-                  placeholder={TARGET_PLACEHOLDERS[type]}
+                  placeholder={`${TARGET_PLACEHOLDERS[type]}，可填多个，一行一个`}
                   value={target}
                   onValueChange={setTarget}
                   variant="bordered"
                   isDisabled={running}
-                  onKeyDown={(e) => { if (e.key === 'Enter') handleRun(); }}
+                  disableAutosize
+                  rows={3}
+                  classNames={{ input: 'resize-y min-h-[4.5rem]' }}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleRun(); }}
                 />
 
                 <div className="flex justify-end pt-1">
@@ -246,25 +272,49 @@ export default function LookingGlassPage() {
         <Card className="management-table-card lg:min-h-[420px]" shadow="none">
           <CardHeader className="px-6 py-4 border-b border-default-100 flex items-center justify-between gap-3">
             <h2 className="text-sm font-semibold min-w-0 truncate">
-              诊断结果{result ? `：${result.nodeName} → ${result.target}` : ''}
+              诊断结果{items.length === 1 && items[0].result ? `：${items[0].result.nodeName} → ${items[0].target}` : ''}
             </h2>
-            {result && (
-              <Chip size="sm" variant="light" color={result.data.success ? 'success' : 'danger'}>
-                {result.data.success ? '成功' : '失败'}
+            {items.length === 1 && items[0].status === 'done' && (
+              <Chip size="sm" variant="light" color={items[0].result?.data.success ? 'success' : 'danger'}>
+                {items[0].result?.data.success ? '成功' : '失败'}
               </Chip>
             )}
           </CardHeader>
           <CardBody className="px-6 py-5">
-            {result ? (
-              result.type === 'ping' ? renderPingResult(result.data) : renderRawOutputResult(result.data)
-            ) : running ? (
-              <div className="flex items-center justify-center gap-3 h-full min-h-[320px]">
-                <Spinner size="sm" />
-                <span className="text-default-600">正在诊断...</span>
-              </div>
-            ) : (
+            {items.length === 0 ? (
               <div className="flex items-center justify-center h-full min-h-[320px]">
                 <EmptyState text="填写左侧信息并开始诊断，结果将显示在这里" />
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {items.map((item) => (
+                  <div key={item.target} className="space-y-2">
+                    {items.length > 1 && (
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-sm font-semibold text-foreground min-w-0 truncate">
+                          {item.result ? `${item.result.nodeName} → ${item.target}` : item.target}
+                        </span>
+                        {item.status === 'done' && (
+                          <Chip size="sm" variant="light" color={item.result?.data.success ? 'success' : 'danger'}>
+                            {item.result?.data.success ? '成功' : '失败'}
+                          </Chip>
+                        )}
+                      </div>
+                    )}
+                    {item.status === 'pending' ? (
+                      <div className="text-xs text-default-400">等待诊断...</div>
+                    ) : item.status === 'running' ? (
+                      <div className="flex items-center gap-3 py-2">
+                        <Spinner size="sm" />
+                        <span className="text-default-600 text-sm">正在诊断 {item.target}...</span>
+                      </div>
+                    ) : item.result ? (
+                      item.result.type === 'ping' ? renderPingResult(item.result.data, item.result.target) : renderRawOutputResult(item.result.data)
+                    ) : (
+                      <TerminalBox><div className={TERM_ERR}>{item.error}</div></TerminalBox>
+                    )}
+                  </div>
+                ))}
               </div>
             )}
           </CardBody>

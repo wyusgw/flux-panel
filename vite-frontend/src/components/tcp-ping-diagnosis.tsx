@@ -48,7 +48,8 @@ function formatMs(value: number | undefined): string {
 
 // 某一段诊断的逐次连接尝试明细，渲染成终端输出；旧版节点 Agent 未返回 attempts 明细时，回退显示汇总消息
 // maxLines：卡片里只预览前几条，完整明细在点开的详细结果里（不传则全部列出，并附统计）
-export function renderDiagnosisLines(result: DiagnosisResultItem, maxLines?: number) {
+// boxClassName：追加到终端框上的样式（例如卡片里去掉圆角铺满整块区域）
+export function renderDiagnosisLines(result: DiagnosisResultItem, maxLines?: number, boxClassName = '') {
   const addr = `${result.targetIp}${result.targetPort ? ':' + result.targetPort : ''}`;
   const attempts = result.attempts ?? [];
 
@@ -87,8 +88,7 @@ export function renderDiagnosisLines(result: DiagnosisResultItem, maxLines?: num
   })();
 
   return (
-    <TerminalBox>
-      <div className={TERM_TEXT}>TCPPING {result.targetIp}{result.targetPort ? ` port ${result.targetPort}` : ''}</div>
+    <TerminalBox className={boxClassName}>
       {body}
     </TerminalBox>
   );
@@ -109,7 +109,7 @@ function DiagnosisDetailModal({
 }) {
   const hasAttempts = !!result?.attempts && result.attempts.length > 0;
   return (
-    <Modal isOpen={result !== null} onOpenChange={(open) => !open && onClose()} size="lg" backdrop="opaque" placement="center">
+    <Modal isOpen={result !== null} onOpenChange={(open) => !open && onClose()} size="lg" backdrop="opaque" placement="center" hideCloseButton>
       <ModalContent>
         {result && (
           <>
@@ -167,6 +167,7 @@ function DiagnosisDetailModal({
 const PREVIEW_LINES = 5;
 
 // 诊断分区：每一段诊断渲染成一张卡片（名称 + 可选 GID），内容逐行展示连接明细；点击卡片可查看详细结果
+// 卡片不用 isPressable（点击时不要按下缩放 / 阴影 / 波纹效果）；HeroUI Card 非 isPressable 时会丢掉 onClick，所以点击放在外层 div 上
 export function DiagnosisLeg({
   title,
   subtitle,
@@ -226,12 +227,15 @@ export function DiagnosisLeg({
           {results.map((result, index) => {
             const groupName = result.groupId != null ? resolveGroupName?.(result.groupId) : undefined;
             return (
-              <Card
+              <div
                 key={index}
-                isPressable
-                onPress={() => openDetail(result)}
-                className="shadow-sm border border-default-200 overflow-hidden w-full cursor-pointer"
+                role="button"
+                tabIndex={0}
+                onClick={() => openDetail(result)}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDetail(result); } }}
+                className="cursor-pointer outline-none"
               >
+              <Card className="shadow-none border border-default-200 overflow-hidden w-full">
                 <div className="flex items-center justify-between px-4 py-2.5 border-b border-default-100 w-full">
                   <span className="font-semibold text-foreground truncate">{groupName || result.nodeName}</span>
                   <div className="flex items-center gap-2 flex-shrink-0">
@@ -239,10 +243,11 @@ export function DiagnosisLeg({
                     {!result.success && <Chip size="sm" variant="light" color="danger">失败</Chip>}
                   </div>
                 </div>
-                <div className="px-3 py-3 text-left w-full">
-                  {renderDiagnosisLines(result, PREVIEW_LINES)}
+                <div className="text-left w-full flex-1 flex">
+                  {renderDiagnosisLines(result, PREVIEW_LINES, 'flex-1 rounded-none px-4 py-3')}
                 </div>
               </Card>
+              </div>
             );
           })}
         </div>

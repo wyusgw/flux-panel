@@ -1,6 +1,6 @@
 import { TipButton } from "@/components/tip-button";
 import { RuleSearchModal, EMPTY_RULE_SEARCH, countRuleSearch, matchRuleSearch } from "@/components/rule-search-modal";
-import { AimOutlined, BarChartOutlined, CheckSquareOutlined, CopyOutlined, DeleteOutlined, DownloadOutlined, EditOutlined, FileAddOutlined, FilterFilled, FireOutlined, FolderAddOutlined, InfoCircleOutlined, PauseCircleOutlined, PlayCircleOutlined, SearchOutlined, SettingOutlined } from "@/components/ant-icons";
+import { AimOutlined, BarChartOutlined, CheckSquareOutlined, CopyOutlined, DeleteOutlined, EditOutlined, FileAddOutlined, FilterFilled, FireOutlined, FolderAddOutlined, InfoCircleOutlined, PauseCircleOutlined, PlayCircleOutlined, SearchOutlined, SettingOutlined, SwapOutlined, RightOutlined } from "@/components/ant-icons";
 import { useState, useEffect, useRef } from "react";
 import { useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import { Card, CardBody, CardHeader } from "@heroui/card";
@@ -21,6 +21,7 @@ import { Accordion, AccordionItem } from "@heroui/accordion";
 import toast from 'react-hot-toast';
 import { copyText } from '@/utils/clipboard';
 import { EmptyState } from "@/components/empty-state";
+import { TerminalBox, TERM_TEXT, TERM_ERR } from "@/components/terminal-box";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { showApiFailure } from "@/components/error-dialog";
 import { nextSort, SortableHeader } from "@/components/table-sort";
@@ -375,12 +376,21 @@ export default function ForwardPage() {
   const [exportData, setExportData] = useState('');
   const [exportLoading, setExportLoading] = useState(false);
   const [selectedTunnelForExport, setSelectedTunnelForExport] = useState<number | null>(null);
+  // 批量导入 / 导出：按入口设备组（device）或按隧道（tunnel），标题旁的 ⇋ 切换
+  const [exportMode, setExportMode] = useState<'device' | 'tunnel'>('device');
+  const [exportInGroupId, setExportInGroupId] = useState<number | null>(null);
   
   // 导入相关状态
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [importData, setImportData] = useState('');
   const [importLoading, setImportLoading] = useState(false);
   const [selectedTunnelForImport, setSelectedTunnelForImport] = useState<number | null>(null);
+  const [importMode, setImportMode] = useState<'device' | 'tunnel'>('device');
+  const [importInGroupId, setImportInGroupId] = useState<number | null>(null);
+  const [importOutGroupId, setImportOutGroupId] = useState<number | null>(null);
+  // JSON 设置：合并到每条规则的创建参数里，覆盖除目标地址以外的配置
+  const [importJson, setImportJson] = useState('');
+  const [importJsonOpen, setImportJsonOpen] = useState(false); // 默认收起
   const [importResults, setImportResults] = useState<Array<{
     line: string;
     success: boolean;
@@ -1090,14 +1100,16 @@ export default function ForwardPage() {
     // 导出转发数据
   const handleExport = () => {
     setSelectedTunnelForExport(null);
+    setExportInGroupId(null);
     setExportData('');
     setExportModalOpen(true);
   };
 
   // 执行导出
-  const executeExport = () => {
-    if (!selectedTunnelForExport) {
-      toast.error('请选择要导出的隧道');
+  // mode 为 device 时 id 是入口设备组 ID，为 tunnel 时是隧道 ID
+  const executeExport = (mode: 'device' | 'tunnel', id: number | null) => {
+    if (!id) {
+      toast.error(mode === 'device' ? '请选择要导出的入口' : '请选择要导出的隧道');
       return;
     }
 
@@ -1105,10 +1117,10 @@ export default function ForwardPage() {
     
     try {
       // 导出当前用户名下、指定隧道的转发
-      const forwardsToExport: Forward[] = getSortedForwards().filter(forward => forward.tunnelId === selectedTunnelForExport);
+      const forwardsToExport: Forward[] = getSortedForwards().filter(forward => mode === 'device' ? forward.inDeviceGroupId === id : forward.tunnelId === id);
       
       if (forwardsToExport.length === 0) {
-        toast.error('所选隧道没有转发数据');
+        toast.error(mode === 'device' ? '所选入口没有转发规则' : '所选隧道没有转发规则');
         setExportLoading(false);
         return;
       }
@@ -1138,6 +1150,10 @@ export default function ForwardPage() {
     setImportData('');
     setImportResults([]);
     setSelectedTunnelForImport(null);
+    setImportInGroupId(null);
+    setImportOutGroupId(null);
+    setImportJson('');
+    setImportJsonOpen(false);
     setImportModalOpen(true);
   };
 
@@ -1148,10 +1164,38 @@ export default function ForwardPage() {
       return;
     }
 
-    if (!selectedTunnelForImport) {
+    const importEntry = deviceGroups.find(g => g.id === importInGroupId);
+    if (importMode === 'tunnel' && !selectedTunnelForImport) {
       toast.error('请选择要导入的隧道');
       return;
     }
+    if (importMode === 'device') {
+      if (!importInGroupId) {
+        toast.error('请选择入口');
+        return;
+      }
+      if (getDirectMode(importEntry) === 0 && !importOutGroupId) {
+        toast.error('该入口不允许直接转发，请选择出口');
+        return;
+      }
+    }
+
+    // JSON 设置：必须是对象；目标地址（remoteAddr）以每行的为准，不允许覆盖
+    let jsonOverrides: Record<string, unknown> = {};
+    if (importJson.trim()) {
+      try {
+        const parsed = JSON.parse(importJson);
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('not object');
+        const { remoteAddr: _ignored, ...rest } = parsed as Record<string, unknown>;
+        jsonOverrides = rest;
+      } catch {
+        toast.error('JSON 设置格式错误，应为 JSON 对象');
+        return;
+      }
+    }
+    const entryFields = importMode === 'tunnel'
+      ? { tunnelId: selectedTunnelForImport, inDeviceGroupId: null, outDeviceGroupId: null }
+      : { tunnelId: null, inDeviceGroupId: importInGroupId, outDeviceGroupId: getDirectMode(importEntry) === 2 ? null : importOutGroupId };
 
     setImportLoading(true);
     setImportResults([]); // 清空之前的结果
@@ -1214,12 +1258,15 @@ export default function ForwardPage() {
           }
 
           // 调用创建转发接口
+          // 优先级：默认值 < JSON 设置 < 每行的规则名 / 入口端口 / 目标地址；入口出口以对话框里选的为准
           const response = await createForward({
+            strategy: 'fifo',
+            ...(isImpersonating ? { userId: impersonateUserId } : {}),
+            ...jsonOverrides,
             name: name.trim(),
-            tunnelId: selectedTunnelForImport, // 使用用户选择的隧道
-            inPort: portNumber, // 使用指定端口或自动分配
+            ...entryFields,
+            inPort: portNumber ?? jsonOverrides.inPort ?? null, // 每行和 JSON 都没填端口时自动分配
             remoteAddr: remoteAddr.trim(),
-            strategy: 'fifo'
           });
 
           if (response.code === 0) {
@@ -2145,267 +2192,235 @@ export default function ForwardPage() {
           </ModalContent>
         </Modal>
 
-        {/* 导出数据模态框 */}
-        <Modal 
-          isOpen={exportModalOpen} 
-          onClose={() => {
-            setExportModalOpen(false);
-            setSelectedTunnelForExport(null);
-            setExportData('');
-          }} 
-          
-          size="2xl"
-        scrollBehavior="outside"
-        backdrop="opaque"
-        placement="center"
+        {/* 批量导出：选好入口（或隧道）后立即生成，标题旁 ⇋ 切换按入口 / 按隧道 */}
+        <Modal
+          isOpen={exportModalOpen}
+          onOpenChange={(open) => {
+            if (!open) {
+              setExportModalOpen(false);
+              setSelectedTunnelForExport(null);
+              setExportInGroupId(null);
+              setExportData('');
+            }
+          }}
+          size="sm"
+          scrollBehavior="outside"
+          backdrop="opaque"
+          placement="center"
+          hideCloseButton
+          classNames={{ base: "max-w-[416px]" }}
         >
           <ModalContent>
-            <ModalHeader className="flex flex-col gap-1">
-              <h2 className="text-lg font-semibold">导出转发数据</h2>
-              <p className="text-small text-default-500">
-                格式：目标地址|转发名称|入口端口
-              </p>
-            </ModalHeader>
-            <ModalBody className="pb-6">
-              <div className="space-y-4">
-                {/* 隧道选择 */}
-                <div>
-                  <Select
-                    size="sm"
-                    label="选择导出隧道"
-                    placeholder="请选择要导出的隧道"
-                    selectedKeys={selectedTunnelForExport ? [selectedTunnelForExport.toString()] : []}
-                    onSelectionChange={(keys) => {
-                      const selectedKey = Array.from(keys)[0] as string;
-                      setSelectedTunnelForExport(selectedKey ? parseInt(selectedKey) : null);
-                    }}
-                    variant="bordered"
-                    isRequired
-                  >
-                    {tunnels.map((tunnel) => (
-                      <SelectItem key={tunnel.id.toString()} textValue={tunnel.name}>
-                        {tunnel.name}
-                      </SelectItem>
-                    ))}
-                  </Select>
-                </div>
+            {(onClose) => (
+              <>
+                <ModalHeader className="flex items-center gap-1.5">
+                  批量导出
+                  <TipButton isIconOnly size="sm" variant="light" className="min-w-6 w-6 h-6" title={exportMode === 'device' ? '切换为按隧道导出' : '切换为按入口导出'}
+                    onPress={() => { setExportMode(m => m === 'device' ? 'tunnel' : 'device'); setExportData(''); setExportInGroupId(null); setSelectedTunnelForExport(null); }}>
+                    <SwapOutlined />
+                  </TipButton>
+                </ModalHeader>
+                <ModalBody className="py-0">
+                  <div className="dialog-form space-y-3">
+                    {exportMode === 'device' ? (
+                      <Select listboxProps={{ emptyContent: <EmptyState compact /> }} labelPlacement="outside-top"
+                        size="sm"
+                        label="入口"
+                        selectedKeys={exportInGroupId ? [exportInGroupId.toString()] : []}
+                        onSelectionChange={(keys) => {
+                          const selectedKey = Array.from(keys)[0] as string;
+                          const id = selectedKey ? parseInt(selectedKey) : null;
+                          setExportInGroupId(id);
+                          setExportData('');
+                          if (id) executeExport('device', id);
+                        }}
+                        variant="bordered"
+                      >
+                        {deviceGroups.filter(g => (g.direction || 'inbound') === 'inbound' || g.direction === 'both').map((group) => (
+                          <SelectItem key={group.id.toString()} textValue={group.name}>{group.name}</SelectItem>
+                        ))}
+                      </Select>
+                    ) : (
+                      <Select listboxProps={{ emptyContent: <EmptyState compact text="暂无可用隧道" /> }} labelPlacement="outside-top"
+                        size="sm"
+                        label="隧道"
+                        selectedKeys={selectedTunnelForExport ? [selectedTunnelForExport.toString()] : []}
+                        onSelectionChange={(keys) => {
+                          const selectedKey = Array.from(keys)[0] as string;
+                          const id = selectedKey ? parseInt(selectedKey) : null;
+                          setSelectedTunnelForExport(id);
+                          setExportData('');
+                          if (id) executeExport('tunnel', id);
+                        }}
+                        variant="bordered"
+                      >
+                        {tunnels.map((tunnel) => (
+                          <SelectItem key={tunnel.id.toString()} textValue={tunnel.name}>{tunnel.name}</SelectItem>
+                        ))}
+                      </Select>
+                    )}
 
-                {/* 导出按钮和数据 */}
-                {exportData && (
-                  <div className="flex justify-between items-center">
-                    <Button
-                      color="default"
-                      size="sm"
-                      onPress={executeExport}
-                      isLoading={exportLoading}
-                      isDisabled={!selectedTunnelForExport}
-                      startContent={
-                        <DownloadOutlined />
-                      }
-                    >
-                      重新生成
-                    </Button>
-                    <Button
-                      color="default"
-                      size="sm"
-                      onPress={copyExportData}
-                      startContent={
-                        <CopyOutlined />
-                      }
-                    >
-                      复制
-                    </Button>
-                  </div>
-                )}
-
-                {/* 初始导出按钮 */}
-                {!exportData && (
-                  <div className="text-right">
-                    <Button
-                      color="default"
-                      size="sm"
-                      onPress={executeExport}
-                      isLoading={exportLoading}
-                      isDisabled={!selectedTunnelForExport}
-                      startContent={
-                        <DownloadOutlined />
-                      }
-                    >
-                      生成导出数据
-                    </Button>
-                  </div>
-                )}
-
-                {/* 导出数据显示 */}
-                {exportData && (
-                  <div className="relative">
-                    <Textarea
-                      size="sm" autoComplete="off"
+                    <Textarea labelPlacement="outside-top" size="sm" autoComplete="off" variant="bordered" disableAutosize rows={6}
+                      label="批量规则"
+                      placeholder="一行一个：目标地址|规则名|入口端口"
                       value={exportData}
                       readOnly
-                      variant="bordered"
-                      minRows={10}
-                      maxRows={20}
-                      className="font-mono text-sm"
-                      classNames={{
-                        input: "font-mono text-sm"
-                      }}
-                      placeholder="暂无数据"
+                      classNames={{ input: "font-mono text-xs placeholder:font-sans resize-y min-h-[120px]" }}
                     />
                   </div>
-                )}
-              </div>
-            </ModalBody>
-            <ModalFooter>
-              <Button 
-                variant="light" 
-                onPress={() => setExportModalOpen(false)}
-              >
-                关闭
-              </Button>
-            </ModalFooter>
+                </ModalBody>
+                <ModalFooter>
+                  <Button size="sm" variant="bordered" className="dialog-btn" onPress={onClose}>取消</Button>
+                  <Button size="sm" color="primary" className="dialog-btn" isDisabled={!exportData} onPress={copyExportData}>复制</Button>
+                </ModalFooter>
+              </>
+            )}
           </ModalContent>
         </Modal>
 
-        {/* 导入数据模态框 */}
-        <Modal 
-          isOpen={importModalOpen} 
-          onClose={() => setImportModalOpen(false)} 
-          
-          size="2xl"
-        scrollBehavior="outside"
-        backdrop="opaque"
-        placement="center"
+        {/* 批量导入：标题旁 ⇋ 切换按入口 / 出口设备组或按隧道；批量规则和 JSON 设置输入框可拖动右下角调整高度 */}
+        <Modal
+          isOpen={importModalOpen}
+          onOpenChange={(open) => { if (!open) setImportModalOpen(false); }}
+          size="sm"
+          scrollBehavior="outside"
+          backdrop="opaque"
+          placement="center"
+          hideCloseButton
+          classNames={{ base: "max-w-[416px]" }}
         >
           <ModalContent>
-            <ModalHeader className="flex flex-col gap-1">
-              <h2 className="text-lg font-semibold">导入转发数据</h2>
-              <p className="text-small text-default-500">
-                格式：目标地址|转发名称|入口端口，每行一个，入口端口留空将自动分配可用端口
-              </p>
-              <p className="text-small text-default-400">
-                目标地址支持单个地址(如：example.com:8080)或多个地址用逗号分隔(如：3.3.3.3:3,4.4.4.4:4)
-              </p>
-            </ModalHeader>
-            <ModalBody className="pb-6">
-              <div className="space-y-4">
-                {/* 隧道选择 */}
-                <div>
-                  <Select
-                    size="sm"
-                    label="选择导入隧道"
-                    placeholder="请选择要导入的隧道"
-                    selectedKeys={selectedTunnelForImport ? [selectedTunnelForImport.toString()] : []}
-                    onSelectionChange={(keys) => {
-                      const selectedKey = Array.from(keys)[0] as string;
-                      setSelectedTunnelForImport(selectedKey ? parseInt(selectedKey) : null);
-                    }}
-                    variant="bordered"
-                    isRequired
-                  >
-                    {tunnels.map((tunnel) => (
-                      <SelectItem key={tunnel.id.toString()} textValue={tunnel.name}>
-                        {tunnel.name}
-                      </SelectItem>
-                    ))}
-                  </Select>
-                </div>
-
-                {/* 输入区域 */}
-                <div>
-                  <Textarea
-                    size="sm" autoComplete="off"
-                    label="导入数据"
-                    placeholder="请输入要导入的转发数据，格式：目标地址|转发名称|入口端口"
-                    value={importData}
-                    onChange={(e) => setImportData(e.target.value)}
-                    variant="flat"
-                    minRows={8}
-                    maxRows={12}
-                    classNames={{
-                      input: "font-mono text-sm"
-                    }}
-                  />
-
-                
-                </div>
-
-                {/* 导入结果 */}
-                {importResults.length > 0 && (
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <h3 className="text-base font-semibold">导入结果</h3>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-default-500">
-                          成功：{importResults.filter(r => r.success).length} / 
-                          总计：{importResults.length}
-                        </span>
-                      </div>
-                    </div>
-                    
-                    <div className="max-h-40 overflow-y-auto space-y-1" style={{
-                      scrollbarWidth: 'thin',
-                      scrollbarColor: 'rgb(156 163 175) transparent'
-                    }}>
-                      {importResults.map((result, index) => (
-                        <div 
-                          key={index} 
-                          className={`p-2 rounded border ${
-                            result.success 
-                              ? 'bg-success-50 dark:bg-success-100/10 border-success-200 dark:border-success-300/20' 
-                              : 'bg-danger-50 dark:bg-danger-100/10 border-danger-200 dark:border-danger-300/20'
-                          }`}
+            {(onClose) => {
+              const importEntry = deviceGroups.find(g => g.id === importInGroupId);
+              const importDirectMode = getDirectMode(importEntry);
+              return (
+              <>
+                <ModalHeader className="flex items-center gap-1.5">
+                  批量导入
+                  <TipButton isIconOnly size="sm" variant="light" className="min-w-6 w-6 h-6" title={importMode === 'device' ? '切换为导入到隧道' : '切换为导入到入口 / 出口'}
+                    onPress={() => setImportMode(m => m === 'device' ? 'tunnel' : 'device')}>
+                    <SwapOutlined />
+                  </TipButton>
+                </ModalHeader>
+                <ModalBody className="py-0">
+                  <div className="dialog-form space-y-3">
+                    {importMode === 'device' ? (
+                      <>
+                        <Select listboxProps={{ emptyContent: <EmptyState compact /> }} labelPlacement="outside-top"
+                          size="sm"
+                          label="入口"
+                          selectedKeys={importInGroupId ? [importInGroupId.toString()] : []}
+                          onSelectionChange={(keys) => {
+                            const selectedKey = Array.from(keys)[0] as string;
+                            const id = selectedKey ? parseInt(selectedKey) : null;
+                            const entry = deviceGroups.find(g => g.id === id);
+                            setImportInGroupId(id);
+                            // 换入口后，已选出口若不在新入口允许范围内则清掉
+                            setImportOutGroupId(prev => (id && prev != null && getDirectMode(entry) !== 2 && isPairAllowed(entry, deviceGroups.find(g => g.id === prev))) ? prev : null);
+                          }}
+                          variant="bordered"
                         >
-                          <div className="flex items-center gap-2">
-                            {result.success ? (
-                              <svg className="w-3 h-3 text-success-600 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                              </svg>
-                            ) : (
-                              <svg className="w-3 h-3 text-danger-600 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                                <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-                              </svg>
-                            )}
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 mb-0.5">
-                                <span className={`text-xs font-medium ${
-                                  result.success ? 'text-success-700 dark:text-success-300' : 'text-danger-700 dark:text-danger-300'
-                                }`}>
-                                  {result.success ? '成功' : '失败'}
-                                </span>
-                                <span className="text-xs text-default-500">|</span>
-                                <code className="text-xs font-mono text-default-600 truncate">{result.line}</code>
-                              </div>
-                              <div className={`text-xs ${
-                                result.success ? 'text-success-600 dark:text-success-400' : 'text-danger-600 dark:text-danger-400'
-                              }`}>
-                                {result.message}
-                              </div>
-                            </div>
+                          {deviceGroups.filter(g => (g.direction || 'inbound') === 'inbound' || g.direction === 'both').map((group) => (
+                            <SelectItem key={group.id.toString()} textValue={group.name}>{group.name}</SelectItem>
+                          ))}
+                        </Select>
+                        {importInGroupId && importDirectMode !== 2 && (
+                          <Select listboxProps={{ emptyContent: <EmptyState compact /> }} labelPlacement="outside-top"
+                            size="sm"
+                            label="出口"
+                            placeholder={importDirectMode === 0 ? '请选择出口' : '留空则为直接端口转发'}
+                            selectedKeys={importOutGroupId ? [importOutGroupId.toString()] : []}
+                            onSelectionChange={(keys) => {
+                              const selectedKey = Array.from(keys)[0] as string;
+                              setImportOutGroupId(selectedKey ? parseInt(selectedKey) : null);
+                            }}
+                            variant="bordered"
+                          >
+                            {deviceGroups.filter(g => (g.direction === 'outbound' || g.direction === 'both') && isPairAllowed(importEntry, g)).map((group) => (
+                              <SelectItem key={group.id.toString()} textValue={group.name}>{group.name}</SelectItem>
+                            ))}
+                          </Select>
+                        )}
+                      </>
+                    ) : (
+                      <Select listboxProps={{ emptyContent: <EmptyState compact text="暂无可用隧道" /> }} labelPlacement="outside-top"
+                        size="sm"
+                        label="隧道"
+                        selectedKeys={selectedTunnelForImport ? [selectedTunnelForImport.toString()] : []}
+                        onSelectionChange={(keys) => {
+                          const selectedKey = Array.from(keys)[0] as string;
+                          setSelectedTunnelForImport(selectedKey ? parseInt(selectedKey) : null);
+                        }}
+                        variant="bordered"
+                      >
+                        {tunnels.map((tunnel) => (
+                          <SelectItem key={tunnel.id.toString()} textValue={tunnel.name}>{tunnel.name}</SelectItem>
+                        ))}
+                      </Select>
+                    )}
+
+                    <Textarea labelPlacement="outside-top" size="sm" autoComplete="off" variant="bordered" disableAutosize rows={6}
+                      label="批量规则"
+                      placeholder={"一行一个，空行会被忽略。\n格式：目标地址|规则名|入口端口\n入口端口留空自动分配，多个目标地址用逗号分隔"}
+                      value={importData}
+                      onChange={(e) => setImportData(e.target.value)}
+                      classNames={{ input: "font-mono text-xs placeholder:font-sans resize-y min-h-[120px]" }}
+                    />
+
+                    <div className="rounded-md border border-default-300 overflow-hidden">
+                      <button type="button" onClick={() => setImportJsonOpen(o => !o)}
+                        className="flex w-full items-center gap-2 bg-default-100 px-4 py-2.5 text-sm font-semibold text-foreground outline-none">
+                        <RightOutlined className={`w-3 h-3 flex-shrink-0 transition-transform duration-300 ease-in-out ${importJsonOpen ? 'rotate-90' : ''}`} />
+                        JSON 设置
+                      </button>
+                      {/* 展开 / 收起用 grid-template-rows 0fr↔1fr 过渡高度，内容一直挂载（输入的 JSON 不丢），同时淡入淡出 */}
+                      <div
+                        className={`grid transition-[grid-template-rows,opacity] duration-300 ease-in-out motion-reduce:transition-none ${importJsonOpen ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}
+                        // 收起时整块不可聚焦、不可点击；React 18 不认识 inert 属性，按普通 HTML 属性传字符串
+                        {...(!importJsonOpen ? { inert: '' } as Record<string, string> : {})}
+                      >
+                        <div className="min-h-0 overflow-hidden">
+                          <div className="p-4 border-t border-default-300">
+                            <Textarea size="sm" autoComplete="off" variant="bordered" disableAutosize rows={6}
+                              aria-label="JSON 设置"
+                              placeholder={'覆盖除目标地址以外的配置，请确保格式正确。\n例如：{"strategy": "round", "speedLimit": 1}'}
+                              value={importJson}
+                              onChange={(e) => setImportJson(e.target.value)}
+                              classNames={{ input: "font-mono text-xs placeholder:font-sans resize-y min-h-[120px]" }}
+                            />
                           </div>
                         </div>
-                      ))}
+                      </div>
                     </div>
+
+                    {importResults.length > 0 && (
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-sm font-semibold text-foreground">导入结果</span>
+                          <span className="text-xs text-default-500">
+                            成功 {importResults.filter(r => r.success).length} / 共 {importResults.length}
+                          </span>
+                        </div>
+                        <TerminalBox className="max-h-40 overflow-y-auto">
+                          {importResults.map((result, index) => (
+                            <div key={index} className={result.success ? TERM_TEXT : TERM_ERR}>
+                              {result.success ? 'ok    ' : 'failed'} {result.line}{result.success ? '' : `: ${result.message}`}
+                            </div>
+                          ))}
+                        </TerminalBox>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-            </ModalBody>
-            <ModalFooter>
-              <Button 
-                variant="light" 
-                onPress={() => setImportModalOpen(false)}
-              >
-                关闭
-              </Button>
-              <Button
-                color="default"
-                onPress={executeImport}
-                isLoading={importLoading}
-                isDisabled={!importData.trim() || !selectedTunnelForImport}
-              >
-                开始导入
-              </Button>
-            </ModalFooter>
+                </ModalBody>
+                <ModalFooter>
+                  <Button size="sm" variant="bordered" className="dialog-btn" onPress={onClose}>取消</Button>
+                  <Button size="sm" color="primary" className="dialog-btn" isLoading={importLoading}
+                    isDisabled={!importData.trim() || (importMode === 'tunnel' ? !selectedTunnelForImport : !importInGroupId)}
+                    onPress={executeImport}>确定</Button>
+                </ModalFooter>
+              </>
+              );
+            }}
           </ModalContent>
         </Modal>
 

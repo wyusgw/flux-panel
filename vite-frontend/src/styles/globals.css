@@ -618,6 +618,10 @@ section[role="dialog"] > footer { padding: 12px 24px 20px; gap: 8px; }
 .dialog-form [data-slot="input-wrapper"], .dialog-form button[data-slot="trigger"]:has([data-slot="selectorIcon"]) { border-width: 1px !important; border-color: hsl(var(--heroui-default-300)); border-radius: 6px; }
 .dialog-form [data-slot="input-wrapper"]:not(:has(textarea)), .dialog-form button[data-slot="trigger"]:has([data-slot="selectorIcon"]) { height: 32px; min-height: 32px; }
 .dialog-form [data-slot="input-wrapper"]:has(textarea) { height: auto; }
+/* 深色输入框：暗色主题下，所有弹窗 / 抽屉里的输入框、多行输入框、下拉框底色比弹窗（#1f1f1f）更深，接近黑色；
+   悬停、聚焦时也保持（flat 样式的输入框悬停会换底色，所以加 !important） */
+html.dark:not(.theme-transparent) section[role="dialog"] [data-slot="input-wrapper"],
+html.dark:not(.theme-transparent) section[role="dialog"] button[data-slot="trigger"]:has([data-slot="selectorIcon"]) { background-color: #141414 !important; }
 
 /* 悬停下拉菜单：与弹窗同色，圆角 8px；打开时触发按钮变蓝 */
 .hover-dropdown-content { border-radius: 8px; padding: 4px; min-width: 0; }

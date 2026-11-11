@@ -38,4 +38,14 @@ public interface PackagePlanService extends IService<PackagePlan> {
      * @param plans 排序数据，每项包含 id 与 sort
      */
     R reorderPackagePlans(List<Map<String, Object>> plans);
+
+    /**
+     * 把套餐的属性推送给持有此套餐的用户
+     *
+     * @param flow   更新可用流量（只改额度，不清零已用流量）
+     * @param group  更新用户组
+     * @param rules  更新最大规则数
+     * @param limits 把套餐限速重新下发到这些用户运行中的规则
+     */
+    R pushPackagePlanToUsers(Long id, boolean flow, boolean group, boolean rules, boolean limits);
 }

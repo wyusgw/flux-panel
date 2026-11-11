@@ -25,7 +25,7 @@ public class PackagePlanDto {
     private Long traffic;
 
     /**
-     * 有效天数（0 或空为永久有效）
+     * 时长倍数：月付为月数，日付为天数；不限时流量包不使用
      */
     private Integer durationDays;
 

@@ -128,11 +128,15 @@ class ForwardRetryPausedTest {
     @Test
     void retryOfRunningRuleDoesNotTouchPauseHandling() {
         forward.setStatus(1);
+        doNothing().when(service).restoreActiveStatus(anyLong());
 
         R result = retryWithOfflineNodes();
 
         assertNotEquals(0, result.getCode());
         verify(service, never()).restorePausedStatus(anyLong());
         verify(service, never()).pauseOnNode(any(), anyString());
+        // 节点只是离线：运行中的规则不能停留在异常，改回运行中（页面显示未同步），等节点上线再推送
+        assertEquals(1, forward.getStatus());
+        verify(service).restoreActiveStatus(7L);
     }
 }

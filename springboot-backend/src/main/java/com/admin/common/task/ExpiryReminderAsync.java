@@ -37,8 +37,8 @@ import java.util.List;
 @EnableScheduling
 public class ExpiryReminderAsync {
 
-    // 与 OrderServiceImpl 永久套餐到期时间哨兵值保持一致（2099-12-31）
-    private static final long PERMANENT_EXP_TIME = 4102415999000L;
+    // 永久套餐到期时间哨兵值，与购买套餐一致（9999-09-09 08:09:09）；旧的 2099-12-31 也远在提醒 / 续费窗口之外，同样不会被处理
+    private static final long PERMANENT_EXP_TIME = com.admin.entity.PackagePlan.PERMANENT_EXP_TIME;
     // 与 dashboard.tsx 的“无限流量”哨兵值保持一致
     private static final long UNLIMITED_FLOW = 99999L;
     private static final long GB = 1024L * 1024L * 1024L;

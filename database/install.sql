@@ -403,7 +403,7 @@ CREATE TABLE `single_tunnel_group` (
 CREATE TABLE `package_plan` (
   `id` int(10) NOT NULL,
   `name` varchar(200) NOT NULL,
-  `type` varchar(50) NOT NULL DEFAULT 'normal',
+  `type` varchar(50) NOT NULL DEFAULT 'traffic',
   `group_id` bigint(20) NOT NULL,
   `traffic` bigint(20) NOT NULL DEFAULT '0',
   `duration_days` int(10) NOT NULL DEFAULT '0',

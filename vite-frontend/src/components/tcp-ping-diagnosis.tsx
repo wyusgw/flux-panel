@@ -1,7 +1,6 @@
 import { useRef, useState } from "react";
 import { Spinner } from "@heroui/spinner";
 import { Card } from "@heroui/card";
-import { Chip } from "@heroui/chip";
 import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter } from "@heroui/modal";
 import { Button } from "@heroui/button";
 import { TerminalBox, TERM_TEXT, TERM_DIM, TERM_ERR } from "@/components/terminal-box";
@@ -48,7 +47,8 @@ function formatMs(value: number | undefined): string {
 
 // 某一段诊断的逐次连接尝试明细，渲染成终端输出；旧版节点 Agent 未返回 attempts 明细时，回退显示汇总消息
 // maxLines：卡片里只预览前几条，完整明细在点开的详细结果里（不传则全部列出，并附统计）
-export function renderDiagnosisLines(result: DiagnosisResultItem, maxLines?: number) {
+// boxClassName：追加到终端框上的样式（例如卡片里去掉圆角铺满整块区域）
+export function renderDiagnosisLines(result: DiagnosisResultItem, maxLines?: number, boxClassName = '') {
   const addr = `${result.targetIp}${result.targetPort ? ':' + result.targetPort : ''}`;
   const attempts = result.attempts ?? [];
 
@@ -83,12 +83,11 @@ export function renderDiagnosisLines(result: DiagnosisResultItem, maxLines?: num
     if (result.message) {
       return <div className={result.success ? TERM_TEXT : TERM_ERR}>{result.message}</div>;
     }
-    return <div className={TERM_DIM}>no data</div>;
+    return <div className={TERM_DIM}>无数据</div>;
   })();
 
   return (
-    <TerminalBox>
-      <div className={TERM_TEXT}>TCPPING {result.targetIp}{result.targetPort ? ` port ${result.targetPort}` : ''}</div>
+    <TerminalBox className={boxClassName}>
       {body}
     </TerminalBox>
   );
@@ -107,9 +106,8 @@ function DiagnosisDetailModal({
   /** 正在按「诊断详情连接次数」重新测试：期间只显示加载提示，测完用新结果替换 */
   loading?: boolean;
 }) {
-  const hasAttempts = !!result?.attempts && result.attempts.length > 0;
   return (
-    <Modal isOpen={result !== null} onOpenChange={(open) => !open && onClose()} size="lg" backdrop="opaque" placement="center">
+    <Modal isOpen={result !== null} onOpenChange={(open) => !open && onClose()} size="lg" backdrop="opaque" placement="center" hideCloseButton>
       <ModalContent>
         {result && (
           <>
@@ -124,34 +122,10 @@ function DiagnosisDetailModal({
                   <span className="text-default-600">正在按详情次数重新测试...</span>
                 </div>
               ) : (
-              <>
-              <div className="space-y-1 text-sm mb-3">
-                <div className="flex justify-between gap-4"><span className="text-default-500">状态</span>
-                  <Chip size="sm" variant="light" color={result.success ? 'success' : 'danger'}>{result.success ? '成功' : '失败'}</Chip>
-                </div>
-                {!hasAttempts && result.averageTime !== undefined && (
-                  <div className="flex justify-between gap-4"><span className="text-default-500">平均延迟</span><span className="font-mono text-foreground">{result.averageTime.toFixed(0)}ms</span></div>
-                )}
-                {!hasAttempts && result.packetLoss !== undefined && (
-                  <div className="flex justify-between gap-4"><span className="text-default-500">丢包率</span><span className="font-mono text-foreground">{result.packetLoss.toFixed(0)}%</span></div>
-                )}
-                {result.message && (
-                  <div className="flex justify-between gap-4"><span className="text-default-500">消息</span><span className="text-foreground text-right">{result.message}</span></div>
-                )}
-                {result.timestamp && (
-                  <div className="flex justify-between gap-4"><span className="text-default-500">时间</span><span className="font-mono text-foreground">{new Date(result.timestamp).toLocaleString()}</span></div>
-                )}
-                {result.dispatchFailed && (
-                  <div className="flex justify-between gap-4"><span className="text-default-500">下发状态</span><Chip size="sm" variant="light" color="danger">下发失败</Chip></div>
-                )}
+              // 只显示连接尝试明细，终端框铺满整个弹窗内容区，内容过多时在框内滚动
+              <div className="max-h-[60vh] overflow-y-auto rounded-md">
+                {renderDiagnosisLines(result, undefined, 'min-h-[200px]')}
               </div>
-              <div>
-                <h4 className="text-xs font-semibold text-default-500 mb-1">连接尝试明细</h4>
-                <div className="max-h-80 overflow-y-auto rounded-md">
-                  {renderDiagnosisLines(result)}
-                </div>
-              </div>
-              </>
               )}
             </ModalBody>
             <ModalFooter>
@@ -166,7 +140,13 @@ function DiagnosisDetailModal({
 
 const PREVIEW_LINES = 5;
 
+// 卡片右上角的小标签：细边框 + 浅色底（GID、失败）
+const LegTag = ({ color, children }: { color: 'primary' | 'danger'; children: React.ReactNode }) => (
+  <span className={`inline-flex items-center h-5 px-1.5 rounded border text-xs leading-none whitespace-nowrap ${color === 'primary' ? 'text-primary border-primary/40 bg-primary/10' : 'text-danger border-danger/40 bg-danger/10'}`}>{children}</span>
+);
+
 // 诊断分区：每一段诊断渲染成一张卡片（名称 + 可选 GID），内容逐行展示连接明细；点击卡片可查看详细结果
+// 卡片不用 isPressable（点击时不要按下缩放 / 阴影 / 波纹效果）；HeroUI Card 非 isPressable 时会丢掉 onClick，所以点击放在外层 div 上
 export function DiagnosisLeg({
   title,
   subtitle,
@@ -174,12 +154,15 @@ export function DiagnosisLeg({
   emptyText = '无数据',
   resolveGroupName,
   loadDetail,
+  placeholder,
 }: {
   title: string;
   subtitle: string;
   results: DiagnosisResultItem[];
   emptyText?: string;
   resolveGroupName?: (groupId: number) => string | undefined;
+  /** 这一段没有任何结果时，仍显示一张对应设备组的卡片（名称 + GID），内容为「无数据」 */
+  placeholder?: { name: string; groupId?: number | null };
   /**
    * 点开某一段的详细结果时，对这一段按「诊断详情连接次数」重新测试并返回新结果（失败返回 null，继续显示首次诊断的结果）。
    * 不传则直接展示首次诊断的明细，不重新测试
@@ -216,33 +199,48 @@ export function DiagnosisLeg({
 
   return (
     <div>
-      <h3 className="text-sm font-semibold text-foreground mb-2">
-        {title} <span className="text-default-400 font-normal">({subtitle})</span>
-      </h3>
-      {results.length === 0 ? (
-        <div className="text-xs text-default-400 border border-default-200 rounded-lg px-4 py-3">{emptyText}</div>
+      <h3 className="text-base font-semibold text-foreground mb-2">{title} ({subtitle})</h3>
+      {results.length === 0 && placeholder ? (
+        <div className="border border-default-200 bg-default-50 rounded-md overflow-hidden">
+          <div className="flex items-center justify-between gap-3 px-3 py-2 border-b border-default-200">
+            <span className="text-sm font-semibold text-foreground truncate">{placeholder.name}</span>
+            {placeholder.groupId != null && <LegTag color="primary">GID: {placeholder.groupId}</LegTag>}
+          </div>
+          <div className="px-3 py-2 text-sm text-default-500">{emptyText}</div>
+        </div>
+      ) : results.length === 0 ? (
+        <div className="text-sm text-default-500 border border-default-200 bg-default-50 rounded-md px-3 py-2">{emptyText}</div>
       ) : (
         <div className="space-y-3">
           {results.map((result, index) => {
             const groupName = result.groupId != null ? resolveGroupName?.(result.groupId) : undefined;
             return (
-              <Card
+              <div
                 key={index}
-                isPressable
-                onPress={() => openDetail(result)}
-                className="shadow-sm border border-default-200 overflow-hidden w-full cursor-pointer"
+                role="button"
+                tabIndex={0}
+                onClick={() => openDetail(result)}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDetail(result); } }}
+                className="cursor-pointer outline-none"
               >
-                <div className="flex items-center justify-between px-4 py-2.5 border-b border-default-100 w-full">
-                  <span className="font-semibold text-foreground truncate">{groupName || result.nodeName}</span>
+              <Card className="shadow-none border border-default-200 bg-default-50 rounded-md overflow-hidden w-full">
+                <div className="flex items-center justify-between gap-3 px-3 py-2 border-b border-default-200 w-full">
+                  <span className="text-sm font-semibold text-foreground truncate">{groupName || result.nodeName}</span>
                   <div className="flex items-center gap-2 flex-shrink-0">
-                    {result.groupId != null && <Chip size="sm" variant="light" color="primary">GID: {result.groupId}</Chip>}
-                    {!result.success && <Chip size="sm" variant="light" color="danger">失败</Chip>}
+                    {!result.success && <LegTag color="danger">失败</LegTag>}
+                    {result.groupId != null && <LegTag color="primary">GID: {result.groupId}</LegTag>}
                   </div>
                 </div>
-                <div className="px-3 py-3 text-left w-full">
-                  {renderDiagnosisLines(result, PREVIEW_LINES)}
-                </div>
+                {/* 没有任何明细和消息时，直接在卡片里显示「无数据」，不用黑色终端框 */}
+                {(result.attempts ?? []).length === 0 && !result.message ? (
+                  <div className="px-3 py-2 text-left text-sm text-default-500">无数据</div>
+                ) : (
+                  <div className="text-left w-full flex-1 flex">
+                    {renderDiagnosisLines(result, PREVIEW_LINES, 'flex-1 rounded-none px-3 py-2')}
+                  </div>
+                )}
               </Card>
+              </div>
             );
           })}
         </div>
@@ -261,13 +259,12 @@ export function DiagnosisLeg({
 export function DiagnosisPanelFeedback({ stats }: { stats?: DispatchStats }) {
   return (
     <div>
-      <h3 className="text-sm font-semibold text-foreground mb-2">
-        面板反馈 <span className="text-default-400 font-normal">(Backend)</span>
-      </h3>
-      <div className="border border-default-200 rounded-lg px-4 py-3 space-y-1 text-sm">
-        <div className="flex justify-between"><span className="text-default-500">发出任务</span><span className="font-mono text-foreground">{stats?.sent ?? 0}</span></div>
-        <div className="flex justify-between"><span className="text-default-500">发出失败</span><span className="font-mono text-foreground">{stats?.failed ?? 0}</span></div>
-        <div className="flex justify-between"><span className="text-default-500">回收任务</span><span className="font-mono text-foreground">{stats?.recovered ?? 0}</span></div>
+      <h3 className="text-base font-semibold text-foreground mb-2">面板反馈 (Backend)</h3>
+      {/* 等宽字体逐行显示：标签后直接跟数字 */}
+      <div className="border border-default-200 bg-default-50 rounded-md px-3 py-2 font-mono text-sm leading-relaxed text-foreground">
+        <div>发出任务 {stats?.sent ?? 0}</div>
+        <div>发出失败 {stats?.failed ?? 0}</div>
+        <div>回收任务 {stats?.recovered ?? 0}</div>
       </div>
     </div>
   );

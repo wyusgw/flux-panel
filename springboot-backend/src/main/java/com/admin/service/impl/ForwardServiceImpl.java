@@ -585,8 +585,12 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             return R.err("转发不存在");
         }
 
-        // 3. 获取隧道信息
+        // 3. 获取隧道信息；设备组还在但没有设备（无设备）时拼不出隧道，用不带节点的占位隧道继续，
+        //    后面取节点时失败会记录目标状态并登记同步任务（见 saveStatusPendingSync）
         Tunnel tunnel = tunnelResolver.resolveTunnel(forward);
+        if (tunnel == null) {
+            tunnel = unassignedDeviceTunnel(forward);
+        }
         if (tunnel == null) {
             return R.err("隧道不存在");
         }
@@ -638,18 +642,25 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             userTunnel = tunnelResolver.resolveUserTunnel(forward.getUserId(), forward);
         }
 
+        boolean pausing = "PauseService".equals(gostMethod);
+
         // 7. 获取所需的节点信息
         NodeInfo nodeInfo = getRequiredNodes(tunnel);
         if (nodeInfo.isHasError()) {
-            return R.err(nodeInfo.getErrorMessage());
+            // 入口 / 出口没有设备时也要能暂停、恢复：先记录目标状态，等设备就绪后由同步队列推送配置（已暂停的推送后再暂停）
+            return saveStatusPendingSync(forward, tunnel, targetStatus, nodeInfo.getErrorMessage());
         }
 
         // 8. 调用Gost服务
         String serviceName = buildServiceName(forward.getId(), forward.getUserId(), userTunnel);
         GostDto gostResult;
 
-        if ("PauseService".equals(gostMethod)) {
+        if (pausing) {
             gostResult = GostUtil.PauseService(nodeInfo.getInNode().getId(), serviceName);
+            if (!isGostOperationSuccess(gostResult)) {
+                // 节点离线或服务还没同步到节点（未同步的规则）：同样先记为已暂停，交给同步队列补推
+                return saveStatusPendingSync(forward, tunnel, targetStatus, gostResult.getMsg());
+            }
 
             // 隧道转发需要同时暂停远端服务
             if (tunnel.getType() == TUNNEL_TYPE_TUNNEL_FORWARD && nodeInfo.getOutNode() != null) {
@@ -657,19 +668,23 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
                 for (Long outNodeId : ExitFailover.allOutNodeIds(tunnel)) {
                     GostDto remoteResult = GostUtil.PauseRemoteService(outNodeId, serviceName);
                     if (!isGostOperationSuccess(remoteResult)) {
-                        return R.err(operation + "远端服务失败：" + remoteResult.getMsg());
+                        return saveStatusPendingSync(forward, tunnel, targetStatus, remoteResult.getMsg());
                     }
                 }
             }
         } else {
             gostResult = GostUtil.ResumeService(nodeInfo.getInNode().getId(), serviceName);
+            if (!isGostOperationSuccess(gostResult)) {
+                // 节点离线或服务还没同步到节点（未同步的规则）：先记为运行中，交给同步队列推送配置（推送即启动服务）
+                return saveStatusPendingSync(forward, tunnel, targetStatus, gostResult.getMsg());
+            }
 
             // 隧道转发需要同时恢复远端服务
             if (tunnel.getType() == TUNNEL_TYPE_TUNNEL_FORWARD && nodeInfo.getOutNode() != null) {
                 for (Long outNodeId : ExitFailover.allOutNodeIds(tunnel)) {
                     GostDto remoteResult = GostUtil.ResumeRemoteService(outNodeId, serviceName);
                     if (!isGostOperationSuccess(remoteResult)) {
-                        return R.err(operation + "远端服务失败：" + remoteResult.getMsg());
+                        return saveStatusPendingSync(forward, tunnel, targetStatus, remoteResult.getMsg());
                     }
                 }
             }
@@ -996,14 +1011,15 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
      * 获取所需的节点信息
      */
     private NodeInfo getRequiredNodes(Tunnel tunnel) {
-        Node inNode = nodeService.getNodeById(tunnel.getInNodeId());
+        // 设备组没有绑定设备时节点 ID 为空，直接按节点不存在处理
+        Node inNode = tunnel.getInNodeId() == null ? null : nodeService.getNodeById(tunnel.getInNodeId());
         if (inNode == null) {
             return NodeInfo.error("入口节点不存在");
         }
 
         Node outNode = null;
         if (tunnel.getType() == TUNNEL_TYPE_TUNNEL_FORWARD) {
-            outNode = nodeService.getNodeById(tunnel.getOutNodeId());
+            outNode = tunnel.getOutNodeId() == null ? null : nodeService.getNodeById(tunnel.getOutNodeId());
             if (outNode == null) {
                 return NodeInfo.error("出口节点不存在");
             }
@@ -2135,7 +2151,7 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         boolean paused = Objects.equals(forward.getStatus(), FORWARD_STATUS_PAUSED);
         R pushResult = updateGostServices(forward, tunnel, null, nodeInfo, userTunnel);
         if (!paused) {
-            return pushResult;
+            return keepActiveIfNodeOffline(forward, pushResult);
         }
         return keepPausedAfterPush(forward, tunnel, buildServiceName(forward.getId(), forward.getUserId(), userTunnel), pushResult);
     }
@@ -2164,6 +2180,66 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             }
         }
         return pushResult;
+    }
+
+    /**
+     * 暂停 / 恢复时配置推不到节点（没有设备、节点离线、服务还没同步到节点）：规则先记为目标状态，
+     * 登记「转发同步」任务，节点就绪后由 {@link #retrySyncForward} 推送配置——运行中的推送即启动，
+     * 已暂停的推送后重新暂停（见 keepPausedAfterPush）
+     */
+    /**
+     * 设备组模式的规则，入口 / 出口设备组都还在但没有绑定设备（或设备已被删除）时的占位隧道：
+     * 只带设备组当前的节点 ID（可能为空），用于暂停 / 恢复时照常记录状态；设备组被删了返回 null
+     */
+    Tunnel unassignedDeviceTunnel(Forward forward) {
+        if (forward.getTunnelId() != null || forward.getInDeviceGroupId() == null) {
+            return null;
+        }
+        DeviceGroup inGroup = deviceGroupService.getById(forward.getInDeviceGroupId());
+        if (inGroup == null) {
+            return null;
+        }
+        DeviceGroup outGroup = null;
+        if (forward.getOutDeviceGroupId() != null) {
+            outGroup = deviceGroupService.getById(forward.getOutDeviceGroupId());
+            if (outGroup == null) {
+                return null;
+            }
+        }
+        Tunnel tunnel = new Tunnel();
+        tunnel.setStatus(TUNNEL_STATUS_ACTIVE);
+        tunnel.setType(outGroup != null ? TUNNEL_TYPE_TUNNEL_FORWARD : 1);
+        tunnel.setInNodeId(inGroup.getNodeId());
+        tunnel.setOutNodeId(outGroup != null ? outGroup.getNodeId() : null);
+        return tunnel;
+    }
+
+    R saveStatusPendingSync(Forward forward, Tunnel tunnel, int targetStatus, String reason) {
+        forward.setStatus(targetStatus);
+        forward.setUpdatedTime(System.currentTimeMillis());
+        if (!this.updateById(forward)) {
+            return R.err("更新状态失败");
+        }
+        String operation = targetStatus == FORWARD_STATUS_PAUSED ? "暂停" : "恢复";
+        log.warn("转发 {} 已记为{}，但未能同步到节点：{}", forward.getId(), operation, reason);
+        enqueueForwardSyncTask(forward, tunnel, reason);
+        return okWithMsg("服务已" + operation);
+    }
+
+    /**
+     * 运行中的规则重试推送失败时 updateGostServices 会把它标成异常；如果只是节点还离线，配置本身没问题，
+     * 改回运行中（页面显示「未同步」），队列继续重试，节点上线后推送成功即恢复正常；节点在线却推送失败的仍保持异常
+     */
+    R keepActiveIfNodeOffline(Forward forward, R pushResult) {
+        if (pushResult.getCode() != 0 && isNodeOfflineFailure(pushResult)) {
+            forward.setStatus(FORWARD_STATUS_ACTIVE);
+            restoreActiveStatus(forward.getId());
+        }
+        return pushResult;
+    }
+
+    void restoreActiveStatus(Long forwardId) {
+        this.update(null, new UpdateWrapper<Forward>().eq("id", forwardId).set("status", FORWARD_STATUS_ACTIVE));
     }
 
     void restorePausedStatus(Long forwardId) {

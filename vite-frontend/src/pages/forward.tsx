@@ -1,12 +1,13 @@
 import { TipButton } from "@/components/tip-button";
 import { RuleSearchModal, EMPTY_RULE_SEARCH, countRuleSearch, matchRuleSearch } from "@/components/rule-search-modal";
-import { AimOutlined, BarChartOutlined, CheckSquareOutlined, CopyOutlined, DeleteOutlined, DownloadOutlined, EditOutlined, FileAddOutlined, FilterFilled, FireOutlined, FolderAddOutlined, InfoCircleOutlined, PauseCircleOutlined, PlayCircleOutlined, SearchOutlined, SettingOutlined } from "@/components/ant-icons";
+import { QuestionCircleOutlined, BarChartOutlined, CheckSquareOutlined, CopyOutlined, DeleteOutlined, EditOutlined, FileAddOutlined, FilterFilled, FireOutlined, FolderAddOutlined, InfoCircleOutlined, PauseCircleOutlined, PlayCircleOutlined, SearchOutlined, SettingOutlined, SwapOutlined, RightOutlined, EditFilled } from "@/components/ant-icons";
 import { useState, useEffect, useRef } from "react";
 import { useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Button } from "@heroui/button";
 import { Input } from "@heroui/input";
 import { Textarea } from "@heroui/input";
+import { Tooltip } from "@heroui/tooltip";
 import { Select, SelectItem } from "@heroui/select";
 import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter } from "@heroui/modal";
 import { Table, TableHeader, TableColumn, TableBody, TableRow, TableCell } from "@heroui/table";
@@ -21,6 +22,8 @@ import { Accordion, AccordionItem } from "@heroui/accordion";
 import toast from 'react-hot-toast';
 import { copyText } from '@/utils/clipboard';
 import { EmptyState } from "@/components/empty-state";
+import { JsonEditor } from "@/components/json-editor";
+import { TerminalBox, TERM_TEXT, TERM_ERR } from "@/components/terminal-box";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { showApiFailure } from "@/components/error-dialog";
 import { nextSort, SortableHeader } from "@/components/table-sort";
@@ -68,7 +71,7 @@ const IconPause = () => <PauseCircleOutlined />;
 const IconPlay = () => <PlayCircleOutlined />;
 const IconDelete = () => <DeleteOutlined />;
 const IconEdit = () => <EditOutlined />;
-const IconHelp = () => <AimOutlined />;
+const IconHelp = () => <QuestionCircleOutlined />;
 const IconCopy = () => <CopyOutlined />;
 const IconDragHandle = () => <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><circle cx="7" cy="5" r="1.3" /><circle cx="13" cy="5" r="1.3" /><circle cx="7" cy="10" r="1.3" /><circle cx="13" cy="10" r="1.3" /><circle cx="7" cy="15" r="1.3" /><circle cx="13" cy="15" r="1.3" /></svg>;
 
@@ -101,6 +104,7 @@ interface Forward {
   outFlow: number;
   serviceRunning: boolean;
   createdTime: string;
+  updatedTime?: number;
   userName?: string;
   userId?: number;
   inx?: number;
@@ -189,6 +193,38 @@ const deviceStatusTag = (group: DeviceGroupOption) => {
   return isDeviceGroupOnline(group) ? { text: '在线', color: 'success' as const } : { text: '离线', color: 'danger' as const };
 };
 
+// 规则列表里的小标签：细边框 + 浅色底（如「无设备」「倍率 0」）
+const TAG_STYLES: Record<string, string> = {
+  success: 'text-success border-success/40 bg-success/10',
+  danger: 'text-danger border-danger/40 bg-danger/10',
+  warning: 'text-warning border-warning/40 bg-warning/10',
+  primary: 'text-primary border-primary/40 bg-primary/10',
+  secondary: 'text-secondary border-secondary/40 bg-secondary/10',
+  default: 'text-default-500 border-default-300 bg-default-100',
+};
+const RuleTag = ({ color = 'default', children }: { color?: string; children: React.ReactNode }) => (
+  <span className={`inline-flex items-center h-5 px-1.5 rounded border text-xs leading-none whitespace-nowrap ${TAG_STYLES[color] || TAG_STYLES.default}`}>{children}</span>
+);
+
+// 状态列悬停提示的「最近更新」时间：YYYY-MM-DD HH:mm:ss + 时区（东八区显示 CST，其它显示 UTC±N）
+const formatUpdateTime = (value?: number | string | null): string => {
+  if (value == null || value === '') return '—';
+  const d = new Date(typeof value === 'string' && /^\d+$/.test(value) ? Number(value) : value);
+  if (Number.isNaN(d.getTime())) return '—';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const offset = -d.getTimezoneOffset() / 60;
+  const zone = offset === 8 ? 'CST' : `UTC${offset >= 0 ? '+' : ''}${offset}`;
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())} ${zone}`;
+};
+
+// 状态列直接显示彩色文字
+const STATUS_TEXT_STYLES: Record<string, string> = {
+  success: 'text-success',
+  warning: 'text-warning',
+  danger: 'text-danger',
+  default: 'text-foreground',
+};
+
 interface AddressItem {
   id: number;
   address: string;
@@ -240,6 +276,17 @@ export default function ForwardPage() {
   
   // 表格多选（用于右侧工具列的批量操作）
   const [selectedKeys, setSelectedKeys] = useState<any>(new Set([]));
+
+  // 规则列表变化（删除、刷新）后，把勾选里已经不存在的规则去掉；列表空了时清掉「全选」，
+  // 否则删光规则后表头的全选框仍显示为勾选
+  useEffect(() => {
+    setSelectedKeys((prev: any) => {
+      if (prev === 'all') return forwards.length === 0 ? new Set([]) : prev;
+      const existing = new Set(forwards.map(f => String(f.id)));
+      const next = new Set(Array.from(prev as Set<any>).filter(key => existing.has(String(key))));
+      return next.size === (prev as Set<any>).size ? prev : next;
+    });
+  }, [forwards]);
   // 表格列排序（未点击表头时保持规则原有的自定义顺序）与分页
   const [sortDescriptor, setSortDescriptor] = useState<SortDescriptor | undefined>(undefined);
   const [page, setPage] = useState(1);
@@ -370,17 +417,17 @@ export default function ForwardPage() {
   const [addressModalTitle, setAddressModalTitle] = useState('');
   const [addressList, setAddressList] = useState<AddressItem[]>([]);
   
-  // 导出相关状态
-  const [exportModalOpen, setExportModalOpen] = useState(false);
-  const [exportData, setExportData] = useState('');
-  const [exportLoading, setExportLoading] = useState(false);
-  const [selectedTunnelForExport, setSelectedTunnelForExport] = useState<number | null>(null);
-  
   // 导入相关状态
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [importData, setImportData] = useState('');
   const [importLoading, setImportLoading] = useState(false);
   const [selectedTunnelForImport, setSelectedTunnelForImport] = useState<number | null>(null);
+  const [importMode, setImportMode] = useState<'device' | 'tunnel'>('device');
+  const [importInGroupId, setImportInGroupId] = useState<number | null>(null);
+  const [importOutGroupId, setImportOutGroupId] = useState<number | null>(null);
+  // JSON 设置：合并到每条规则的创建参数里，覆盖除目标地址以外的配置
+  const [importJson, setImportJson] = useState('');
+  const [importJsonOpen, setImportJsonOpen] = useState(false); // 默认收起
   const [importResults, setImportResults] = useState<Array<{
     line: string;
     success: boolean;
@@ -709,6 +756,124 @@ export default function ForwardPage() {
     setModalOpen(true);
   };
 
+  // 高级编辑：以 JSON 编辑单条规则。dest 总是显示，其它设置只显示与默认值不同的，所以保存时
+  // 没写的设置按默认值（策略 fifo、不限速等）；name / listen_port 不显示，没写时沿用规则当前的值。
+  // 键名与批量导出一致（dest / listen_port / name）
+  const ADVANCED_KEYS = ['dest', 'listen_port', 'name', 'strategy', 'weights', 'interface', 'accept_proxy_protocol', 'send_proxy_protocol', 'ip_limit', 'conn_limit', 'speed_limit'];
+  const ADVANCED_STRATEGIES = ['fifo', 'round', 'rand', 'hash', 'leastconn'];
+  const [jsonTarget, setJsonTarget] = useState<Forward | null>(null);
+  const [jsonText, setJsonText] = useState('');
+  const [jsonLoading, setJsonLoading] = useState(false);
+
+  const forwardToAdvancedJson = (forward: Forward): Record<string, unknown> => {
+    const json: Record<string, unknown> = {
+      dest: (forward.remoteAddr || '').split(',').map(addr => addr.trim()).filter(Boolean),
+    };
+    if (forward.strategy && forward.strategy !== 'fifo') json.strategy = forward.strategy;
+    if (forward.weights) json.weights = forward.weights.split(',').map(w => parseInt(w, 10) || 1);
+    if (forward.interfaceName) json.interface = forward.interfaceName;
+    if (forward.acceptProxyProtocol) json.accept_proxy_protocol = forward.acceptProxyProtocol;
+    if (forward.sendProxyProtocol) json.send_proxy_protocol = forward.sendProxyProtocol;
+    if (forward.ipLimit) json.ip_limit = forward.ipLimit;
+    if (forward.connLimit) json.conn_limit = forward.connLimit;
+    if (forward.speedLimit) json.speed_limit = forward.speedLimit;
+    return json;
+  };
+
+  const handleOpenJsonEdit = (forward: Forward) => {
+    setJsonTarget(forward);
+    setJsonText(JSON.stringify(forwardToAdvancedJson(forward)));
+  };
+
+  // 校验 JSON 并换成更新接口的参数；失败返回错误原因
+  const parseAdvancedJson = (forward: Forward, text: string): { data?: Record<string, unknown>; error?: string } => {
+    let json: any;
+    try {
+      json = JSON.parse(text);
+    } catch {
+      return { error: 'JSON 格式错误' };
+    }
+    if (!json || typeof json !== 'object' || Array.isArray(json)) return { error: '应为 JSON 对象' };
+    const unknown = Object.keys(json).filter(key => !ADVANCED_KEYS.includes(key));
+    if (unknown.length > 0) return { error: `不支持的字段：${unknown.join('、')}，可用字段：${ADVANCED_KEYS.join('、')}` };
+
+    const dest = Array.isArray(json.dest) ? json.dest : (json.dest != null ? [json.dest] : []);
+    const addresses = dest.map((addr: unknown) => String(addr).trim()).filter(Boolean);
+    if (addresses.length === 0) return { error: 'dest 至少需要一个目标地址' };
+    const nonNegativeInt = (key: string, value: unknown) => (Number.isInteger(value) && (value as number) >= 0) ? null : `${key} 应为非负整数`;
+    for (const key of ['listen_port', 'accept_proxy_protocol', 'send_proxy_protocol', 'ip_limit', 'conn_limit', 'speed_limit']) {
+      if (json[key] !== undefined && json[key] !== null) {
+        const err = nonNegativeInt(key, json[key]);
+        if (err) return { error: err };
+      }
+    }
+    if (json.listen_port != null && (json.listen_port < 1 || json.listen_port > 65535)) return { error: 'listen_port 应在 1-65535 之间' };
+    const strategy = json.strategy ?? 'fifo';
+    if (!ADVANCED_STRATEGIES.includes(strategy)) return { error: `strategy 只能是 ${ADVANCED_STRATEGIES.join(' / ')}` };
+    let weights = '';
+    if (json.weights != null) {
+      if (!Array.isArray(json.weights) || json.weights.some((w: unknown) => !Number.isInteger(w) || (w as number) < 1)) {
+        return { error: 'weights 应为正整数数组' };
+      }
+      weights = json.weights.join(',');
+    }
+    // 只有多个目标、轮询 / 随机策略时权重才有意义
+    if (addresses.length <= 1 || !strategySupportsWeights(strategy)) weights = '';
+    const name = json.name !== undefined ? String(json.name).trim() : forward.name;
+    if (!name) return { error: 'name 不能为空' };
+
+    const num = (key: string) => (json[key] != null ? json[key] : 0);
+    return {
+      data: {
+        id: forward.id,
+        userId: forward.userId,
+        name,
+        ...(forward.inDeviceGroupId
+          ? { tunnelId: null, inDeviceGroupId: forward.inDeviceGroupId, outDeviceGroupId: forward.outDeviceGroupId ?? null }
+          : { tunnelId: forward.tunnelId, inDeviceGroupId: null, outDeviceGroupId: null }),
+        inPort: json.listen_port ?? forward.inPort,
+        remoteAddr: addresses.join(','),
+        interfaceName: json.interface != null ? String(json.interface) : '',
+        strategy: addresses.length > 1 ? strategy : 'fifo',
+        weights,
+        groupId: forward.groupId ?? null,
+        acceptProxyProtocol: num('accept_proxy_protocol'),
+        sendProxyProtocol: num('send_proxy_protocol'),
+        ipLimit: num('ip_limit'),
+        connLimit: num('conn_limit'),
+        speedLimit: num('speed_limit'),
+      },
+    };
+  };
+
+  const submitJsonEdit = async () => {
+    if (!jsonTarget) return;
+    const { data, error } = parseAdvancedJson(jsonTarget, jsonText);
+    if (error || !data) {
+      showApiFailure('规则更新', { code: 400, msg: error });
+      return;
+    }
+    setJsonLoading(true);
+    try {
+      const res = await updateForward(data);
+      if (res.code === 0) {
+        if (res.msg && res.msg.includes('离线')) {
+          toast(res.msg, { icon: <ToastWarningIcon />, duration: 6000 });
+        } else {
+          toast.success('修改成功');
+        }
+        setJsonTarget(null);
+        loadData();
+      } else {
+        showApiFailure('规则更新', res);
+      }
+    } catch {
+      showApiFailure('规则更新', null);
+    } finally {
+      setJsonLoading(false);
+    }
+  };
+
   // 显示删除确认
   const handleDelete = (forward: Forward) => {
     setForwardToDelete(forward);
@@ -727,17 +892,14 @@ export default function ForwardPage() {
         setDeleteModalOpen(false);
         loadData();
       } else {
-        // 删除失败，询问是否强制删除
-        const confirmed = window.confirm(`常规删除失败：${res.msg || '删除失败'}\n\n是否需要强制删除？\n\n注意：强制删除不会去验证节点端是否已经删除对应的转发服务。`);
-        if (confirmed) {
-          const forceRes = await forceDeleteForward(forwardToDelete.id);
-          if (forceRes.code === 0) {
-            toast.success('强制删除成功');
-            setDeleteModalOpen(false);
-            loadData();
-          } else {
-            showApiFailure('规则强制删除', forceRes);
-          }
+        // 常规删除失败（如节点离线、节点端删除失败）：不再询问，直接强制删除（不验证节点端是否已删除对应的转发服务）
+        const forceRes = await forceDeleteForward(forwardToDelete.id);
+        if (forceRes.code === 0) {
+          toast.success('删除成功');
+          setDeleteModalOpen(false);
+          loadData();
+        } else {
+          showApiFailure('规则删除', forceRes);
         }
       }
     } catch (error) {
@@ -863,7 +1025,7 @@ export default function ForwardPage() {
       }
       
       if (res.code === 0) {
-        toast.success(targetState ? '服务已启动' : '服务已暂停');
+        // 成功时不弹提示，列表里的状态（正常 / 已暂停 / 未同步）随之变化即可
         // 更新转发状态
         setForwards(prev => prev.map(f => 
           f.id === forward.id 
@@ -925,35 +1087,14 @@ export default function ForwardPage() {
       if (response.code === 0) {
         setDiagnosisResult(response.data);
       } else {
+        // 诊断没发出去（没有设备、节点离线等）：提示原因，弹窗里按入口 / 出口设备组显示「无数据」
         toast.error(response.msg || '诊断失败');
-        setDiagnosisResult({
-          forwardName: forward.name,
-          timestamp: Date.now(),
-          results: [{
-            success: false,
-            description: '诊断失败',
-            nodeName: '-',
-            nodeId: '-',
-            targetIp: forward.remoteAddr.split(',')[0] || '-',
-            message: response.msg || '诊断过程中发生错误'
-          }]
-        });
+        setDiagnosisResult({ forwardName: forward.name, timestamp: Date.now(), results: [] });
       }
     } catch (error) {
       console.error('诊断失败:', error);
       toast.error('网络错误，请重试');
-      setDiagnosisResult({
-        forwardName: forward.name,
-        timestamp: Date.now(),
-        results: [{
-          success: false,
-          description: '网络错误',
-          nodeName: '-',
-          nodeId: '-',
-          targetIp: forward.remoteAddr.split(',')[0] || '-',
-          message: '无法连接到服务器'
-        }]
-      });
+      setDiagnosisResult({ forwardName: forward.name, timestamp: Date.now(), results: [] });
     } finally {
       setDiagnosisLoading(false);
     }
@@ -1087,50 +1228,28 @@ export default function ForwardPage() {
     await copyToClipboard(allAddresses, '所有地址');
   };
 
-    // 导出转发数据
-  const handleExport = () => {
-    setSelectedTunnelForExport(null);
-    setExportData('');
-    setExportModalOpen(true);
-  };
-
-  // 执行导出
-  const executeExport = () => {
-    if (!selectedTunnelForExport) {
-      toast.error('请选择要导出的隧道');
+  // 批量导出：不弹窗，把表格里勾选的规则直接复制为 JSON，一行一条，如
+  // {"dest":["test.com:20000"],"listen_port":46267,"name":"test"}；多个目标地址（英文逗号分隔）拆成 dest 数组，按列表顺序
+  const handleExport = async () => {
+    const ids = new Set(getSelectedIds());
+    const rules = getSortedForwards().filter(f => ids.has(f.id));
+    if (rules.length === 0) {
+      toast.error('请先勾选要导出的规则');
       return;
     }
-
-    setExportLoading(true);
-    
-    try {
-      // 导出当前用户名下、指定隧道的转发
-      const forwardsToExport: Forward[] = getSortedForwards().filter(forward => forward.tunnelId === selectedTunnelForExport);
-      
-      if (forwardsToExport.length === 0) {
-        toast.error('所选隧道没有转发数据');
-        setExportLoading(false);
-        return;
-      }
-      
-      // 格式化导出数据：remoteAddr|name|inPort
-      const exportLines = forwardsToExport.map(forward => {
-        return `${forward.remoteAddr}|${forward.name}|${forward.inPort}`;
-      });
-      
-      const exportText = exportLines.join('\n');
-      setExportData(exportText);
-    } catch (error) {
-      console.error('导出失败:', error);
-      toast.error('导出失败');
-    } finally {
-      setExportLoading(false);
+    const text = rules
+      .map(f => JSON.stringify({
+        dest: (f.remoteAddr || '').split(',').map(addr => addr.trim()).filter(Boolean),
+        listen_port: f.inPort,
+        name: f.name,
+      }))
+      .join('\n');
+    const success = await copyText(text).catch(() => false);
+    if (success) {
+      toast.success(`已复制 ${rules.length} 条规则`);
+    } else {
+      toast.error('复制失败');
     }
-  };
-
-  // 复制导出数据
-  const copyExportData = async () => {
-    await copyToClipboard(exportData, '转发数据');
   };
 
   // 导入转发数据
@@ -1138,6 +1257,10 @@ export default function ForwardPage() {
     setImportData('');
     setImportResults([]);
     setSelectedTunnelForImport(null);
+    setImportInGroupId(null);
+    setImportOutGroupId(null);
+    setImportJson('');
+    setImportJsonOpen(false);
     setImportModalOpen(true);
   };
 
@@ -1148,10 +1271,38 @@ export default function ForwardPage() {
       return;
     }
 
-    if (!selectedTunnelForImport) {
+    const importEntry = deviceGroups.find(g => g.id === importInGroupId);
+    if (importMode === 'tunnel' && !selectedTunnelForImport) {
       toast.error('请选择要导入的隧道');
       return;
     }
+    if (importMode === 'device') {
+      if (!importInGroupId) {
+        toast.error('请选择入口');
+        return;
+      }
+      if (getDirectMode(importEntry) === 0 && !importOutGroupId) {
+        toast.error('该入口不允许直接转发，请选择出口');
+        return;
+      }
+    }
+
+    // JSON 设置：必须是对象；目标地址（remoteAddr）以每行的为准，不允许覆盖
+    let jsonOverrides: Record<string, unknown> = {};
+    if (importJson.trim()) {
+      try {
+        const parsed = JSON.parse(importJson);
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('not object');
+        const { remoteAddr: _ignored, ...rest } = parsed as Record<string, unknown>;
+        jsonOverrides = rest;
+      } catch {
+        toast.error('JSON 设置格式错误，应为 JSON 对象');
+        return;
+      }
+    }
+    const entryFields = importMode === 'tunnel'
+      ? { tunnelId: selectedTunnelForImport, inDeviceGroupId: null, outDeviceGroupId: null }
+      : { tunnelId: null, inDeviceGroupId: importInGroupId, outDeviceGroupId: getDirectMode(importEntry) === 2 ? null : importOutGroupId };
 
     setImportLoading(true);
     setImportResults([]); // 清空之前的结果
@@ -1161,18 +1312,43 @@ export default function ForwardPage() {
       
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i].trim();
-        const parts = line.split('|');
-        
-        if (parts.length < 2) {
-          setImportResults(prev => [{
-            line,
-            success: false,
-            message: '格式错误：需要至少包含目标地址和转发名称'
-          }, ...prev]);
-          continue;
-        }
 
-        const [remoteAddr, name, inPort] = parts;
+        // 两种格式：批量导出的 JSON（{"dest":["a.com:80"],"listen_port":1000,"name":"x"}，dest 也可以是字符串），
+        // 或旧格式 目标地址|规则名|入口端口
+        let remoteAddr: string;
+        let name: string;
+        let inPort: string | undefined;
+        if (line.startsWith('{')) {
+          let parsed: any;
+          try {
+            parsed = JSON.parse(line);
+          } catch {
+            parsed = null;
+          }
+          if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+            setImportResults(prev => [{
+              line,
+              success: false,
+              message: 'JSON 格式错误'
+            }, ...prev]);
+            continue;
+          }
+          const dest = Array.isArray(parsed.dest) ? parsed.dest : (parsed.dest != null ? [parsed.dest] : []);
+          remoteAddr = dest.map((addr: unknown) => String(addr).trim()).filter(Boolean).join(',');
+          name = parsed.name != null ? String(parsed.name) : '';
+          inPort = parsed.listen_port != null && parsed.listen_port !== '' ? String(parsed.listen_port) : undefined;
+        } else {
+          const parts = line.split('|');
+          if (parts.length < 2) {
+            setImportResults(prev => [{
+              line,
+              success: false,
+              message: '格式错误：需要至少包含目标地址和转发名称'
+            }, ...prev]);
+            continue;
+          }
+          [remoteAddr, name, inPort] = parts;
+        }
         
         if (!remoteAddr.trim() || !name.trim()) {
           setImportResults(prev => [{
@@ -1214,12 +1390,15 @@ export default function ForwardPage() {
           }
 
           // 调用创建转发接口
+          // 优先级：默认值 < JSON 设置 < 每行的规则名 / 入口端口 / 目标地址；入口出口以对话框里选的为准
           const response = await createForward({
+            strategy: 'fifo',
+            ...(isImpersonating ? { userId: impersonateUserId } : {}),
+            ...jsonOverrides,
             name: name.trim(),
-            tunnelId: selectedTunnelForImport, // 使用用户选择的隧道
-            inPort: portNumber, // 使用指定端口或自动分配
+            ...entryFields,
+            inPort: portNumber ?? jsonOverrides.inPort ?? null, // 每行和 JSON 都没填端口时自动分配
             remoteAddr: remoteAddr.trim(),
-            strategy: 'fifo'
           });
 
           if (response.code === 0) {
@@ -1259,14 +1438,16 @@ export default function ForwardPage() {
   };
 
   // 获取状态显示
-  const getStatusDisplay = (status: number) => {
-    switch (status) {
-      case 1:
+  const getStatusDisplay = (key: string) => {
+    switch (key) {
+      case '1':
         return { color: 'success', text: '正常' };
-      case 0:
-        return { color: 'warning', text: '暂停' };
-      case -1:
+      case '0':
+        return { color: 'warning', text: '已暂停' };
+      case '-1':
         return { color: 'danger', text: '异常' };
+      case 'unsynced':
+        return { color: 'default', text: '未同步' };
       default:
         return { color: 'default', text: '未知' };
     }
@@ -1344,7 +1525,7 @@ export default function ForwardPage() {
 
     // 状态筛选：表头「状态」列的漏斗图标，可多选
     if (statusFilter.length > 0) {
-      filteredForwards = filteredForwards.filter(forward => statusFilter.includes(String(forward.status)));
+      filteredForwards = filteredForwards.filter(forward => statusFilter.includes(getRuleStatusKey(forward)));
     }
 
     return [...filteredForwards].sort((a, b) => (a.inx ?? 0) - (b.inx ?? 0) || a.id - b.id);
@@ -1352,6 +1533,16 @@ export default function ForwardPage() {
 
   // 根据设备组 ID 查找设备组（用于表格里入口/出口的名称、是否已配置设备、流量倍率标签）
   const findDeviceGroup = (id?: number | null) => (id ? deviceGroups.find(g => g.id === id) : undefined);
+
+  // 规则状态：在后端状态（1 正常 / 0 暂停 / -1 异常）基础上，应当运行的规则若入口或出口设备组离线、没有设备，
+  // 配置推送不到节点（等节点上线后由同步重试队列补推），显示为「未同步」
+  const getRuleStatusKey = (forward: Forward): string => {
+    if (forward.status === 1) {
+      const groups = [findDeviceGroup(forward.inDeviceGroupId), findDeviceGroup(forward.outDeviceGroupId)].filter(Boolean) as DeviceGroupOption[];
+      if (groups.some(group => !isDeviceGroupOnline(group))) return 'unsynced';
+    }
+    return String(forward.status);
+  };
 
   // 当前页要显示的规则：先按表头排序（若点击过），再按分页截取
   const getDisplayForwards = (): Forward[] => {
@@ -1447,16 +1638,25 @@ export default function ForwardPage() {
     }
   };
 
-  // 批量删除
-  const handleBatchDelete = async () => {
+  // 批量删除：先弹出确认框（与其它删除确认同样的样式），确定后再删除
+  const [batchDeleteOpen, setBatchDeleteOpen] = useState(false);
+  const handleBatchDelete = () => {
+    if (getSelectedIds().length === 0) return;
+    setBatchDeleteOpen(true);
+  };
+  const confirmBatchDelete = async () => {
     const ids = getSelectedIds();
+    setBatchDeleteOpen(false);
     if (ids.length === 0) return;
-    if (!window.confirm(`确定要删除选中的 ${ids.length} 条规则吗？此操作无法撤销。`)) return;
     setBatchLoading(true);
     try {
-      const results = await Promise.all(ids.map(id => deleteForward(id)));
+      // 与单条删除一致：常规删除失败的直接强制删除（不验证节点端是否已删除对应的转发服务）
+      const results = await Promise.all(ids.map(async id => {
+        const res = await deleteForward(id);
+        return res.code === 0 ? res : forceDeleteForward(id);
+      }));
       const failed = results.filter(r => r.code !== 0).length;
-      toast[failed > 0 ? 'error' : 'success'](failed > 0 ? `${failed} 条删除失败，可能仍在运行中` : '删除成功');
+      toast[failed > 0 ? 'error' : 'success'](failed > 0 ? `${failed} 条删除失败` : '删除成功');
       setSelectedKeys(new Set([]));
       loadData();
     } finally {
@@ -1570,7 +1770,7 @@ export default function ForwardPage() {
         <div className="flex flex-wrap items-center gap-2">
           <Button size="sm" variant="bordered" startContent={<IconAddSingle />} onPress={handleAdd}>添加规则</Button>
           <Button size="sm" variant="bordered" startContent={<IconImport />} onPress={handleImport}>批量导入</Button>
-          <Button size="sm" variant="bordered" startContent={<IconExport />} isLoading={exportLoading} onPress={handleExport}>批量导出</Button>
+          <Button size="sm" variant="bordered" startContent={<IconExport />} isDisabled={selectedIds.length === 0} onPress={handleExport}>批量导出</Button>
           <Button size="sm" variant="bordered" startContent={<IconToggle />} isDisabled={selectedIds.length === 0} isLoading={batchLoading} onPress={handleBatchToggle}>批量切换</Button>
           <Button size="sm" variant="bordered" startContent={<IconFlow />} isDisabled={selectedIds.length === 0} onPress={handleBatchClearFlow}>清空流量</Button>
           <Button size="sm" variant="bordered" startContent={<IconDelete />} isDisabled={selectedIds.length === 0} isLoading={batchLoading} onPress={handleBatchDelete}>删除选中</Button>
@@ -1618,8 +1818,9 @@ export default function ForwardPage() {
                                 onValueChange={(values) => { setStatusFilter(values); setPage(1); }}
                               >
                                 <Checkbox value="1">正常</Checkbox>
-                                <Checkbox value="0">暂停</Checkbox>
+                                <Checkbox value="0">已暂停</Checkbox>
                                 <Checkbox value="-1">异常</Checkbox>
+                                <Checkbox value="unsynced">未同步</Checkbox>
                               </CheckboxGroup>
                               <Button size="sm" variant="light" className="mt-2 w-full" isDisabled={statusFilter.length === 0} onPress={() => { setStatusFilter([]); setPage(1); }}>清除筛选</Button>
                             </div>
@@ -1627,69 +1828,90 @@ export default function ForwardPage() {
                         </Popover>
                       </div>
                     </TableColumn>
-                    <TableColumn key="actions" align="end">操作</TableColumn>
+                    <TableColumn key="actions">操作</TableColumn>
                   </TableHeader>
                   <TableBody items={displayForwards} emptyContent={<EmptyState />}>
                     {(forward) => {
-                      const statusDisplay = getStatusDisplay(forward.status);
+                      const statusDisplay = getStatusDisplay(getRuleStatusKey(forward));
                       const strategyDisplay = getStrategyDisplay(forward.strategy, forward.weights);
                       const inGroup = findDeviceGroup(forward.inDeviceGroupId);
                       const outGroup = findDeviceGroup(forward.outDeviceGroupId);
                       return (
                         <TableRow key={forward.id}>
                           <TableCell>
-                            <div className="font-medium text-foreground">{forward.name}</div>
-                            <div className="text-xs text-default-400">#{forward.id}</div>
+                            <span className="text-sm text-foreground whitespace-nowrap">{forward.name} (#{forward.id})</span>
                           </TableCell>
                           <TableCell>
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="font-medium">{inGroup ? inGroup.name : (forward.tunnelName || '—')}</span>
-                              {inGroup && (
-                                <>
-                                  <Chip size="sm" variant="light" color={deviceStatusTag(inGroup).color}>{deviceStatusTag(inGroup).text}</Chip>
-                                  <Chip size="sm" variant="light" color="success">倍率 {inGroup.ratio ?? 0}</Chip>
-                                </>
-                              )}
+                            {/* 第一行：入口名称 + 设备状态、倍率标签；第二行：完整入口地址（地址:端口），多个地址时可点开列表 */}
+                            <div className="space-y-1.5">
+                              <div className="flex items-center gap-1.5 whitespace-nowrap text-sm text-foreground">
+                                <span>{inGroup ? `入口: ${inGroup.name}` : `隧道: ${forward.tunnelName || '—'}`}</span>
+                                {inGroup && (
+                                  <>
+                                    <RuleTag color={deviceStatusTag(inGroup).color}>{deviceStatusTag(inGroup).text}</RuleTag>
+                                    <RuleTag color="success">倍率 {inGroup.ratio ?? 0}</RuleTag>
+                                  </>
+                                )}
+                              </div>
+                              <div
+                                className={`text-sm text-foreground break-all ${hasMultipleAddresses(forward.inIp) ? 'cursor-pointer hover:text-primary' : ''}`}
+                                onClick={() => hasMultipleAddresses(forward.inIp) && showAddressModal(forward.inIp, forward.inPort, '入口地址')}
+                              >
+                                {formatInAddress(forward.inIp, forward.inPort) || (forward.inPort ? `端口: ${forward.inPort}` : '—')}
+                              </div>
                             </div>
-                            <div
-                              className={`text-xs text-default-500 ${hasMultipleAddresses(forward.inIp) ? 'cursor-pointer hover:text-primary' : ''}`}
-                              onClick={() => hasMultipleAddresses(forward.inIp) && showAddressModal(forward.inIp, forward.inPort, '入口地址')}
+                          </TableCell>
+                          <TableCell>
+                            {/* 第一行：出口名称（没有出口为直连）+ 设备状态、倍率、负载策略标签；第二行：目标地址 */}
+                            <div className="space-y-1.5">
+                              <div className="flex items-center gap-1.5 whitespace-nowrap text-sm text-foreground">
+                                <span>{outGroup ? `出口: ${outGroup.name}` : (forward.remoteAddr ? '出口: 直连' : '—')}</span>
+                                {outGroup && (
+                                  <>
+                                    <RuleTag color={deviceStatusTag(outGroup).color}>{deviceStatusTag(outGroup).text}</RuleTag>
+                                    <RuleTag color="success">倍率 {outGroup.ratio ?? 0}</RuleTag>
+                                  </>
+                                )}
+                                {getAddressCount(forward.remoteAddr.split(',').join('\n')) > 1 && (
+                                  <RuleTag color={strategyDisplay.color}>{strategyDisplay.text}</RuleTag>
+                                )}
+                              </div>
+                              <div
+                                className={`text-sm text-foreground break-all ${hasMultipleAddresses(forward.remoteAddr) ? 'cursor-pointer hover:text-primary' : ''}`}
+                                onClick={() => hasMultipleAddresses(forward.remoteAddr) && showAddressModal(forward.remoteAddr, null, '目标地址')}
+                              >
+                                {formatRemoteAddress(forward.remoteAddr)}
+                              </div>
+                            </div>
+                          </TableCell>
+                          {/* 已用流量统一按 GiB 显示两位小数，与顶部流量信息一致 */}
+                          <TableCell className="whitespace-nowrap">{(((forward.inFlow || 0) + (forward.outFlow || 0)) / (1024 * 1024 * 1024)).toFixed(2)} GiB</TableCell>
+                          <TableCell>
+                            {/* 悬停显示规则最近更新时间（没更新过的按创建时间），提示框与操作按钮同一深色样式 */}
+                            <Tooltip
+                              content={`最近更新: ${formatUpdateTime(forward.updatedTime ?? forward.createdTime)}`}
+                              placement="top"
+                              showArrow
+                              delay={100}
+                              closeDelay={0}
+                              offset={8}
+                              classNames={{
+                                base: "before:bg-[#424242] before:dark:bg-[#424242]",
+                                content: "min-h-[34px] rounded-md bg-[#424242] px-2 py-1.5 text-sm text-white shadow-medium whitespace-nowrap",
+                              }}
                             >
-                              端口: {forward.inPort ?? '—'}
-                            </div>
+                              <span className={`text-sm whitespace-nowrap cursor-default ${STATUS_TEXT_STYLES[statusDisplay.color] || STATUS_TEXT_STYLES.default}`}>{statusDisplay.text}</span>
+                            </Tooltip>
                           </TableCell>
                           <TableCell>
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="font-medium">{outGroup ? outGroup.name : (forward.remoteAddr ? '直连' : '—')}</span>
-                              {outGroup && (
-                                <>
-                                  <Chip size="sm" variant="light" color={deviceStatusTag(outGroup).color}>{deviceStatusTag(outGroup).text}</Chip>
-                                  <Chip size="sm" variant="light" color="success">倍率 {outGroup.ratio ?? 0}</Chip>
-                                </>
-                              )}
-                              {getAddressCount(forward.remoteAddr.split(',').join('\n')) > 1 && (
-                                <Chip size="sm" variant="light" color={strategyDisplay.color as any}>{strategyDisplay.text}</Chip>
-                              )}
-                            </div>
-                            <div
-                              className={`text-xs text-default-500 ${hasMultipleAddresses(forward.remoteAddr) ? 'cursor-pointer hover:text-primary' : ''}`}
-                              onClick={() => hasMultipleAddresses(forward.remoteAddr) && showAddressModal(forward.remoteAddr, null, '目标地址')}
-                            >
-                              {formatRemoteAddress(forward.remoteAddr)}
-                            </div>
-                          </TableCell>
-                          <TableCell>{formatFlow((forward.inFlow || 0) + (forward.outFlow || 0))}</TableCell>
-                          <TableCell>
-                            <Chip size="sm" variant="light" color={statusDisplay.color as any}>{statusDisplay.text}</Chip>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex justify-end items-center gap-1">
+                            <div className="flex items-center gap-1">
                               <TipButton isIconOnly size="sm" variant="flat" title={forward.serviceRunning ? '暂停' : '启动'} isDisabled={forward.status !== 1 && forward.status !== 0} onPress={() => handleServiceToggle(forward)}>
                                 {forward.serviceRunning ? <IconPause /> : <IconPlay />}
                               </TipButton>
                               <TipButton isIconOnly size="sm" variant="flat" title={forward.status === 1 ? '诊断' : '仅正常状态下可诊断'} isDisabled={forward.status !== 1} onPress={() => handleDiagnose(forward)}><IconHelp /></TipButton>
                               <TipButton isIconOnly size="sm" variant="flat" title="复制" onPress={() => handleCopyRule(forward)}><IconCopy /></TipButton>
                               <TipButton isIconOnly size="sm" variant="flat" title="编辑" onPress={() => handleEdit(forward)}><IconEdit /></TipButton>
+                              <TipButton isIconOnly size="sm" variant="flat" title="高级编辑" aria-label="高级编辑" onPress={() => handleOpenJsonEdit(forward)}><EditFilled /></TipButton>
                               <TipButton isIconOnly size="sm" variant="flat" color="danger" title="删除" onPress={() => handleDelete(forward)}><IconDelete /></TipButton>
                             </div>
                           </TableCell>
@@ -1729,7 +1951,7 @@ export default function ForwardPage() {
                 <RailButton icon={<IconGroup />} label="分组" onPress={() => setGroupManageModalOpen(true)} />
                 <RailButton icon={<IconAddSingle />} label="单条" onPress={handleAdd} />
                 <RailButton icon={<IconImport />} label="批量" onPress={handleImport} />
-                <RailButton icon={<IconExport />} label="导出" onPress={handleExport} loading={exportLoading} />
+                <RailButton icon={<IconExport />} label="导出" onPress={handleExport} disabled={selectedIds.length === 0} />
                 <RailButton icon={<IconToggle />} label="切换" onPress={handleBatchToggle} disabled={selectedIds.length === 0} loading={batchLoading} />
                 <RailButton icon={<IconFlow />} label="流量" onPress={handleBatchClearFlow} disabled={selectedIds.length === 0} />
                 <RailButton icon={<IconPause />} label="暂停" onPress={() => handleBatchSetRunning(false)} disabled={selectedIds.length === 0} loading={batchLoading} />
@@ -1756,10 +1978,18 @@ export default function ForwardPage() {
           <ModalContent>
             {(onClose) => (
               <>
-                <ModalHeader>
+                {/* 标题旁 ⇋ 切换转发方式：「入口/出口」按入口、出口设备组转发；「隧道转发」走已分配的隧道
+                    （隧道下拉里只列出分配了权限的隧道，没有可用隧道时下拉里会提示） */}
+                <ModalHeader className="flex items-center gap-1.5">
                   <h2 className="text-base font-semibold">
                     {isEdit ? '编辑规则' : '添加规则'}
                   </h2>
+                  {/* 切换按钮不要悬停 / 点击时的灰色底和聚焦外框，只变图标颜色 */}
+                  <button type="button" title={entryMode === 'device' ? '切换为隧道转发' : '切换为入口 / 出口'} aria-label={entryMode === 'device' ? '切换为隧道转发' : '切换为入口 / 出口'}
+                    className="inline-flex items-center justify-center w-6 h-6 text-default-500 hover:text-foreground transition-colors outline-none focus:outline-none focus-visible:outline-none active:bg-transparent [-webkit-tap-highlight-color:transparent]"
+                    onClick={() => setEntryMode(m => m === 'device' ? 'tunnel' : 'device')}>
+                    <SwapOutlined className={`w-3.5 h-3.5 flex-shrink-0 transition-transform duration-300 ease-in-out motion-reduce:transition-none ${entryMode === 'tunnel' ? 'rotate-180' : ''}`} />
+                  </button>
                 </ModalHeader>
                 <ModalBody>
                   <div className="space-y-4 pb-4">
@@ -1775,127 +2005,107 @@ export default function ForwardPage() {
                       variant="bordered"
                     />
                     
-                    {/* 转发方式：「入口/出口」按入口、出口设备组转发；「隧道转发」走已分配的隧道。
-                        两种方式始终都显示，隧道下拉里只列出分配了权限的隧道，没有可用隧道时下拉里会提示 */}
-                    <div className="flex gap-2">
-                      <Button
-                        size="sm"
-                        variant={entryMode === 'device' ? 'solid' : 'flat'}
-                        color="default"
-                        onPress={() => setEntryMode('device')}
-                        className="flex-1"
-                      >
-                        入口/出口
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant={entryMode === 'tunnel' ? 'solid' : 'flat'}
-                        color="default"
-                        onPress={() => setEntryMode('tunnel')}
-                        className="flex-1"
-                      >
-                        隧道转发
-                      </Button>
+                    {/* 切换转发方式时，按 key 重新挂载，播放淡入 + 轻微上移的过渡 */}
+                    <div key={entryMode} className="mode-swap-in space-y-4">
+                      {entryMode === 'device' ? (
+                        <>
+                          <Select
+                            size="sm"
+                            labelPlacement="outside-top"
+                            label="入口"
+                            listboxProps={{ emptyContent: <EmptyState compact /> }}
+                            placeholder="请选择入口设备组"
+                            selectedKeys={form.inDeviceGroupId ? [form.inDeviceGroupId.toString()] : []}
+                            onSelectionChange={(keys) => {
+                              const selectedKey = Array.from(keys)[0] as string;
+                              // 入口被清空时，出口选择会被隐藏，同时清掉已选的出口，避免提交隐藏的值
+                              const nextInId = selectedKey ? parseInt(selectedKey) : null;
+                              const nextEntry = deviceGroups.find(g => g.id === nextInId);
+                              // 换入口后，已选出口若不在新入口的限制出口内，同样清掉
+                              setForm(prev => ({ ...prev, inDeviceGroupId: nextInId, ...(nextInId && (prev.outDeviceGroupId == null || (getDirectMode(nextEntry) !== 2 && isPairAllowed(nextEntry, deviceGroups.find(g => g.id === prev.outDeviceGroupId)))) ? {} : { outDeviceGroupId: null }) }));
+                            }}
+                            isInvalid={!!errors.inDeviceGroupId}
+                            errorMessage={errors.inDeviceGroupId}
+                            variant="bordered"
+                            renderValue={(items) => items.map((item) => <div key={item.key}>{item.rendered}</div>)}
+                          >
+                            {deviceGroups.filter((group) => {
+                              const direction = group.direction || 'inbound';
+                              return direction === 'inbound' || direction === 'both';
+                            }).map((group) => (
+                              <SelectItem key={group.id.toString()} textValue={group.name}>
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="font-medium">{group.name}</span>
+                                  <RuleTag color={deviceStatusTag(group).color}>{deviceStatusTag(group).text}</RuleTag>
+                                  <RuleTag color="success">倍率 {group.ratio ?? 0}</RuleTag>
+                                  {group.ownerUserId != null && <RuleTag color="secondary">用户自带设备</RuleTag>}
+                                </div>
+                              </SelectItem>
+                            ))}
+                          </Select>
+
+                          {/* 先选择入口后才显示出口选择 */}
+                          {form.inDeviceGroupId && getDirectMode(deviceGroups.find(g => g.id === form.inDeviceGroupId)) !== 2 && (
+                          <Select
+                            size="sm"
+                            labelPlacement="outside-top"
+                            label={<HelpTooltip content="不选择出口时，流量将直接从入口转发至目标地址">出口</HelpTooltip>}
+                            listboxProps={{ emptyContent: <EmptyState compact /> }}
+                            placeholder={getDirectMode(deviceGroups.find(g => g.id === form.inDeviceGroupId)) === 0 ? '请选择出口' : '留空则为直接端口转发'}
+                            disallowEmptySelection={getDirectMode(deviceGroups.find(g => g.id === form.inDeviceGroupId)) === 0}
+                            isInvalid={!!errors.outDeviceGroupId}
+                            errorMessage={errors.outDeviceGroupId}
+                            selectedKeys={form.outDeviceGroupId ? [form.outDeviceGroupId.toString()] : []}
+                            onSelectionChange={(keys) => {
+                              const selectedKey = Array.from(keys)[0] as string;
+                              setForm(prev => ({ ...prev, outDeviceGroupId: selectedKey ? parseInt(selectedKey) : null }));
+                            }}
+                            variant="bordered"
+                            renderValue={(items) => items.map((item) => <div key={item.key}>{item.rendered}</div>)}
+                          >
+                            {deviceGroups.filter((group) => {
+                              const direction = group.direction || 'inbound';
+                              return (direction === 'outbound' || direction === 'both')
+                                && isPairAllowed(deviceGroups.find(g => g.id === form.inDeviceGroupId), group);
+                            }).map((group) => (
+                              <SelectItem key={group.id.toString()} textValue={group.name}>
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="font-medium">{group.name}</span>
+                                  <RuleTag color={deviceStatusTag(group).color}>{deviceStatusTag(group).text}</RuleTag>
+                                  <RuleTag color="success">倍率 {group.ratio ?? 0}</RuleTag>
+                                  {group.ownerUserId != null && <RuleTag color="secondary">用户自带设备</RuleTag>}
+                                </div>
+                              </SelectItem>
+                            ))}
+                          </Select>
+                          )}
+                        </>
+                      ) : (
+                        <Select
+                          size="sm"
+                          labelPlacement="outside-top"
+                          label="选择隧道"
+                          listboxProps={{ emptyContent: <EmptyState compact text="暂无可用隧道" /> }}
+                          placeholder="请选择关联的隧道"
+                          selectedKeys={form.tunnelId ? [form.tunnelId.toString()] : []}
+                          onSelectionChange={(keys) => {
+                            const selectedKey = Array.from(keys)[0] as string;
+                            if (selectedKey) {
+                              handleTunnelChange(selectedKey);
+                            }
+                          }}
+                          isInvalid={!!errors.tunnelId}
+                          errorMessage={errors.tunnelId}
+                          variant="bordered"
+                        >
+                          {tunnels.map((tunnel) => (
+                            <SelectItem key={tunnel.id} >
+                              {tunnel.name}
+                            </SelectItem>
+                          ))}
+                        </Select>
+                      )}
                     </div>
-
-                    {entryMode === 'device' ? (
-                      <>
-                        <Select
-                          size="sm"
-                          labelPlacement="outside-top"
-                          label="入口"
-                          listboxProps={{ emptyContent: <EmptyState compact /> }}
-                          placeholder="请选择入口设备组"
-                          selectedKeys={form.inDeviceGroupId ? [form.inDeviceGroupId.toString()] : []}
-                          onSelectionChange={(keys) => {
-                            const selectedKey = Array.from(keys)[0] as string;
-                            // 入口被清空时，出口选择会被隐藏，同时清掉已选的出口，避免提交隐藏的值
-                            const nextInId = selectedKey ? parseInt(selectedKey) : null;
-                            const nextEntry = deviceGroups.find(g => g.id === nextInId);
-                            // 换入口后，已选出口若不在新入口的限制出口内，同样清掉
-                            setForm(prev => ({ ...prev, inDeviceGroupId: nextInId, ...(nextInId && (prev.outDeviceGroupId == null || (getDirectMode(nextEntry) !== 2 && isPairAllowed(nextEntry, deviceGroups.find(g => g.id === prev.outDeviceGroupId)))) ? {} : { outDeviceGroupId: null }) }));
-                          }}
-                          isInvalid={!!errors.inDeviceGroupId}
-                          errorMessage={errors.inDeviceGroupId}
-                          variant="bordered"
-                          renderValue={(items) => items.map((item) => <div key={item.key}>{item.rendered}</div>)}
-                        >
-                          {deviceGroups.filter((group) => {
-                            const direction = group.direction || 'inbound';
-                            return direction === 'inbound' || direction === 'both';
-                          }).map((group) => (
-                            <SelectItem key={group.id.toString()} textValue={group.name}>
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                <span className="font-medium">{group.name}</span>
-                                <Chip size="sm" variant="light" color={isDeviceGroupOnline(group) ? 'success' : 'danger'}>{isDeviceGroupOnline(group) ? '在线' : '离线'}</Chip>
-                                <Chip size="sm" variant="light" color="success">倍率 {group.ratio ?? 0}</Chip>
-                                {group.ownerUserId != null && <Chip size="sm" variant="light" color="secondary">用户自带设备</Chip>}
-                              </div>
-                            </SelectItem>
-                          ))}
-                        </Select>
-
-                        {/* 先选择入口后才显示出口选择 */}
-                        {form.inDeviceGroupId && getDirectMode(deviceGroups.find(g => g.id === form.inDeviceGroupId)) !== 2 && (
-                        <Select
-                          size="sm"
-                          labelPlacement="outside-top"
-                          label={<HelpTooltip content="不选择出口时，流量将直接从入口转发至目标地址">出口</HelpTooltip>}
-                          listboxProps={{ emptyContent: <EmptyState compact /> }}
-                          placeholder={getDirectMode(deviceGroups.find(g => g.id === form.inDeviceGroupId)) === 0 ? '请选择出口' : '留空则为直接端口转发'}
-                          disallowEmptySelection={getDirectMode(deviceGroups.find(g => g.id === form.inDeviceGroupId)) === 0}
-                          isInvalid={!!errors.outDeviceGroupId}
-                          errorMessage={errors.outDeviceGroupId}
-                          selectedKeys={form.outDeviceGroupId ? [form.outDeviceGroupId.toString()] : []}
-                          onSelectionChange={(keys) => {
-                            const selectedKey = Array.from(keys)[0] as string;
-                            setForm(prev => ({ ...prev, outDeviceGroupId: selectedKey ? parseInt(selectedKey) : null }));
-                          }}
-                          variant="bordered"
-                          renderValue={(items) => items.map((item) => <div key={item.key}>{item.rendered}</div>)}
-                        >
-                          {deviceGroups.filter((group) => {
-                            const direction = group.direction || 'inbound';
-                            return (direction === 'outbound' || direction === 'both')
-                              && isPairAllowed(deviceGroups.find(g => g.id === form.inDeviceGroupId), group);
-                          }).map((group) => (
-                            <SelectItem key={group.id.toString()} textValue={group.name}>
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                <span className="font-medium">{group.name}</span>
-                                <Chip size="sm" variant="light" color={isDeviceGroupOnline(group) ? 'success' : 'danger'}>{isDeviceGroupOnline(group) ? '在线' : '离线'}</Chip>
-                                <Chip size="sm" variant="light" color="success">倍率 {group.ratio ?? 0}</Chip>
-                                {group.ownerUserId != null && <Chip size="sm" variant="light" color="secondary">用户自带设备</Chip>}
-                              </div>
-                            </SelectItem>
-                          ))}
-                        </Select>
-                        )}
-                      </>
-                    ) : (
-                      <Select
-                        size="sm"
-                        labelPlacement="outside-top"
-                        label="选择隧道"
-                        listboxProps={{ emptyContent: <EmptyState compact text="暂无可用隧道" /> }}
-                        placeholder="请选择关联的隧道"
-                        selectedKeys={form.tunnelId ? [form.tunnelId.toString()] : []}
-                        onSelectionChange={(keys) => {
-                          const selectedKey = Array.from(keys)[0] as string;
-                          if (selectedKey) {
-                            handleTunnelChange(selectedKey);
-                          }
-                        }}
-                        isInvalid={!!errors.tunnelId}
-                        errorMessage={errors.tunnelId}
-                        variant="bordered"
-                      >
-                        {tunnels.map((tunnel) => (
-                          <SelectItem key={tunnel.id} >
-                            {tunnel.name}
-                          </SelectItem>
-                        ))}
-                      </Select>
-                    )}
 
                     <Input autoComplete="off"
                       size="sm"
@@ -2103,16 +2313,42 @@ export default function ForwardPage() {
           </ModalContent>
         </Modal>
 
+        {/* 高级编辑：JSON 编辑单条规则 */}
+        <Modal isOpen={jsonTarget !== null} onOpenChange={(open) => { if (!open) setJsonTarget(null); }} size="lg" scrollBehavior="outside" backdrop="opaque" placement="center" hideCloseButton classNames={{ base: "max-w-[520px]" }}>
+          <ModalContent>
+            {(onClose) => (
+              <>
+                <ModalHeader>{jsonTarget?.name} (#{jsonTarget?.id})</ModalHeader>
+                <ModalBody className="py-0">
+                  <JsonEditor ariaLabel="规则 JSON 配置" value={jsonText} onChange={setJsonText} />
+                </ModalBody>
+                <ModalFooter>
+                  <Button size="sm" variant="bordered" className="dialog-btn" onPress={onClose}>取消</Button>
+                  <Button size="sm" color="primary" className="dialog-btn" isLoading={jsonLoading} onPress={submitJsonEdit}>确定</Button>
+                </ModalFooter>
+              </>
+            )}
+          </ModalContent>
+        </Modal>
+
         {/* 删除确认模态框 */}
         <ConfirmDialog
           isOpen={deleteModalOpen}
           onOpenChange={setDeleteModalOpen}
-          title="确认删除"
-          message={<>你确定要删除转发 {forwardToDelete?.name} 吗？此操作无法撤销，删除后该转发将永久消失。</>}
+          title="删除规则"
+          message={<>你确定要删除 {forwardToDelete?.name} (#{forwardToDelete?.id}) 吗？</>}
           confirmText="确定"
-          confirmColor="danger"
           onConfirm={confirmDelete}
           loading={deleteLoading}
+        />
+
+        <ConfirmDialog
+          isOpen={batchDeleteOpen}
+          onOpenChange={setBatchDeleteOpen}
+          title="删除规则"
+          message={<>你确定要删除选中的 {selectedIds.length} 条规则吗？</>}
+          confirmText="确定"
+          onConfirm={confirmBatchDelete}
         />
 
         {/* 地址列表弹窗 */}
@@ -2145,292 +2381,173 @@ export default function ForwardPage() {
           </ModalContent>
         </Modal>
 
-        {/* 导出数据模态框 */}
-        <Modal 
-          isOpen={exportModalOpen} 
-          onClose={() => {
-            setExportModalOpen(false);
-            setSelectedTunnelForExport(null);
-            setExportData('');
-          }} 
-          
-          size="2xl"
-        scrollBehavior="outside"
-        backdrop="opaque"
-        placement="center"
+        {/* 批量导入：标题旁 ⇋ 切换按入口 / 出口设备组或按隧道；批量规则和 JSON 设置输入框可拖动右下角调整高度 */}
+        <Modal
+          isOpen={importModalOpen}
+          onOpenChange={(open) => { if (!open) setImportModalOpen(false); }}
+          size="sm"
+          scrollBehavior="outside"
+          backdrop="opaque"
+          placement="center"
+          hideCloseButton
+          classNames={{ base: "max-w-[416px]" }}
         >
           <ModalContent>
-            <ModalHeader className="flex flex-col gap-1">
-              <h2 className="text-lg font-semibold">导出转发数据</h2>
-              <p className="text-small text-default-500">
-                格式：目标地址|转发名称|入口端口
-              </p>
-            </ModalHeader>
-            <ModalBody className="pb-6">
-              <div className="space-y-4">
-                {/* 隧道选择 */}
-                <div>
-                  <Select
-                    size="sm"
-                    label="选择导出隧道"
-                    placeholder="请选择要导出的隧道"
-                    selectedKeys={selectedTunnelForExport ? [selectedTunnelForExport.toString()] : []}
-                    onSelectionChange={(keys) => {
-                      const selectedKey = Array.from(keys)[0] as string;
-                      setSelectedTunnelForExport(selectedKey ? parseInt(selectedKey) : null);
-                    }}
-                    variant="bordered"
-                    isRequired
-                  >
-                    {tunnels.map((tunnel) => (
-                      <SelectItem key={tunnel.id.toString()} textValue={tunnel.name}>
-                        {tunnel.name}
-                      </SelectItem>
-                    ))}
-                  </Select>
-                </div>
-
-                {/* 导出按钮和数据 */}
-                {exportData && (
-                  <div className="flex justify-between items-center">
-                    <Button
-                      color="default"
-                      size="sm"
-                      onPress={executeExport}
-                      isLoading={exportLoading}
-                      isDisabled={!selectedTunnelForExport}
-                      startContent={
-                        <DownloadOutlined />
-                      }
-                    >
-                      重新生成
-                    </Button>
-                    <Button
-                      color="default"
-                      size="sm"
-                      onPress={copyExportData}
-                      startContent={
-                        <CopyOutlined />
-                      }
-                    >
-                      复制
-                    </Button>
-                  </div>
-                )}
-
-                {/* 初始导出按钮 */}
-                {!exportData && (
-                  <div className="text-right">
-                    <Button
-                      color="default"
-                      size="sm"
-                      onPress={executeExport}
-                      isLoading={exportLoading}
-                      isDisabled={!selectedTunnelForExport}
-                      startContent={
-                        <DownloadOutlined />
-                      }
-                    >
-                      生成导出数据
-                    </Button>
-                  </div>
-                )}
-
-                {/* 导出数据显示 */}
-                {exportData && (
-                  <div className="relative">
-                    <Textarea
-                      size="sm" autoComplete="off"
-                      value={exportData}
-                      readOnly
-                      variant="bordered"
-                      minRows={10}
-                      maxRows={20}
-                      className="font-mono text-sm"
-                      classNames={{
-                        input: "font-mono text-sm"
-                      }}
-                      placeholder="暂无数据"
-                    />
-                  </div>
-                )}
-              </div>
-            </ModalBody>
-            <ModalFooter>
-              <Button 
-                variant="light" 
-                onPress={() => setExportModalOpen(false)}
-              >
-                关闭
-              </Button>
-            </ModalFooter>
-          </ModalContent>
-        </Modal>
-
-        {/* 导入数据模态框 */}
-        <Modal 
-          isOpen={importModalOpen} 
-          onClose={() => setImportModalOpen(false)} 
-          
-          size="2xl"
-        scrollBehavior="outside"
-        backdrop="opaque"
-        placement="center"
-        >
-          <ModalContent>
-            <ModalHeader className="flex flex-col gap-1">
-              <h2 className="text-lg font-semibold">导入转发数据</h2>
-              <p className="text-small text-default-500">
-                格式：目标地址|转发名称|入口端口，每行一个，入口端口留空将自动分配可用端口
-              </p>
-              <p className="text-small text-default-400">
-                目标地址支持单个地址(如：example.com:8080)或多个地址用逗号分隔(如：3.3.3.3:3,4.4.4.4:4)
-              </p>
-            </ModalHeader>
-            <ModalBody className="pb-6">
-              <div className="space-y-4">
-                {/* 隧道选择 */}
-                <div>
-                  <Select
-                    size="sm"
-                    label="选择导入隧道"
-                    placeholder="请选择要导入的隧道"
-                    selectedKeys={selectedTunnelForImport ? [selectedTunnelForImport.toString()] : []}
-                    onSelectionChange={(keys) => {
-                      const selectedKey = Array.from(keys)[0] as string;
-                      setSelectedTunnelForImport(selectedKey ? parseInt(selectedKey) : null);
-                    }}
-                    variant="bordered"
-                    isRequired
-                  >
-                    {tunnels.map((tunnel) => (
-                      <SelectItem key={tunnel.id.toString()} textValue={tunnel.name}>
-                        {tunnel.name}
-                      </SelectItem>
-                    ))}
-                  </Select>
-                </div>
-
-                {/* 输入区域 */}
-                <div>
-                  <Textarea
-                    size="sm" autoComplete="off"
-                    label="导入数据"
-                    placeholder="请输入要导入的转发数据，格式：目标地址|转发名称|入口端口"
-                    value={importData}
-                    onChange={(e) => setImportData(e.target.value)}
-                    variant="flat"
-                    minRows={8}
-                    maxRows={12}
-                    classNames={{
-                      input: "font-mono text-sm"
-                    }}
-                  />
-
-                
-                </div>
-
-                {/* 导入结果 */}
-                {importResults.length > 0 && (
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <h3 className="text-base font-semibold">导入结果</h3>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-default-500">
-                          成功：{importResults.filter(r => r.success).length} / 
-                          总计：{importResults.length}
-                        </span>
-                      </div>
-                    </div>
-                    
-                    <div className="max-h-40 overflow-y-auto space-y-1" style={{
-                      scrollbarWidth: 'thin',
-                      scrollbarColor: 'rgb(156 163 175) transparent'
-                    }}>
-                      {importResults.map((result, index) => (
-                        <div 
-                          key={index} 
-                          className={`p-2 rounded border ${
-                            result.success 
-                              ? 'bg-success-50 dark:bg-success-100/10 border-success-200 dark:border-success-300/20' 
-                              : 'bg-danger-50 dark:bg-danger-100/10 border-danger-200 dark:border-danger-300/20'
-                          }`}
+            {(onClose) => {
+              const importEntry = deviceGroups.find(g => g.id === importInGroupId);
+              const importDirectMode = getDirectMode(importEntry);
+              return (
+              <>
+                <ModalHeader className="flex items-center gap-1.5">
+                  批量导入
+                  {/* 切换按钮不要悬停 / 点击时的灰色底和聚焦外框，只变图标颜色 */}
+                  <button type="button" title={importMode === 'device' ? '切换为导入到隧道' : '切换为导入到入口 / 出口'} aria-label={importMode === 'device' ? '切换为导入到隧道' : '切换为导入到入口 / 出口'}
+                    className="inline-flex items-center justify-center w-6 h-6 text-default-500 hover:text-foreground transition-colors outline-none focus:outline-none focus-visible:outline-none active:bg-transparent [-webkit-tap-highlight-color:transparent]"
+                    onClick={() => setImportMode(m => m === 'device' ? 'tunnel' : 'device')}>
+                    <SwapOutlined className={`w-3.5 h-3.5 flex-shrink-0 transition-transform duration-300 ease-in-out motion-reduce:transition-none ${importMode === 'tunnel' ? 'rotate-180' : ''}`} />
+                  </button>
+                </ModalHeader>
+                <ModalBody className="py-0">
+                  <div className="dialog-form space-y-3">
+                    {/* 切换转发方式时，按 key 重新挂载，播放淡入 + 轻微上移的过渡 */}
+                    <div key={importMode} className="mode-swap-in space-y-3">
+                      {importMode === 'device' ? (
+                        <>
+                          <Select listboxProps={{ emptyContent: <EmptyState compact /> }} labelPlacement="outside-top"
+                            size="sm"
+                            label="入口"
+                            selectedKeys={importInGroupId ? [importInGroupId.toString()] : []}
+                            onSelectionChange={(keys) => {
+                              const selectedKey = Array.from(keys)[0] as string;
+                              const id = selectedKey ? parseInt(selectedKey) : null;
+                              const entry = deviceGroups.find(g => g.id === id);
+                              setImportInGroupId(id);
+                              // 换入口后，已选出口若不在新入口允许范围内则清掉
+                              setImportOutGroupId(prev => (id && prev != null && getDirectMode(entry) !== 2 && isPairAllowed(entry, deviceGroups.find(g => g.id === prev))) ? prev : null);
+                            }}
+                            variant="bordered"
+                          >
+                            {deviceGroups.filter(g => (g.direction || 'inbound') === 'inbound' || g.direction === 'both').map((group) => (
+                              <SelectItem key={group.id.toString()} textValue={group.name}>{group.name}</SelectItem>
+                            ))}
+                          </Select>
+                          {importInGroupId && importDirectMode !== 2 && (
+                            <Select listboxProps={{ emptyContent: <EmptyState compact /> }} labelPlacement="outside-top"
+                              size="sm"
+                              label="出口"
+                              placeholder={importDirectMode === 0 ? '请选择出口' : '留空则为直接端口转发'}
+                              selectedKeys={importOutGroupId ? [importOutGroupId.toString()] : []}
+                              onSelectionChange={(keys) => {
+                                const selectedKey = Array.from(keys)[0] as string;
+                                setImportOutGroupId(selectedKey ? parseInt(selectedKey) : null);
+                              }}
+                              variant="bordered"
+                            >
+                              {deviceGroups.filter(g => (g.direction === 'outbound' || g.direction === 'both') && isPairAllowed(importEntry, g)).map((group) => (
+                                <SelectItem key={group.id.toString()} textValue={group.name}>{group.name}</SelectItem>
+                              ))}
+                            </Select>
+                          )}
+                        </>
+                      ) : (
+                        <Select listboxProps={{ emptyContent: <EmptyState compact text="暂无可用隧道" /> }} labelPlacement="outside-top"
+                          size="sm"
+                          label="隧道"
+                          selectedKeys={selectedTunnelForImport ? [selectedTunnelForImport.toString()] : []}
+                          onSelectionChange={(keys) => {
+                            const selectedKey = Array.from(keys)[0] as string;
+                            setSelectedTunnelForImport(selectedKey ? parseInt(selectedKey) : null);
+                          }}
+                          variant="bordered"
                         >
-                          <div className="flex items-center gap-2">
-                            {result.success ? (
-                              <svg className="w-3 h-3 text-success-600 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                              </svg>
-                            ) : (
-                              <svg className="w-3 h-3 text-danger-600 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                                <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-                              </svg>
-                            )}
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 mb-0.5">
-                                <span className={`text-xs font-medium ${
-                                  result.success ? 'text-success-700 dark:text-success-300' : 'text-danger-700 dark:text-danger-300'
-                                }`}>
-                                  {result.success ? '成功' : '失败'}
-                                </span>
-                                <span className="text-xs text-default-500">|</span>
-                                <code className="text-xs font-mono text-default-600 truncate">{result.line}</code>
-                              </div>
-                              <div className={`text-xs ${
-                                result.success ? 'text-success-600 dark:text-success-400' : 'text-danger-600 dark:text-danger-400'
-                              }`}>
-                                {result.message}
-                              </div>
-                            </div>
+                          {tunnels.map((tunnel) => (
+                            <SelectItem key={tunnel.id.toString()} textValue={tunnel.name}>{tunnel.name}</SelectItem>
+                          ))}
+                        </Select>
+                      )}
+                    </div>
+
+                    <Textarea labelPlacement="outside-top" size="sm" autoComplete="off" variant="bordered" disableAutosize rows={6}
+                      label="批量规则"
+                      placeholder={"一行一个，空行会被忽略。支持两种格式：\n{\"dest\":[\"test.com:20000\"],\"listen_port\":46267,\"name\":\"test\"}\n目标地址|规则名|入口端口\n入口端口留空自动分配，多个目标地址用逗号分隔"}
+                      value={importData}
+                      onChange={(e) => setImportData(e.target.value)}
+                      classNames={{ input: "font-mono text-xs placeholder:font-sans resize-y min-h-[120px]" }}
+                    />
+
+                    <div className="rounded-md border border-default-300 overflow-hidden">
+                      <button type="button" onClick={() => setImportJsonOpen(o => !o)}
+                        className="flex w-full items-center gap-2 bg-default-100 px-4 py-2.5 text-sm font-semibold text-foreground outline-none">
+                        <RightOutlined className={`w-3 h-3 flex-shrink-0 transition-transform duration-300 ease-in-out ${importJsonOpen ? 'rotate-90' : ''}`} />
+                        JSON 设置
+                      </button>
+                      {/* 展开 / 收起用 grid-template-rows 0fr↔1fr 过渡高度，内容一直挂载（输入的 JSON 不丢），同时淡入淡出 */}
+                      <div
+                        className={`grid transition-[grid-template-rows,opacity] duration-300 ease-in-out motion-reduce:transition-none ${importJsonOpen ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}
+                        // 收起时整块不可聚焦、不可点击；React 18 不认识 inert 属性，按普通 HTML 属性传字符串
+                        {...(!importJsonOpen ? { inert: '' } as Record<string, string> : {})}
+                      >
+                        <div className="min-h-0 overflow-hidden">
+                          <div className="p-4 border-t border-default-300">
+                            <Textarea size="sm" autoComplete="off" variant="bordered" disableAutosize rows={6}
+                              aria-label="JSON 设置"
+                              placeholder={'覆盖除目标地址以外的配置，请确保格式正确。\n例如：{"strategy": "round", "speedLimit": 1}'}
+                              value={importJson}
+                              onChange={(e) => setImportJson(e.target.value)}
+                              classNames={{ input: "font-mono text-xs placeholder:font-sans resize-y min-h-[120px]" }}
+                            />
                           </div>
                         </div>
-                      ))}
+                      </div>
                     </div>
+
+                    {importResults.length > 0 && (
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-sm font-semibold text-foreground">导入结果</span>
+                          <span className="text-xs text-default-500">
+                            成功 {importResults.filter(r => r.success).length} / 共 {importResults.length}
+                          </span>
+                        </div>
+                        <TerminalBox className="max-h-40 overflow-y-auto">
+                          {importResults.map((result, index) => (
+                            <div key={index} className={result.success ? TERM_TEXT : TERM_ERR}>
+                              {result.success ? 'ok    ' : 'failed'} {result.line}{result.success ? '' : `: ${result.message}`}
+                            </div>
+                          ))}
+                        </TerminalBox>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-            </ModalBody>
-            <ModalFooter>
-              <Button 
-                variant="light" 
-                onPress={() => setImportModalOpen(false)}
-              >
-                关闭
-              </Button>
-              <Button
-                color="default"
-                onPress={executeImport}
-                isLoading={importLoading}
-                isDisabled={!importData.trim() || !selectedTunnelForImport}
-              >
-                开始导入
-              </Button>
-            </ModalFooter>
+                </ModalBody>
+                <ModalFooter>
+                  <Button size="sm" variant="bordered" className="dialog-btn" onPress={onClose}>取消</Button>
+                  <Button size="sm" color="primary" className="dialog-btn" isLoading={importLoading}
+                    isDisabled={!importData.trim() || (importMode === 'tunnel' ? !selectedTunnelForImport : !importInGroupId)}
+                    onPress={executeImport}>确定</Button>
+                </ModalFooter>
+              </>
+              );
+            }}
           </ModalContent>
         </Modal>
 
-        {/* 诊断结果模态框 */}
-        <Modal 
+        {/* 诊断结果：标题只有「诊断结果 (#id)」，分区卡片见 DiagnosisLeg / DiagnosisPanelFeedback，底部只有关闭 */}
+        <Modal
           isOpen={diagnosisModalOpen}
           onOpenChange={setDiagnosisModalOpen}
-          
-          size="2xl"
-        scrollBehavior="outside"
-        backdrop="opaque"
-        placement="center"
+          size="3xl"
+          scrollBehavior="outside"
+          backdrop="opaque"
+          placement="center"
+          hideCloseButton
+          classNames={{ base: "max-w-[800px]" }}
         >
           <ModalContent>
             {(onClose) => (
               <>
-                <ModalHeader className="flex flex-col gap-1">
-                  <h2 className="text-lg font-semibold">
-                    诊断结果{currentDiagnosisForward ? ` (#${currentDiagnosisForward.id})` : ''}
-                  </h2>
-                  {currentDiagnosisForward && (
-                    <span className="text-small text-default-500 truncate">{currentDiagnosisForward.name}</span>
-                  )}
-                </ModalHeader>
-                <ModalBody>
+                <ModalHeader>诊断结果{currentDiagnosisForward ? ` (#${currentDiagnosisForward.id})` : ''}</ModalHeader>
+                <ModalBody className="py-0">
                   {diagnosisLoading ? (
                     <div className="flex items-center justify-center py-16">
                       <div className="flex items-center gap-3">
@@ -2439,30 +2556,31 @@ export default function ForwardPage() {
                       </div>
                     </div>
                   ) : diagnosisResult ? (
-                    <div className="space-y-5">
-                      <DiagnosisLeg title="入口诊断" subtitle="Inbound" results={diagnosisResult.results.filter(r => r.leg !== 'outbound')} emptyText="无数据" resolveGroupName={(id) => findDeviceGroup(id)?.name} loadDetail={loadForwardDiagnosisDetail} />
-                      {diagnosisResult.results.filter(r => r.leg === 'outbound').length > 0 && (
-                        <DiagnosisLeg title="出口诊断" subtitle="Outbounds" results={diagnosisResult.results.filter(r => r.leg === 'outbound')} resolveGroupName={(id) => findDeviceGroup(id)?.name} loadDetail={loadForwardDiagnosisDetail} />
-                      )}
-                      <DiagnosisPanelFeedback stats={diagnosisResult.dispatchStats} />
-                    </div>
+                    (() => {
+                      // 没有结果的一段也显示规则的入口 / 出口设备组卡片（名称 + GID，内容「无数据」）；旧版隧道模式的规则没有设备组，入口显示隧道名
+                      const inGroup = findDeviceGroup(currentDiagnosisForward?.inDeviceGroupId);
+                      const outGroup = findDeviceGroup(currentDiagnosisForward?.outDeviceGroupId);
+                      const inboundResults = diagnosisResult.results.filter(r => r.leg !== 'outbound');
+                      const outboundResults = diagnosisResult.results.filter(r => r.leg === 'outbound');
+                      const inPlaceholder = inGroup
+                        ? { name: inGroup.name, groupId: inGroup.id }
+                        : (currentDiagnosisForward?.tunnelName ? { name: currentDiagnosisForward.tunnelName } : undefined);
+                      return (
+                        <div className="space-y-5">
+                          <DiagnosisLeg title="入口诊断" subtitle="Inbound" results={inboundResults} emptyText="无数据" placeholder={inPlaceholder} resolveGroupName={(id) => findDeviceGroup(id)?.name} loadDetail={loadForwardDiagnosisDetail} />
+                          {(outboundResults.length > 0 || outGroup) && (
+                            <DiagnosisLeg title="出口诊断" subtitle="Outbounds" results={outboundResults} emptyText="无数据" placeholder={outGroup ? { name: outGroup.name, groupId: outGroup.id } : undefined} resolveGroupName={(id) => findDeviceGroup(id)?.name} loadDetail={loadForwardDiagnosisDetail} />
+                          )}
+                          <DiagnosisPanelFeedback stats={diagnosisResult.dispatchStats} />
+                        </div>
+                      );
+                    })()
                   ) : (
                     <EmptyState />
                   )}
                 </ModalBody>
                 <ModalFooter>
-                  <Button variant="light" onPress={onClose}>
-                    关闭
-                  </Button>
-                  {currentDiagnosisForward && (
-                    <Button
-                      color="default"
-                      onPress={() => handleDiagnose(currentDiagnosisForward)}
-                      isDisabled={diagnosisLoading}
-                    >
-                      重新诊断
-                    </Button>
-                  )}
+                  <Button size="sm" color="primary" className="dialog-btn" onPress={onClose}>关闭</Button>
                 </ModalFooter>
               </>
             )}

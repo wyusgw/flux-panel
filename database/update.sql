@@ -567,7 +567,7 @@ CREATE TABLE IF NOT EXISTS `user_group` (
 CREATE TABLE IF NOT EXISTS `package_plan` (
   `id` int(10) NOT NULL AUTO_INCREMENT,
   `name` varchar(200) NOT NULL,
-  `type` varchar(50) NOT NULL DEFAULT 'normal',
+  `type` varchar(50) NOT NULL DEFAULT 'traffic',
   `group_id` bigint(20) NOT NULL,
   `traffic` bigint(20) NOT NULL DEFAULT 0,
   `max_rules` int(10) NOT NULL DEFAULT 0,
@@ -1875,3 +1875,13 @@ SET @sql = (
 PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
+
+-- package_plan 套餐类型：原 normal 拆为 traffic（不限时流量包）、traffic_stack（不限时流量包，可叠加）、monthly（月付）、daily（日付），
+-- duration_days 改作时长倍数（月付为月数，日付为天数）。旧套餐有效天数大于 0 的改为日付（天数不变），否则改为不限时流量包；
+-- 购买效果与原来一致
+UPDATE `package_plan` SET `type` = 'daily' WHERE (`type` = 'normal' OR `type` = '' OR `type` IS NULL) AND `duration_days` > 0;
+UPDATE `package_plan` SET `type` = 'traffic', `duration_days` = 0 WHERE `type` = 'normal' OR `type` = '' OR `type` IS NULL;
+ALTER TABLE `package_plan` ALTER COLUMN `type` SET DEFAULT 'traffic';
+
+-- 永久（不限时）套餐的到期时间由 2099-12-31 23:59:59（4102415999000）改为 9999-09-09 08:09:09（UTC+8，253392451749000）
+UPDATE `user` SET `exp_time` = 253392451749000 WHERE `exp_time` = 4102415999000;

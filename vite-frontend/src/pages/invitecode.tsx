@@ -262,10 +262,9 @@ export default function InviteCodePage() {
       <ConfirmDialog
         isOpen={deleteModalOpen}
         onOpenChange={setDeleteModalOpen}
-        title="确认删除"
-        message={<>你确定要删除邀请码 {codeToDelete?.code} 吗？</>}
+        title="删除邀请码"
+        message={<>你确定要删除邀请码 {codeToDelete?.code} (#{codeToDelete?.id}) 吗？</>}
         confirmText="确定"
-        confirmColor="danger"
         onConfirm={confirmDelete}
         loading={deleteLoading}
       />

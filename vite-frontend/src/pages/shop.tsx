@@ -12,10 +12,12 @@ import toast from 'react-hot-toast';
 import { getPackagePlanList, purchasePackage, getUserPackageInfo, redeemPackageCode, createRechargeOrder, getRechargeOrderStatus } from "@/api";
 import { getCachedConfigs } from "@/config/site";
 import { EmptyState } from "@/components/empty-state";
+import { effectivePackageType, isDurationType, packageTypeLabel, packageDurationLabel } from "@/utils/package-type";
 
 interface PackagePlanItem {
   id: number;
   name: string;
+  type?: string;
   traffic: number;
   durationDays: number;
   maxRules: number;
@@ -90,11 +92,11 @@ const NoPaymentIcon = () => (
   </svg>
 );
 
-const planTypeLabel = (durationDays: number) => {
-  if (durationDays <= 0) return '永久';
-  if (durationDays % 365 === 0) return `${durationDays / 365} 年付`;
-  if (durationDays % 30 === 0) return `${durationDays / 30} 月付`;
-  return `${durationDays} 天`;
+// 类型：月付 / 日付带上时长，如「月付（3 个月）」；不限时流量包只显示类型
+const planTypeLabel = (plan: PackagePlanItem) => {
+  const type = effectivePackageType(plan.type, plan.durationDays);
+  const label = packageTypeLabel(type, plan.durationDays);
+  return isDurationType(type) ? `${label}（${packageDurationLabel(type, plan.durationDays)}）` : label;
 };
 
 const TagIcon = () => (
@@ -376,7 +378,7 @@ export default function ShopPage() {
                     <div className="space-y-1.5 mb-3">
                       <div className="flex items-center gap-1.5">
                         <span className="text-tiny text-default-500">类型</span>
-                        <span className="text-tiny font-medium text-foreground">{planTypeLabel(plan.durationDays)}</span>
+                        <span className="text-tiny font-medium text-foreground">{planTypeLabel(plan)}</span>
                       </div>
                       <div className="flex items-center gap-1.5">
                         <span className="text-tiny text-default-500">最大规则数</span>

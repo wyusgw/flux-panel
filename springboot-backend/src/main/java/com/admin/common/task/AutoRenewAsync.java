@@ -28,8 +28,8 @@ import java.util.List;
 @EnableScheduling
 public class AutoRenewAsync {
 
-    // 与 OrderServiceImpl 永久套餐到期时间哨兵值保持一致（2099-12-31），永久套餐无需续费
-    private static final long PERMANENT_EXP_TIME = 4102415999000L;
+    // 永久套餐到期时间哨兵值，与购买套餐一致（9999-09-09 08:09:09）；旧的 2099-12-31 也远在提醒 / 续费窗口之外，同样不会被处理
+    private static final long PERMANENT_EXP_TIME = com.admin.entity.PackagePlan.PERMANENT_EXP_TIME;
     private static final long RENEW_WINDOW_MS = 24L * 60 * 60 * 1000;
 
     @Resource

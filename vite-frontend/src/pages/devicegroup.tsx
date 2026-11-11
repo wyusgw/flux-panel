@@ -1096,10 +1096,9 @@ export default function DeviceGroupPage() {
       <ConfirmDialog
         isOpen={deleteModalOpen}
         onOpenChange={setDeleteModalOpen}
-        title="确认删除"
-        message={<>你确定要删除设备组 {groupToDelete?.name}（#{groupToDelete?.id}）吗？</>}
+        title="删除设备组"
+        message={<>你确定要删除设备组 {groupToDelete?.name} (#{groupToDelete?.id}) 吗？</>}
         confirmText="确定"
-        confirmColor="danger"
         onConfirm={confirmDelete}
         loading={deleteLoading}
       />
@@ -1251,10 +1250,9 @@ export default function DeviceGroupPage() {
       <ConfirmDialog
         isOpen={batchDeleteModalOpen}
         onOpenChange={setBatchDeleteModalOpen}
-        title="批量删除"
+        title="删除设备"
         message={<>你确定要删除选中的 {selectedGroupIds.length} 个设备吗？</>}
         confirmText="确定"
-        confirmColor="danger"
         onConfirm={handleBatchDelete}
         loading={batchDeleteLoading}
       />
@@ -1262,10 +1260,9 @@ export default function DeviceGroupPage() {
       <ConfirmDialog
         isOpen={deleteNodeModalOpen}
         onOpenChange={setDeleteNodeModalOpen}
-        title="确认删除"
-        message={<>你确定要彻底删除设备 {nodeToDelete?.name} 吗？此设备尚未建立设备组，删除后该设备及其密钥将被完全移除，不会再出现在此列表中。</>}
+        title="删除设备"
+        message={<>你确定要删除设备 {nodeToDelete?.name} (#{nodeToDelete?.id}) 吗？</>}
         confirmText="确定"
-        confirmColor="danger"
         onConfirm={confirmDeleteNode}
         loading={deleteNodeLoading}
       />

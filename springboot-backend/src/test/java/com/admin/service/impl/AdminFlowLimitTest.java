@@ -173,6 +173,9 @@ class AdminFlowLimitTest {
         rule(ADMIN_ID);
         assertEquals(403, service.resumeForward(7L).getCode());
 
+        // 管理员恢复别人的规则不受自己的流量限制；节点不存在时规则记为运行中并登记同步任务，不再报错
+        doReturn(true).when(service).updateById(any(com.admin.entity.Forward.class));
+        ReflectionTestUtils.setField(service, "taskQueueService", mock(com.admin.service.TaskQueueService.class));
         rule(99);
         assertNotEquals(403, service.resumeForward(7L).getCode());
     }

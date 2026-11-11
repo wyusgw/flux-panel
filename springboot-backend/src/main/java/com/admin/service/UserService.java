@@ -30,6 +30,11 @@ public interface UserService extends IService<User> {
 
     R deleteUser(Long id);
 
+    /**
+     * 把用户当前套餐的限速重新下发到该用户运行中的规则（编辑用户套餐时勾选「更新限速」）
+     */
+    R refreshUserLimits(Long id);
+
     R getUserPackageInfo();
     
     R updatePassword(ChangePasswordDto changePasswordDto);

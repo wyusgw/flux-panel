@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Button } from "@heroui/button";
 import { Input } from "@heroui/input";
 import { Modal, ModalBody, ModalContent, ModalHeader } from "@heroui/modal";
@@ -7,6 +8,7 @@ import { EmptyState } from "@/components/empty-state";
 import { FieldLabel } from "@/components/form-field";
 import { DeleteIcon, EditIcon } from "@/components/icons";
 import { PopConfirm } from "@/components/pop-confirm";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 
 interface GroupManageDrawerProps<T extends { id: number; name: string }> {
   isOpen: boolean;
@@ -39,7 +41,11 @@ export function GroupManageDrawer<T extends { id: number; name: string }>({
   onEdit,
   onDelete,
 }: GroupManageDrawerProps<T>) {
+  // 删除分组：弹出与其它删除确认同样样式的确认框
+  const [groupToDelete, setGroupToDelete] = useState<T | null>(null);
+
   return (
+    <>
     <Modal
       isOpen={isOpen}
       onOpenChange={onOpenChange}
@@ -87,11 +93,9 @@ export function GroupManageDrawer<T extends { id: number; name: string }>({
                             <EditIcon className="w-4 h-4" />
                           </Button>
                           <span className="h-3.5 w-px bg-default-200" />
-                          <PopConfirm title="删除后项目会变回未分组。确定删除?" onConfirm={() => onDelete(group)}>
-                            <Button isIconOnly size="sm" variant="light" color="danger" aria-label={`删除分组 ${group.name}`}>
-                              <DeleteIcon className="w-4 h-4" />
-                            </Button>
-                          </PopConfirm>
+                          <Button isIconOnly size="sm" variant="light" color="danger" aria-label={`删除分组 ${group.name}`} onPress={() => setGroupToDelete(group)}>
+                            <DeleteIcon className="w-4 h-4" />
+                          </Button>
                         </div>
                       </div>
                     ))}
@@ -129,5 +133,15 @@ export function GroupManageDrawer<T extends { id: number; name: string }>({
         )}
       </ModalContent>
     </Modal>
+
+    <ConfirmDialog
+      isOpen={groupToDelete !== null}
+      onOpenChange={(open) => { if (!open) setGroupToDelete(null); }}
+      title="删除分组"
+      message={<>你确定要删除分组 {groupToDelete?.name} (#{groupToDelete?.id}) 吗？</>}
+      confirmText="确定"
+      onConfirm={() => { if (groupToDelete) onDelete(groupToDelete); setGroupToDelete(null); }}
+    />
+    </>
   );
 }

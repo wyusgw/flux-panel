@@ -34,6 +34,8 @@ export const restoreDemoChanges = (id: number) => Network.post("/demo/restore", 
 export const commitDemoChanges = (id: number) => Network.post("/demo/commit", { id });
 export const getAllUsers = (pageData: any = {}) => Network.post("/user/list", pageData);
 export const updateUser = (data: any) => Network.post("/user/update", data);
+// 把用户当前套餐的限速重新下发到该用户运行中的规则
+export const refreshUserLimits = (id: number) => Network.post("/user/refreshLimits", { id });
 export const deleteUser = (id: number) => Network.post("/user/delete", { id });
 export const getUserPackageInfo = () => Network.post("/user/package");
 export const updateAutoRenew = (autoRenew: boolean) => Network.post("/user/autoRenew", { autoRenew });
@@ -86,6 +88,8 @@ export const updatePackagePlan = (data: any) => Network.post("/package/update", 
 export const deletePackagePlan = (id: number) => Network.post("/package/delete", { id });
 export const batchDeletePackagePlans = (ids: number[]) => Network.post("/package/batchDelete", { ids });
 export const reorderPackagePlans = (plans: Array<{ id: number; sort: number }>) => Network.post("/package/reorder", { plans });
+// 把套餐的流量 / 用户组 / 规则数 / 限速推送给持有此套餐的用户，返回推送到的用户数
+export const pushPackagePlanUpdate = (data: { id: number; flow: boolean; group: boolean; rules: boolean; limits: boolean }) => Network.post("/package/pushUpdate", data);
 
 // 订单相关操作 - 全部使用POST请求
 export const purchasePackage = (packageId: number, redeemCode?: string) => Network.post("/order/purchase", { packageId, redeemCode });

@@ -426,6 +426,18 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     }
 
     /**
+     * 把用户当前套餐的限速重新下发到该用户运行中的规则
+     */
+    @Override
+    public R refreshUserLimits(Long id) {
+        if (id == null || this.getById(id) == null) {
+            return R.err(ERROR_USER_NOT_FOUND);
+        }
+        forwardService.refreshLimitsAfterCommit(Collections.singletonList(id.intValue()));
+        return R.ok();
+    }
+
+    /**
      * 删除用户
      * 级联删除用户相关的所有数据，包括转发、Gost服务和隧道权限
      * 

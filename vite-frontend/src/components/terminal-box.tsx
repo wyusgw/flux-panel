@@ -8,7 +8,7 @@ export const TERM_ERR = 'text-[#ff7b72]';
 
 export function TerminalBox({ children, className = '' }: { children: ReactNode; className?: string }) {
   return (
-    <div className={`font-mono text-xs leading-relaxed bg-[#0d1117] rounded-md px-3 py-2.5 overflow-x-auto whitespace-pre ${className}`}>
+    <div className={`w-full min-w-0 font-mono text-xs leading-relaxed bg-[#0d1117] rounded-md px-3 py-2.5 overflow-x-auto whitespace-pre ${className}`}>
       {children}
     </div>
   );

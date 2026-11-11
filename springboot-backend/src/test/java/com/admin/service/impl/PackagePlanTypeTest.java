@@ -105,6 +105,22 @@ class PackagePlanTypeTest {
     }
 
     @Test
+    void weeklySemiannualAndYearlyExtendExpiry() {
+        long base = at(2027, 3, 15);
+        assertEquals(base + 14 * DAY, plan(PackagePlan.TYPE_WEEKLY, 2, 0).computeExpTime(base));
+        assertEquals(at(2027, 9, 15), plan(PackagePlan.TYPE_SEMIANNUAL, 1, 0).computeExpTime(base));
+        assertEquals(at(2028, 3, 15), plan(PackagePlan.TYPE_SEMIANNUAL, 2, 0).computeExpTime(base));
+        assertEquals(at(2028, 3, 15), plan(PackagePlan.TYPE_YEARLY, 1, 0).computeExpTime(base));
+        // 月末：8/31 + 半年 = 2/28，2/29 + 1 年 = 2/28
+        assertEquals(at(2028, 2, 29), plan(PackagePlan.TYPE_SEMIANNUAL, 1, 0).computeExpTime(at(2027, 8, 31)));
+        assertEquals(at(2029, 2, 28), plan(PackagePlan.TYPE_YEARLY, 1, 0).computeExpTime(at(2028, 2, 29)));
+
+        PackagePlanServiceImpl service = new PackagePlanServiceImpl();
+        assertEquals("时长倍数至少为 1", ReflectionTestUtils.invokeMethod(service, "normalizeType", plan(PackagePlan.TYPE_YEARLY, 0, 0)));
+        assertNull(ReflectionTestUtils.invokeMethod(service, "normalizeType", plan(PackagePlan.TYPE_WEEKLY, 3, 0)));
+    }
+
+    @Test
     void dailyTrafficAndStackExpiry() {
         long base = at(2027, 3, 15);
         assertEquals(base + 10 * DAY, plan(PackagePlan.TYPE_DAILY, 10, 0).computeExpTime(base));
@@ -133,7 +149,7 @@ class PackagePlanTypeTest {
         PackagePlan emptyStack = plan(PackagePlan.TYPE_TRAFFIC_STACK, 0, 0);
         assertEquals("可叠加流量包的流量必须大于 0", ReflectionTestUtils.invokeMethod(service, "normalizeType", emptyStack));
 
-        assertEquals("套餐类型不合法", ReflectionTestUtils.invokeMethod(service, "normalizeType", plan("yearly", 1, 0)));
+        assertEquals("套餐类型不合法", ReflectionTestUtils.invokeMethod(service, "normalizeType", plan("quarterly", 1, 0)));
 
         PackagePlan legacy = plan("normal", 30, 0);
         assertNull(ReflectionTestUtils.invokeMethod(service, "normalizeType", legacy));

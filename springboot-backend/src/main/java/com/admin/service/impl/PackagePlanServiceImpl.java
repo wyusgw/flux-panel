@@ -214,7 +214,7 @@ public class PackagePlanServiceImpl extends ServiceImpl<PackagePlanMapper, Packa
 
     /**
      * 校验并规范套餐类型和时长倍数：未传类型时按旧规则推断（有效天数大于 0 为日付，否则为不限时流量包）；
-     * 月付 / 日付的时长倍数至少为 1；不限时流量包不使用时长倍数，统一存 0；可叠加流量包必须有流量
+     * 月付 / 日付 / 周付 / 半年付 / 一年付的时长倍数至少为 1；不限时流量包不使用时长倍数，统一存 0；可叠加流量包必须有流量
      *
      * @return 校验失败的提示，通过时返回 null
      */
@@ -227,7 +227,7 @@ public class PackagePlanServiceImpl extends ServiceImpl<PackagePlanMapper, Packa
             return "套餐类型不合法";
         }
         plan.setType(type);
-        if (PackagePlan.TYPE_MONTHLY.equals(type) || PackagePlan.TYPE_DAILY.equals(type)) {
+        if (PackagePlan.DURATION_TYPES.contains(type)) {
             if (plan.getDurationDays() == null || plan.getDurationDays() < 1) {
                 return "时长倍数至少为 1";
             }

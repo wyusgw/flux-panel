@@ -40,13 +40,23 @@ public class PackagePlan extends BaseEntity {
     public static final String TYPE_MONTHLY = "monthly";
     /** 日付：到期时间顺延 时长倍数 天 */
     public static final String TYPE_DAILY = "daily";
-    public static final List<String> TYPES = Arrays.asList(TYPE_TRAFFIC, TYPE_TRAFFIC_STACK, TYPE_MONTHLY, TYPE_DAILY);
+    /** 周付：到期时间顺延 时长倍数 × 7 天 */
+    public static final String TYPE_WEEKLY = "weekly";
+    /** 半年付：到期时间按自然月顺延 时长倍数 × 6 个月 */
+    public static final String TYPE_SEMIANNUAL = "semiannual";
+    /** 一年付：到期时间按自然月顺延 时长倍数 × 12 个月 */
+    public static final String TYPE_YEARLY = "yearly";
+    public static final List<String> TYPES = Arrays.asList(TYPE_TRAFFIC, TYPE_TRAFFIC_STACK, TYPE_MONTHLY, TYPE_DAILY,
+            TYPE_WEEKLY, TYPE_SEMIANNUAL, TYPE_YEARLY);
+    /** 按时长倍数顺延到期时间的类型（时长倍数至少为 1） */
+    public static final List<String> DURATION_TYPES = Arrays.asList(TYPE_MONTHLY, TYPE_DAILY, TYPE_WEEKLY, TYPE_SEMIANNUAL, TYPE_YEARLY);
 
     /** 永久（不限时）套餐的到期时间：9999-09-09 08:09:09（UTC+8）；旧版本写入的是 2099-12-31 23:59:59（4102415999000），升级脚本会改成新值 */
     public static final long PERMANENT_EXP_TIME = 253392451749000L;
 
     /**
-     * 套餐类型：traffic-不限时流量包，traffic_stack-不限时流量包（可叠加），monthly-月付，daily-日付；
+     * 套餐类型：traffic-不限时流量包，traffic_stack-不限时流量包（可叠加），monthly-月付，daily-日付，
+     * weekly-周付，semiannual-半年付，yearly-一年付；
      * 旧数据为 normal（有效天数大于 0 视为日付，否则视为不限时流量包），升级脚本会改为新类型
      */
     private String type;
@@ -118,12 +128,14 @@ public class PackagePlan extends BaseEntity {
         if (TYPE_TRAFFIC_STACK.equals(t)) {
             return null;
         }
-        if (TYPE_MONTHLY.equals(t) && n > 0) {
-            // 自然月顺延；月末日期自动落到目标月最后一天（如 1/31 + 1 个月 = 2/28 或 2/29）
-            return Instant.ofEpochMilli(baseExpTime).atZone(ZoneId.systemDefault()).plusMonths(n).toInstant().toEpochMilli();
+        // 月付 / 半年付 / 一年付按自然月顺延；月末日期自动落到目标月最后一天（如 1/31 + 1 个月 = 2/28 或 2/29）
+        int months = TYPE_MONTHLY.equals(t) ? n : TYPE_SEMIANNUAL.equals(t) ? n * 6 : TYPE_YEARLY.equals(t) ? n * 12 : 0;
+        if (months > 0) {
+            return Instant.ofEpochMilli(baseExpTime).atZone(ZoneId.systemDefault()).plusMonths(months).toInstant().toEpochMilli();
         }
-        if (TYPE_DAILY.equals(t) && n > 0) {
-            return baseExpTime + n * 24L * 60L * 60L * 1000L;
+        int days = TYPE_DAILY.equals(t) ? n : TYPE_WEEKLY.equals(t) ? n * 7 : 0;
+        if (days > 0) {
+            return baseExpTime + days * 24L * 60L * 60L * 1000L;
         }
         return PERMANENT_EXP_TIME;
     }

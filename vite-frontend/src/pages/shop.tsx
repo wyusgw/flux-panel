@@ -12,7 +12,7 @@ import toast from 'react-hot-toast';
 import { getPackagePlanList, purchasePackage, getUserPackageInfo, redeemPackageCode, createRechargeOrder, getRechargeOrderStatus } from "@/api";
 import { getCachedConfigs } from "@/config/site";
 import { EmptyState } from "@/components/empty-state";
-import { effectivePackageType, packageTypeLabel, packageDurationLabel } from "@/utils/package-type";
+import { effectivePackageType, isDurationType, packageTypeLabel, packageDurationLabel } from "@/utils/package-type";
 
 interface PackagePlanItem {
   id: number;
@@ -96,7 +96,7 @@ const NoPaymentIcon = () => (
 const planTypeLabel = (plan: PackagePlanItem) => {
   const type = effectivePackageType(plan.type, plan.durationDays);
   const label = packageTypeLabel(type, plan.durationDays);
-  return type === 'monthly' || type === 'daily' ? `${label}（${packageDurationLabel(type, plan.durationDays)}）` : label;
+  return isDurationType(type) ? `${label}（${packageDurationLabel(type, plan.durationDays)}）` : label;
 };
 
 const TagIcon = () => (

@@ -13,7 +13,7 @@ import { Spinner } from "@heroui/spinner";
 import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from "@heroui/table";
 import toast from 'react-hot-toast';
 
-import { PACKAGE_TYPE_OPTIONS, effectivePackageType, packageTypeLabel, packageDurationLabel } from "@/utils/package-type";
+import { PACKAGE_TYPE_OPTIONS, DURATION_TYPE_UNITS, DURATION_TYPE_TIPS, isDurationType, effectivePackageType, packageTypeLabel, packageDurationLabel } from "@/utils/package-type";
 import { EmptyState } from "@/components/empty-state";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { showApiFailure } from "@/components/error-dialog";
@@ -30,7 +30,6 @@ import {
   reorderPackagePlans,
   getUserGroupList
 } from "@/api";
-import RefreshButton from "@/components/refresh-button";
 
 const DragHandleIcon = () => (
   <svg className="w-4 h-4 text-default-400" viewBox="0 0 24 24" fill="currentColor">
@@ -161,7 +160,7 @@ export default function PackagePlanPage() {
     if (!form.name.trim()) messages.push('套餐名称不能为空');
     if (form.price < 0) messages.push('价格不能小于 0');
     if (!form.type) messages.push('请选择套餐类型');
-    if ((form.type === 'monthly' || form.type === 'daily') && !(form.durationDays >= 1)) messages.push('时长倍数至少为 1');
+    if (isDurationType(form.type) && !(form.durationDays >= 1)) messages.push('时长倍数至少为 1');
     if (!form.groupId) messages.push('请选择分配的用户组');
     if (form.traffic < 0) messages.push('流量不能小于 0');
     if (form.type === 'traffic_stack' && !(form.traffic > 0)) messages.push('可叠加流量包的流量必须大于 0');
@@ -352,7 +351,6 @@ export default function PackagePlanPage() {
           <div className="flex flex-wrap items-center gap-3.5">
             {selectedIds.length > 0 && <Button size="sm" variant="bordered" startContent={<ToolbarDeleteIcon />} onPress={() => setBatchDeleteModalOpen(true)}>批量删除（{selectedIds.length}）</Button>}
             <Button size="sm" variant="bordered" startContent={<ToolbarAddIcon />} onPress={handleAdd}>添加套餐</Button>
-            <RefreshButton onRefresh={() => loadData(false)} />
           </div>
           <div className="-mx-4 -mb-4 settings-table-scroll">
             <Table removeWrapper aria-label="套餐列表" selectionMode="multiple" selectedKeys={selectedKeys} onSelectionChange={setSelectedKeys} classNames={{ base: "w-full", table: "w-full management-table-selectable", th: "management-table-heading", td: "management-table-cell" }}>
@@ -445,7 +443,7 @@ export default function PackagePlanPage() {
 
                   <Select labelPlacement="outside-top"
                     size="sm"
-                    label={<HelpTooltip content={"不限时流量包：覆盖用户组、流量、规则数并清零已用流量，不限时间\n不限时流量包（可叠加）：只把流量加到用户当前的流量额度上，其它不变\n月付 / 日付：按时长倍数顺延到期时间（月付按自然月）"}>类型</HelpTooltip>}
+                    label={<HelpTooltip content={"不限时流量包：覆盖用户组、流量、规则数并清零已用流量，不限时间\n不限时流量包（可叠加）：只把流量加到用户当前的流量额度上，其它不变\n日付 / 周付：按时长倍数顺延天数（周付每倍 7 天）\n月付 / 半年付 / 一年付：按时长倍数顺延自然月（每倍 1 / 6 / 12 个月）"}>类型</HelpTooltip>}
                     selectedKeys={form.type ? [form.type] : []}
                     onSelectionChange={(keys) => {
                       const value = Array.from(keys)[0] as string;
@@ -460,10 +458,10 @@ export default function PackagePlanPage() {
                     ))}
                   </Select>
 
-                  {(form.type === 'monthly' || form.type === 'daily') && (
+                  {isDurationType(form.type) && (
                     <Input labelPlacement="outside-top"
                       size="sm" autoComplete="off"
-                      label={<HelpTooltip content={form.type === 'monthly' ? '购买一次顺延的月数，按自然月计算，从当前到期时间与现在中较晚的一个开始' : '购买一次顺延的天数，从当前到期时间与现在中较晚的一个开始'}>时长倍数</HelpTooltip>}
+                      label={<HelpTooltip content={`${DURATION_TYPE_TIPS[form.type as keyof typeof DURATION_TYPE_TIPS] ?? ''}，从当前到期时间与现在中较晚的一个开始`}>时长倍数</HelpTooltip>}
                       type="number"
                       value={form.durationDays.toString()}
                       onChange={(e) => setForm(prev => ({ ...prev, durationDays: parseInt(e.target.value) || 0 }))}
@@ -471,7 +469,7 @@ export default function PackagePlanPage() {
                       errorMessage={errors.durationDays}
                       variant="bordered"
                       classNames={{ inputWrapper: 'pr-0 overflow-hidden' }}
-                      endContent={<span className="flex h-full items-center border-l-1 border-default-300 bg-default-100 px-3 text-xs font-semibold text-foreground whitespace-nowrap">{form.type === 'monthly' ? '个月' : '天'}</span>}
+                      endContent={<span className="flex h-full items-center border-l-1 border-default-300 bg-default-100 px-3 text-xs font-semibold text-foreground whitespace-nowrap">{DURATION_TYPE_UNITS[form.type as keyof typeof DURATION_TYPE_UNITS]}</span>}
                     />
                   )}
 

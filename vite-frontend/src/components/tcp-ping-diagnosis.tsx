@@ -1,7 +1,6 @@
 import { useRef, useState } from "react";
 import { Spinner } from "@heroui/spinner";
 import { Card } from "@heroui/card";
-import { Chip } from "@heroui/chip";
 import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter } from "@heroui/modal";
 import { Button } from "@heroui/button";
 import { TerminalBox, TERM_TEXT, TERM_DIM, TERM_ERR } from "@/components/terminal-box";
@@ -107,7 +106,6 @@ function DiagnosisDetailModal({
   /** 正在按「诊断详情连接次数」重新测试：期间只显示加载提示，测完用新结果替换 */
   loading?: boolean;
 }) {
-  const hasAttempts = !!result?.attempts && result.attempts.length > 0;
   return (
     <Modal isOpen={result !== null} onOpenChange={(open) => !open && onClose()} size="lg" backdrop="opaque" placement="center" hideCloseButton>
       <ModalContent>
@@ -124,34 +122,10 @@ function DiagnosisDetailModal({
                   <span className="text-default-600">正在按详情次数重新测试...</span>
                 </div>
               ) : (
-              <>
-              <div className="space-y-1 text-sm mb-3">
-                <div className="flex justify-between gap-4"><span className="text-default-500">状态</span>
-                  <Chip size="sm" variant="light" color={result.success ? 'success' : 'danger'}>{result.success ? '成功' : '失败'}</Chip>
-                </div>
-                {!hasAttempts && result.averageTime !== undefined && (
-                  <div className="flex justify-between gap-4"><span className="text-default-500">平均延迟</span><span className="font-mono text-foreground">{result.averageTime.toFixed(0)}ms</span></div>
-                )}
-                {!hasAttempts && result.packetLoss !== undefined && (
-                  <div className="flex justify-between gap-4"><span className="text-default-500">丢包率</span><span className="font-mono text-foreground">{result.packetLoss.toFixed(0)}%</span></div>
-                )}
-                {result.message && (
-                  <div className="flex justify-between gap-4"><span className="text-default-500">消息</span><span className="text-foreground text-right">{result.message}</span></div>
-                )}
-                {result.timestamp && (
-                  <div className="flex justify-between gap-4"><span className="text-default-500">时间</span><span className="font-mono text-foreground">{new Date(result.timestamp).toLocaleString()}</span></div>
-                )}
-                {result.dispatchFailed && (
-                  <div className="flex justify-between gap-4"><span className="text-default-500">下发状态</span><Chip size="sm" variant="light" color="danger">下发失败</Chip></div>
-                )}
+              // 只显示连接尝试明细，终端框铺满整个弹窗内容区，内容过多时在框内滚动
+              <div className="max-h-[60vh] overflow-y-auto rounded-md">
+                {renderDiagnosisLines(result, undefined, 'min-h-[200px]')}
               </div>
-              <div>
-                <h4 className="text-xs font-semibold text-default-500 mb-1">连接尝试明细</h4>
-                <div className="max-h-80 overflow-y-auto rounded-md">
-                  {renderDiagnosisLines(result)}
-                </div>
-              </div>
-              </>
               )}
             </ModalBody>
             <ModalFooter>

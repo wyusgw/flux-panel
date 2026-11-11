@@ -78,7 +78,7 @@ public final class MenuPermission {
                 "speedLimit/create", "speedLimit/update", "speedLimit/delete", "speedLimit/list", "speedLimit/tunnels");
         gate(new String[]{"tunnel", "user"}, "tunnel/list");
         gate(new String[]{"user"}, "tunnel/user/assign", "tunnel/user/list", "tunnel/user/remove", "tunnel/user/update",
-                "user/create", "user/update", "user/delete", "user/reset",
+                "user/create", "user/update", "user/delete", "user/reset", "user/refreshLimits",
                 "demo/permission", "demo/updatePermission", "demo/restore", "demo/commit",
                 "cleanup/invalidUsers", "cleanup/cleanInvalidUsers", "cleanup/invalidForwards", "cleanup/cleanInvalidForwards");
         gate(new String[]{"adminDashboard", "orderManagement", "user"}, "user/list");
@@ -101,7 +101,7 @@ public final class MenuPermission {
         gate(new String[]{"orderManagement"}, "order/batchDelete", "order/manualCreate", "order/updateStatus");
         gate(new String[]{"orders"}, "order/list");
         gate(new String[]{"shop"}, "order/redeem", "recharge/create", "recharge/status");
-        gate(new String[]{"package"}, "package/create", "package/update", "package/delete", "package/batchDelete", "package/reorder");
+        gate(new String[]{"package"}, "package/create", "package/update", "package/delete", "package/batchDelete", "package/reorder", "package/pushUpdate");
         gate(new String[]{"redeemCode"}, "redeemCode/batchCreate", "redeemCode/delete", "redeemCode/list");
         gate(new String[]{"inviteCode"}, "inviteCode/batchCreate", "inviteCode/delete", "inviteCode/list");
         gate(new String[]{"adminDashboard", "taskQueue"}, "taskQueue/health");

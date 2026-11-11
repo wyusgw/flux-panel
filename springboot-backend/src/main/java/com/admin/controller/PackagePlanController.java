@@ -71,6 +71,16 @@ public class PackagePlanController extends BaseController {
 
     @LogAnnotation
     @RequireRole
+    @PostMapping("/pushUpdate")
+    public R pushUpdate(@RequestBody Map<String, Object> params) {
+        Object id = params.get("id");
+        return packagePlanService.pushPackagePlanToUsers(id == null ? null : Long.valueOf(id.toString()),
+                Boolean.TRUE.equals(params.get("flow")), Boolean.TRUE.equals(params.get("group")),
+                Boolean.TRUE.equals(params.get("rules")), Boolean.TRUE.equals(params.get("limits")));
+    }
+
+    @LogAnnotation
+    @RequireRole
     @PostMapping("/reorder")
     public R reorder(@RequestBody Map<String, Object> params) {
         @SuppressWarnings("unchecked")

@@ -282,9 +282,8 @@ export function SimpleGroupPage({ label, countLabel, countKey, help, api }: Simp
         isOpen={deleteModalOpen}
         onOpenChange={setDeleteModalOpen}
         title={`删除${label}`}
-        message={<>你确定要删除{label} {groupToDelete ? groupText(groupToDelete) : ''} 吗?</>}
+        message={<>你确定要删除{label} {groupToDelete ? groupText(groupToDelete) : ''} 吗？</>}
         confirmText="确定"
-        confirmColor="danger"
         onConfirm={confirmDelete}
         loading={deleteLoading}
       />

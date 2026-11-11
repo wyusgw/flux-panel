@@ -707,10 +707,9 @@ export default function SingleTunnelPage() {
       <ConfirmDialog
         isOpen={deleteModalOpen}
         onOpenChange={setDeleteModalOpen}
-        title="确认删除"
-        message={<>确定要删除设备 {groupToDelete?.name} 吗？删除后该设备将无法在转发规则中使用，仍在使用它的规则需要先处理。</>}
+        title="删除设备"
+        message={<>你确定要删除设备 {groupToDelete?.name} (#{groupToDelete?.id}) 吗？</>}
         confirmText="确定"
-        confirmColor="danger"
         onConfirm={confirmDelete}
         loading={deleteLoading}
       />

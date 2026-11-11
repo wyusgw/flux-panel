@@ -66,6 +66,14 @@ public class UserController extends BaseController {
     }
 
     @LogAnnotation
+    @RequireRole
+    @PostMapping("/refreshLimits")
+    public R refreshLimits(@RequestBody Map<String, Object> params) {
+        Object id = params.get("id");
+        return userService.refreshUserLimits(id == null ? null : Long.valueOf(id.toString()));
+    }
+
+    @LogAnnotation
     @PostMapping("/package")
     public R getUserPackageInfo() {
         return userService.getUserPackageInfo();

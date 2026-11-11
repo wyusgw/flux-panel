@@ -818,10 +818,9 @@ export default function TunnelPage() {
         <ConfirmDialog
           isOpen={deleteModalOpen}
           onOpenChange={setDeleteModalOpen}
-          title="确认删除"
-          message={<>你确定要删除隧道 {tunnelToDelete?.name} 吗？此操作不可恢复，请谨慎操作。</>}
+          title="删除隧道"
+          message={<>你确定要删除隧道 {tunnelToDelete?.name} (#{tunnelToDelete?.id}) 吗？</>}
           confirmText="确定"
-          confirmColor="danger"
           onConfirm={confirmDelete}
           loading={deleteLoading}
         />

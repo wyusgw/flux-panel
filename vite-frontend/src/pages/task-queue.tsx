@@ -366,10 +366,9 @@ export default function TaskQueuePage() {
       <ConfirmDialog
         isOpen={deleteModalOpen}
         onOpenChange={setDeleteModalOpen}
-        title="确认移除"
-        message={<>确定要把这条「{itemToDelete?.taskTypeLabel}」任务从重试队列移除吗？移除后不会再自动重试。</>}
+        title="移除任务"
+        message={<>你确定要移除「{itemToDelete?.taskTypeLabel}」任务吗？</>}
         confirmText="确定"
-        confirmColor="danger"
         onConfirm={confirmDelete}
         loading={deleteLoading}
       />

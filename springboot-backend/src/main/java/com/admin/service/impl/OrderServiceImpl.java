@@ -259,34 +259,41 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
 
         User updateUser = new User();
         updateUser.setId(user.getId());
+        boolean stackTraffic = PackagePlan.TYPE_TRAFFIC_STACK.equals(packagePlan.effectiveType());
 
-        // 应用套餐：分配用户组、重置流量与转发数配额、延长/设置到期时间
-        updateUser.setGroupId(packagePlan.getGroupId());
-        updateUser.setPackageId(packagePlan.getId());
-        // 因到期停用的账号购买后恢复；管理员禁用的账号不受影响。已暂停的规则由用户自己恢复
-        if (User.disabledByExpiry(user)) {
-            updateUser.setStatus(1);
-            updateUser.setDisableReason(User.DISABLE_REASON_NONE);
-        }
-        Long planTraffic = packagePlan.getTraffic();
-        updateUser.setFlow(planTraffic == null || planTraffic <= 0 ? UNLIMITED_FLOW : planTraffic);
-        updateUser.setInFlow(0L);
-        updateUser.setOutFlow(0L);
-        Integer planMaxRules = packagePlan.getMaxRules();
-        updateUser.setNum(planMaxRules == null || planMaxRules <= 0 ? UNLIMITED_RULES : planMaxRules);
-
-        // 套餐设置了流量重置（非 -1）时，把重置日与重置时刻写入用户；-1 表示沿用用户当前的重置设置
-        if (packagePlan.getFlowResetTime() != null && packagePlan.getFlowResetTime() >= 0) {
-            updateUser.setFlowResetTime(packagePlan.getFlowResetTime());
-            updateUser.setFlowResetClock(StringUtils.isBlank(packagePlan.getFlowResetClock()) ? "00:00" : packagePlan.getFlowResetClock().trim());
-        }
-
-        long baseExpTime = (user.getExpTime() != null && user.getExpTime() > currentTime) ? user.getExpTime() : currentTime;
-        if (packagePlan.getDurationDays() != null && packagePlan.getDurationDays() > 0) {
-            updateUser.setExpTime(baseExpTime + packagePlan.getDurationDays() * 24L * 60L * 60L * 1000L);
+        if (stackTraffic) {
+            // 可叠加流量包：只把套餐流量加到当前流量额度上，不改用户组、套餐、到期时间、规则数和已用流量；
+            // 用户本来就是不限流量时保持不变，叠加后不超过「不限流量」的标记值
+            Long currentFlow = user.getFlow();
+            Long planTraffic = packagePlan.getTraffic();
+            if (currentFlow != null && currentFlow < UNLIMITED_FLOW && planTraffic != null && planTraffic > 0) {
+                updateUser.setFlow(Math.min(currentFlow + planTraffic, UNLIMITED_FLOW - 1));
+            }
         } else {
-            // 永久套餐：设置为一个极远的到期时间
-            updateUser.setExpTime(4102415999000L); // 2099-12-31
+            // 应用套餐：分配用户组、重置流量与转发数配额、延长/设置到期时间
+            updateUser.setGroupId(packagePlan.getGroupId());
+            updateUser.setPackageId(packagePlan.getId());
+            // 因到期停用的账号购买后恢复；管理员禁用的账号不受影响。已暂停的规则由用户自己恢复
+            if (User.disabledByExpiry(user)) {
+                updateUser.setStatus(1);
+                updateUser.setDisableReason(User.DISABLE_REASON_NONE);
+            }
+            Long planTraffic = packagePlan.getTraffic();
+            updateUser.setFlow(planTraffic == null || planTraffic <= 0 ? UNLIMITED_FLOW : planTraffic);
+            updateUser.setInFlow(0L);
+            updateUser.setOutFlow(0L);
+            Integer planMaxRules = packagePlan.getMaxRules();
+            updateUser.setNum(planMaxRules == null || planMaxRules <= 0 ? UNLIMITED_RULES : planMaxRules);
+
+            // 套餐设置了流量重置（非 -1）时，把重置日与重置时刻写入用户；-1 表示沿用用户当前的重置设置
+            if (packagePlan.getFlowResetTime() != null && packagePlan.getFlowResetTime() >= 0) {
+                updateUser.setFlowResetTime(packagePlan.getFlowResetTime());
+                updateUser.setFlowResetClock(StringUtils.isBlank(packagePlan.getFlowResetClock()) ? "00:00" : packagePlan.getFlowResetClock().trim());
+            }
+
+            // 月付按自然月、日付按天，从「当前到期时间与现在中较晚的一个」顺延；不限时流量包设为 9999-09-09 08:09:09
+            long baseExpTime = (user.getExpTime() != null && user.getExpTime() > currentTime) ? user.getExpTime() : currentTime;
+            updateUser.setExpTime(packagePlan.computeExpTime(baseExpTime));
         }
         updateUser.setUpdatedTime(currentTime);
 
@@ -296,7 +303,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         }
 
         // 换了套餐：套餐限速随之变化，事务提交后把该用户名下运行中规则的限速刷新到节点（续费同一个套餐则不用）
-        if (!Objects.equals(user.getPackageId(), packagePlan.getId())) {
+        if (!stackTraffic && !Objects.equals(user.getPackageId(), packagePlan.getId())) {
             forwardService.refreshLimitsAfterCommit(Collections.singletonList(user.getId().intValue()));
         }
 

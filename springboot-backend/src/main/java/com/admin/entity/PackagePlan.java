@@ -7,6 +7,10 @@ import lombok.Data;
 import lombok.EqualsAndHashCode;
 
 import java.math.BigDecimal;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.util.Arrays;
+import java.util.List;
 
 /**
  * <p>
@@ -28,8 +32,22 @@ public class PackagePlan extends BaseEntity {
 
     private String name;
 
+    /** 不限时流量包：购买后覆盖用户组、流量、规则数，清零已用流量，到期时间设为 9999-09-09 08:09:09 */
+    public static final String TYPE_TRAFFIC = "traffic";
+    /** 不限时流量包（可叠加）：只把套餐流量加到用户当前的流量额度上，不改用户组、到期时间、规则数和已用流量 */
+    public static final String TYPE_TRAFFIC_STACK = "traffic_stack";
+    /** 月付：到期时间按自然月顺延 时长倍数 个月 */
+    public static final String TYPE_MONTHLY = "monthly";
+    /** 日付：到期时间顺延 时长倍数 天 */
+    public static final String TYPE_DAILY = "daily";
+    public static final List<String> TYPES = Arrays.asList(TYPE_TRAFFIC, TYPE_TRAFFIC_STACK, TYPE_MONTHLY, TYPE_DAILY);
+
+    /** 永久（不限时）套餐的到期时间：9999-09-09 08:09:09（UTC+8）；旧版本写入的是 2099-12-31 23:59:59（4102415999000），升级脚本会改成新值 */
+    public static final long PERMANENT_EXP_TIME = 253392451749000L;
+
     /**
-     * 套餐类型（normal-普通套餐）
+     * 套餐类型：traffic-不限时流量包，traffic_stack-不限时流量包（可叠加），monthly-月付，daily-日付；
+     * 旧数据为 normal（有效天数大于 0 视为日付，否则视为不限时流量包），升级脚本会改为新类型
      */
     private String type;
 
@@ -44,7 +62,7 @@ public class PackagePlan extends BaseEntity {
     private Long traffic;
 
     /**
-     * 有效天数（0 或空为永久有效）
+     * 时长倍数：月付为月数，日付为天数；不限时流量包不使用（为 0）
      */
     private Integer durationDays;
 
@@ -80,4 +98,33 @@ public class PackagePlan extends BaseEntity {
      * 套餐流量重置时刻（HH:mm，默认 00:00），与 flowResetTime 配合使用
      */
     private String flowResetClock;
+
+    /** 实际生效的类型：兼容旧的 normal / 空值 */
+    public String effectiveType() {
+        if (TYPES.contains(type)) {
+            return type;
+        }
+        return durationDays != null && durationDays > 0 ? TYPE_DAILY : TYPE_TRAFFIC;
+    }
+
+    /**
+     * 购买后用户的新到期时间；可叠加流量包不修改到期时间，返回 null
+     *
+     * @param baseExpTime 顺延起点：当前到期时间与现在中较晚的一个
+     */
+    public Long computeExpTime(long baseExpTime) {
+        String t = effectiveType();
+        int n = durationDays == null ? 0 : durationDays;
+        if (TYPE_TRAFFIC_STACK.equals(t)) {
+            return null;
+        }
+        if (TYPE_MONTHLY.equals(t) && n > 0) {
+            // 自然月顺延；月末日期自动落到目标月最后一天（如 1/31 + 1 个月 = 2/28 或 2/29）
+            return Instant.ofEpochMilli(baseExpTime).atZone(ZoneId.systemDefault()).plusMonths(n).toInstant().toEpochMilli();
+        }
+        if (TYPE_DAILY.equals(t) && n > 0) {
+            return baseExpTime + n * 24L * 60L * 60L * 1000L;
+        }
+        return PERMANENT_EXP_TIME;
+    }
 }

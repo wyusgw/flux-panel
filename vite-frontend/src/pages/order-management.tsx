@@ -414,10 +414,9 @@ export default function OrderManagementPage() {
       <ConfirmDialog
         isOpen={deleteModalOpen}
         onOpenChange={setDeleteModalOpen}
-        title="确认删除"
-        message={<>你确定要删除选中的 {deleteTargetIds.length} 条订单吗？此操作不可撤销。</>}
+        title="删除订单"
+        message={<>你确定要删除选中的 {deleteTargetIds.length} 条订单吗？</>}
         confirmText="确定"
-        confirmColor="danger"
         onConfirm={confirmDelete}
         loading={deleteLoading}
       />

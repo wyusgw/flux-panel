@@ -1,5 +1,5 @@
 import { TipButton } from "@/components/tip-button";
-import { AimOutlined, DeleteOutlined, EditOutlined } from "@/components/ant-icons";
+import { QuestionCircleOutlined, DeleteOutlined, EditOutlined } from "@/components/ant-icons";
 import { useState, useEffect } from "react";
 import { ToolbarAddIcon } from "@/components/toolbar-icons";
 import { Card, CardBody, CardHeader } from "@heroui/card";
@@ -521,7 +521,7 @@ export default function TunnelPage() {
                           <TableCell>
                             <div className="flex justify-end items-center gap-1">
                               <TipButton isIconOnly size="sm" variant="flat" title={tunnel.status === 1 ? '诊断' : '仅启用状态下可诊断'} isDisabled={tunnel.status !== 1} onPress={() => handleDiagnose(tunnel)}>
-                                <AimOutlined />
+                                <QuestionCircleOutlined />
                               </TipButton>
                               <TipButton isIconOnly size="sm" variant="flat" title="编辑" onPress={() => handleEdit(tunnel)}>
                                 <EditOutlined />
@@ -825,34 +825,22 @@ export default function TunnelPage() {
           loading={deleteLoading}
         />
 
-        {/* 诊断结果模态框 */}
-        <Modal 
+        {/* 诊断结果：与转发规则的诊断结果同一样式，标题只有「诊断结果 (#id)」，底部只有关闭 */}
+        <Modal
           isOpen={diagnosisModalOpen}
           onOpenChange={setDiagnosisModalOpen}
-          size="2xl"
-        scrollBehavior="outside"
-        backdrop="opaque"
-        placement="center"
+          size="3xl"
+          scrollBehavior="outside"
+          backdrop="opaque"
+          placement="center"
+          hideCloseButton
+          classNames={{ base: "max-w-[800px]" }}
         >
           <ModalContent>
             {(onClose) => (
               <>
-                <ModalHeader className="flex flex-col gap-1">
-                  <h2 className="text-base font-semibold">隧道诊断结果</h2>
-                  {currentDiagnosisTunnel && (
-                    <div className="flex items-center gap-2">
-                      <span className="text-small text-default-500">{currentDiagnosisTunnel.name}</span>
-                      <Chip 
-                        color={currentDiagnosisTunnel.type === 1 ? 'primary' : 'secondary'} 
-                        variant="light" 
-                        size="sm"
-                      >
-                        {currentDiagnosisTunnel.type === 1 ? '端口转发' : '隧道转发'}
-                      </Chip>
-                    </div>
-                  )}
-                </ModalHeader>
-                <ModalBody>
+                <ModalHeader>诊断结果{currentDiagnosisTunnel ? ` (#${currentDiagnosisTunnel.id})` : ''}</ModalHeader>
+                <ModalBody className="py-0">
                   {diagnosisLoading ? (
                     <div className="flex items-center justify-center py-16">
                       <div className="flex items-center gap-3">
@@ -873,18 +861,7 @@ export default function TunnelPage() {
                   )}
                 </ModalBody>
                 <ModalFooter>
-                  <Button size="sm" variant="bordered" onPress={onClose}>
-                    关闭
-                  </Button>
-                  {currentDiagnosisTunnel && (
-                    <Button size="sm"
-                      color="primary"
-                      onPress={() => handleDiagnose(currentDiagnosisTunnel)}
-                      isDisabled={diagnosisLoading}
-                    >
-                      重新诊断
-                    </Button>
-                  )}
+                  <Button size="sm" color="primary" className="dialog-btn" onPress={onClose}>关闭</Button>
                 </ModalFooter>
               </>
             )}

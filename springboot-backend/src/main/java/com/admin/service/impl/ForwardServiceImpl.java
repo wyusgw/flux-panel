@@ -2223,7 +2223,7 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         String operation = targetStatus == FORWARD_STATUS_PAUSED ? "暂停" : "恢复";
         log.warn("转发 {} 已记为{}，但未能同步到节点：{}", forward.getId(), operation, reason);
         enqueueForwardSyncTask(forward, tunnel, reason);
-        return okWithMsg("服务已" + operation + "，节点暂未同步，节点就绪后会自动补推");
+        return okWithMsg("服务已" + operation);
     }
 
     /**

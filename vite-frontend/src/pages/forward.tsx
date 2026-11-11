@@ -1,12 +1,13 @@
 import { TipButton } from "@/components/tip-button";
 import { RuleSearchModal, EMPTY_RULE_SEARCH, countRuleSearch, matchRuleSearch } from "@/components/rule-search-modal";
-import { AimOutlined, BarChartOutlined, CheckSquareOutlined, CopyOutlined, DeleteOutlined, EditOutlined, FileAddOutlined, FilterFilled, FireOutlined, FolderAddOutlined, InfoCircleOutlined, PauseCircleOutlined, PlayCircleOutlined, SearchOutlined, SettingOutlined, SwapOutlined, RightOutlined, EditFilled } from "@/components/ant-icons";
+import { QuestionCircleOutlined, BarChartOutlined, CheckSquareOutlined, CopyOutlined, DeleteOutlined, EditOutlined, FileAddOutlined, FilterFilled, FireOutlined, FolderAddOutlined, InfoCircleOutlined, PauseCircleOutlined, PlayCircleOutlined, SearchOutlined, SettingOutlined, SwapOutlined, RightOutlined, EditFilled } from "@/components/ant-icons";
 import { useState, useEffect, useRef } from "react";
 import { useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Button } from "@heroui/button";
 import { Input } from "@heroui/input";
 import { Textarea } from "@heroui/input";
+import { Tooltip } from "@heroui/tooltip";
 import { Select, SelectItem } from "@heroui/select";
 import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter } from "@heroui/modal";
 import { Table, TableHeader, TableColumn, TableBody, TableRow, TableCell } from "@heroui/table";
@@ -70,7 +71,7 @@ const IconPause = () => <PauseCircleOutlined />;
 const IconPlay = () => <PlayCircleOutlined />;
 const IconDelete = () => <DeleteOutlined />;
 const IconEdit = () => <EditOutlined />;
-const IconHelp = () => <AimOutlined />;
+const IconHelp = () => <QuestionCircleOutlined />;
 const IconCopy = () => <CopyOutlined />;
 const IconDragHandle = () => <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><circle cx="7" cy="5" r="1.3" /><circle cx="13" cy="5" r="1.3" /><circle cx="7" cy="10" r="1.3" /><circle cx="13" cy="10" r="1.3" /><circle cx="7" cy="15" r="1.3" /><circle cx="13" cy="15" r="1.3" /></svg>;
 
@@ -103,6 +104,7 @@ interface Forward {
   outFlow: number;
   serviceRunning: boolean;
   createdTime: string;
+  updatedTime?: number;
   userName?: string;
   userId?: number;
   inx?: number;
@@ -203,6 +205,17 @@ const TAG_STYLES: Record<string, string> = {
 const RuleTag = ({ color = 'default', children }: { color?: string; children: React.ReactNode }) => (
   <span className={`inline-flex items-center h-5 px-1.5 rounded border text-xs leading-none whitespace-nowrap ${TAG_STYLES[color] || TAG_STYLES.default}`}>{children}</span>
 );
+
+// 状态列悬停提示的「最近更新」时间：YYYY-MM-DD HH:mm:ss + 时区（东八区显示 CST，其它显示 UTC±N）
+const formatUpdateTime = (value?: number | string | null): string => {
+  if (value == null || value === '') return '—';
+  const d = new Date(typeof value === 'string' && /^\d+$/.test(value) ? Number(value) : value);
+  if (Number.isNaN(d.getTime())) return '—';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const offset = -d.getTimezoneOffset() / 60;
+  const zone = offset === 8 ? 'CST' : `UTC${offset >= 0 ? '+' : ''}${offset}`;
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())} ${zone}`;
+};
 
 // 状态列直接显示彩色文字
 const STATUS_TEXT_STYLES: Record<string, string> = {
@@ -1012,8 +1025,7 @@ export default function ForwardPage() {
       }
       
       if (res.code === 0) {
-        // 暂停 / 恢复时节点暂未同步（没有设备、离线等），后端仍记为目标状态并返回说明，提示用户节点就绪后会自动补推
-        toast.success(res.msg && res.msg.includes('暂未同步') ? res.msg : (targetState ? '服务已启动' : '服务已暂停'));
+        // 成功时不弹提示，列表里的状态（正常 / 已暂停 / 未同步）随之变化即可
         // 更新转发状态
         setForwards(prev => prev.map(f => 
           f.id === forward.id 
@@ -1075,35 +1087,14 @@ export default function ForwardPage() {
       if (response.code === 0) {
         setDiagnosisResult(response.data);
       } else {
+        // 诊断没发出去（没有设备、节点离线等）：提示原因，弹窗里按入口 / 出口设备组显示「无数据」
         toast.error(response.msg || '诊断失败');
-        setDiagnosisResult({
-          forwardName: forward.name,
-          timestamp: Date.now(),
-          results: [{
-            success: false,
-            description: '诊断失败',
-            nodeName: '-',
-            nodeId: '-',
-            targetIp: forward.remoteAddr.split(',')[0] || '-',
-            message: response.msg || '诊断过程中发生错误'
-          }]
-        });
+        setDiagnosisResult({ forwardName: forward.name, timestamp: Date.now(), results: [] });
       }
     } catch (error) {
       console.error('诊断失败:', error);
       toast.error('网络错误，请重试');
-      setDiagnosisResult({
-        forwardName: forward.name,
-        timestamp: Date.now(),
-        results: [{
-          success: false,
-          description: '网络错误',
-          nodeName: '-',
-          nodeId: '-',
-          targetIp: forward.remoteAddr.split(',')[0] || '-',
-          message: '无法连接到服务器'
-        }]
-      });
+      setDiagnosisResult({ forwardName: forward.name, timestamp: Date.now(), results: [] });
     } finally {
       setDiagnosisLoading(false);
     }
@@ -1896,7 +1887,21 @@ export default function ForwardPage() {
                           {/* 已用流量统一按 GiB 显示两位小数，与顶部流量信息一致 */}
                           <TableCell className="whitespace-nowrap">{(((forward.inFlow || 0) + (forward.outFlow || 0)) / (1024 * 1024 * 1024)).toFixed(2)} GiB</TableCell>
                           <TableCell>
-                            <span className={`text-sm whitespace-nowrap ${STATUS_TEXT_STYLES[statusDisplay.color] || STATUS_TEXT_STYLES.default}`}>{statusDisplay.text}</span>
+                            {/* 悬停显示规则最近更新时间（没更新过的按创建时间），提示框与操作按钮同一深色样式 */}
+                            <Tooltip
+                              content={`最近更新: ${formatUpdateTime(forward.updatedTime ?? forward.createdTime)}`}
+                              placement="top"
+                              showArrow
+                              delay={100}
+                              closeDelay={0}
+                              offset={8}
+                              classNames={{
+                                base: "before:bg-[#424242] before:dark:bg-[#424242]",
+                                content: "min-h-[34px] rounded-md bg-[#424242] px-2 py-1.5 text-sm text-white shadow-medium whitespace-nowrap",
+                              }}
+                            >
+                              <span className={`text-sm whitespace-nowrap cursor-default ${STATUS_TEXT_STYLES[statusDisplay.color] || STATUS_TEXT_STYLES.default}`}>{statusDisplay.text}</span>
+                            </Tooltip>
                           </TableCell>
                           <TableCell>
                             <div className="flex items-center gap-1">
@@ -2527,28 +2532,22 @@ export default function ForwardPage() {
           </ModalContent>
         </Modal>
 
-        {/* 诊断结果模态框 */}
-        <Modal 
+        {/* 诊断结果：标题只有「诊断结果 (#id)」，分区卡片见 DiagnosisLeg / DiagnosisPanelFeedback，底部只有关闭 */}
+        <Modal
           isOpen={diagnosisModalOpen}
           onOpenChange={setDiagnosisModalOpen}
-          
-          size="2xl"
-        scrollBehavior="outside"
-        backdrop="opaque"
-        placement="center"
+          size="3xl"
+          scrollBehavior="outside"
+          backdrop="opaque"
+          placement="center"
+          hideCloseButton
+          classNames={{ base: "max-w-[800px]" }}
         >
           <ModalContent>
             {(onClose) => (
               <>
-                <ModalHeader className="flex flex-col gap-1">
-                  <h2 className="text-lg font-semibold">
-                    诊断结果{currentDiagnosisForward ? ` (#${currentDiagnosisForward.id})` : ''}
-                  </h2>
-                  {currentDiagnosisForward && (
-                    <span className="text-small text-default-500 truncate">{currentDiagnosisForward.name}</span>
-                  )}
-                </ModalHeader>
-                <ModalBody>
+                <ModalHeader>诊断结果{currentDiagnosisForward ? ` (#${currentDiagnosisForward.id})` : ''}</ModalHeader>
+                <ModalBody className="py-0">
                   {diagnosisLoading ? (
                     <div className="flex items-center justify-center py-16">
                       <div className="flex items-center gap-3">
@@ -2557,30 +2556,31 @@ export default function ForwardPage() {
                       </div>
                     </div>
                   ) : diagnosisResult ? (
-                    <div className="space-y-5">
-                      <DiagnosisLeg title="入口诊断" subtitle="Inbound" results={diagnosisResult.results.filter(r => r.leg !== 'outbound')} emptyText="无数据" resolveGroupName={(id) => findDeviceGroup(id)?.name} loadDetail={loadForwardDiagnosisDetail} />
-                      {diagnosisResult.results.filter(r => r.leg === 'outbound').length > 0 && (
-                        <DiagnosisLeg title="出口诊断" subtitle="Outbounds" results={diagnosisResult.results.filter(r => r.leg === 'outbound')} resolveGroupName={(id) => findDeviceGroup(id)?.name} loadDetail={loadForwardDiagnosisDetail} />
-                      )}
-                      <DiagnosisPanelFeedback stats={diagnosisResult.dispatchStats} />
-                    </div>
+                    (() => {
+                      // 没有结果的一段也显示规则的入口 / 出口设备组卡片（名称 + GID，内容「无数据」）；旧版隧道模式的规则没有设备组，入口显示隧道名
+                      const inGroup = findDeviceGroup(currentDiagnosisForward?.inDeviceGroupId);
+                      const outGroup = findDeviceGroup(currentDiagnosisForward?.outDeviceGroupId);
+                      const inboundResults = diagnosisResult.results.filter(r => r.leg !== 'outbound');
+                      const outboundResults = diagnosisResult.results.filter(r => r.leg === 'outbound');
+                      const inPlaceholder = inGroup
+                        ? { name: inGroup.name, groupId: inGroup.id }
+                        : (currentDiagnosisForward?.tunnelName ? { name: currentDiagnosisForward.tunnelName } : undefined);
+                      return (
+                        <div className="space-y-5">
+                          <DiagnosisLeg title="入口诊断" subtitle="Inbound" results={inboundResults} emptyText="无数据" placeholder={inPlaceholder} resolveGroupName={(id) => findDeviceGroup(id)?.name} loadDetail={loadForwardDiagnosisDetail} />
+                          {(outboundResults.length > 0 || outGroup) && (
+                            <DiagnosisLeg title="出口诊断" subtitle="Outbounds" results={outboundResults} emptyText="无数据" placeholder={outGroup ? { name: outGroup.name, groupId: outGroup.id } : undefined} resolveGroupName={(id) => findDeviceGroup(id)?.name} loadDetail={loadForwardDiagnosisDetail} />
+                          )}
+                          <DiagnosisPanelFeedback stats={diagnosisResult.dispatchStats} />
+                        </div>
+                      );
+                    })()
                   ) : (
                     <EmptyState />
                   )}
                 </ModalBody>
                 <ModalFooter>
-                  <Button variant="light" onPress={onClose}>
-                    关闭
-                  </Button>
-                  {currentDiagnosisForward && (
-                    <Button
-                      color="default"
-                      onPress={() => handleDiagnose(currentDiagnosisForward)}
-                      isDisabled={diagnosisLoading}
-                    >
-                      重新诊断
-                    </Button>
-                  )}
+                  <Button size="sm" color="primary" className="dialog-btn" onPress={onClose}>关闭</Button>
                 </ModalFooter>
               </>
             )}

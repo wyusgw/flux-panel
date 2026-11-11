@@ -84,7 +84,7 @@ export function renderDiagnosisLines(result: DiagnosisResultItem, maxLines?: num
     if (result.message) {
       return <div className={result.success ? TERM_TEXT : TERM_ERR}>{result.message}</div>;
     }
-    return <div className={TERM_DIM}>no data</div>;
+    return <div className={TERM_DIM}>无数据</div>;
   })();
 
   return (
@@ -166,6 +166,11 @@ function DiagnosisDetailModal({
 
 const PREVIEW_LINES = 5;
 
+// 卡片右上角的小标签：细边框 + 浅色底（GID、失败）
+const LegTag = ({ color, children }: { color: 'primary' | 'danger'; children: React.ReactNode }) => (
+  <span className={`inline-flex items-center h-5 px-1.5 rounded border text-xs leading-none whitespace-nowrap ${color === 'primary' ? 'text-primary border-primary/40 bg-primary/10' : 'text-danger border-danger/40 bg-danger/10'}`}>{children}</span>
+);
+
 // 诊断分区：每一段诊断渲染成一张卡片（名称 + 可选 GID），内容逐行展示连接明细；点击卡片可查看详细结果
 // 卡片不用 isPressable（点击时不要按下缩放 / 阴影 / 波纹效果）；HeroUI Card 非 isPressable 时会丢掉 onClick，所以点击放在外层 div 上
 export function DiagnosisLeg({
@@ -175,12 +180,15 @@ export function DiagnosisLeg({
   emptyText = '无数据',
   resolveGroupName,
   loadDetail,
+  placeholder,
 }: {
   title: string;
   subtitle: string;
   results: DiagnosisResultItem[];
   emptyText?: string;
   resolveGroupName?: (groupId: number) => string | undefined;
+  /** 这一段没有任何结果时，仍显示一张对应设备组的卡片（名称 + GID），内容为「无数据」 */
+  placeholder?: { name: string; groupId?: number | null };
   /**
    * 点开某一段的详细结果时，对这一段按「诊断详情连接次数」重新测试并返回新结果（失败返回 null，继续显示首次诊断的结果）。
    * 不传则直接展示首次诊断的明细，不重新测试
@@ -217,11 +225,17 @@ export function DiagnosisLeg({
 
   return (
     <div>
-      <h3 className="text-sm font-semibold text-foreground mb-2">
-        {title} <span className="text-default-400 font-normal">({subtitle})</span>
-      </h3>
-      {results.length === 0 ? (
-        <div className="text-xs text-default-400 border border-default-200 rounded-lg px-4 py-3">{emptyText}</div>
+      <h3 className="text-base font-semibold text-foreground mb-2">{title} ({subtitle})</h3>
+      {results.length === 0 && placeholder ? (
+        <div className="border border-default-200 bg-default-50 rounded-md overflow-hidden">
+          <div className="flex items-center justify-between gap-3 px-3 py-2 border-b border-default-200">
+            <span className="text-sm font-semibold text-foreground truncate">{placeholder.name}</span>
+            {placeholder.groupId != null && <LegTag color="primary">GID: {placeholder.groupId}</LegTag>}
+          </div>
+          <div className="px-3 py-2 text-sm text-default-500">{emptyText}</div>
+        </div>
+      ) : results.length === 0 ? (
+        <div className="text-sm text-default-500 border border-default-200 bg-default-50 rounded-md px-3 py-2">{emptyText}</div>
       ) : (
         <div className="space-y-3">
           {results.map((result, index) => {
@@ -235,17 +249,22 @@ export function DiagnosisLeg({
                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDetail(result); } }}
                 className="cursor-pointer outline-none"
               >
-              <Card className="shadow-none border border-default-200 overflow-hidden w-full">
-                <div className="flex items-center justify-between px-4 py-2.5 border-b border-default-100 w-full">
-                  <span className="font-semibold text-foreground truncate">{groupName || result.nodeName}</span>
+              <Card className="shadow-none border border-default-200 bg-default-50 rounded-md overflow-hidden w-full">
+                <div className="flex items-center justify-between gap-3 px-3 py-2 border-b border-default-200 w-full">
+                  <span className="text-sm font-semibold text-foreground truncate">{groupName || result.nodeName}</span>
                   <div className="flex items-center gap-2 flex-shrink-0">
-                    {result.groupId != null && <Chip size="sm" variant="light" color="primary">GID: {result.groupId}</Chip>}
-                    {!result.success && <Chip size="sm" variant="light" color="danger">失败</Chip>}
+                    {!result.success && <LegTag color="danger">失败</LegTag>}
+                    {result.groupId != null && <LegTag color="primary">GID: {result.groupId}</LegTag>}
                   </div>
                 </div>
-                <div className="text-left w-full flex-1 flex">
-                  {renderDiagnosisLines(result, PREVIEW_LINES, 'flex-1 rounded-none px-4 py-3')}
-                </div>
+                {/* 没有任何明细和消息时，直接在卡片里显示「无数据」，不用黑色终端框 */}
+                {(result.attempts ?? []).length === 0 && !result.message ? (
+                  <div className="px-3 py-2 text-left text-sm text-default-500">无数据</div>
+                ) : (
+                  <div className="text-left w-full flex-1 flex">
+                    {renderDiagnosisLines(result, PREVIEW_LINES, 'flex-1 rounded-none px-3 py-2')}
+                  </div>
+                )}
               </Card>
               </div>
             );
@@ -266,13 +285,12 @@ export function DiagnosisLeg({
 export function DiagnosisPanelFeedback({ stats }: { stats?: DispatchStats }) {
   return (
     <div>
-      <h3 className="text-sm font-semibold text-foreground mb-2">
-        面板反馈 <span className="text-default-400 font-normal">(Backend)</span>
-      </h3>
-      <div className="border border-default-200 rounded-lg px-4 py-3 space-y-1 text-sm">
-        <div className="flex justify-between"><span className="text-default-500">发出任务</span><span className="font-mono text-foreground">{stats?.sent ?? 0}</span></div>
-        <div className="flex justify-between"><span className="text-default-500">发出失败</span><span className="font-mono text-foreground">{stats?.failed ?? 0}</span></div>
-        <div className="flex justify-between"><span className="text-default-500">回收任务</span><span className="font-mono text-foreground">{stats?.recovered ?? 0}</span></div>
+      <h3 className="text-base font-semibold text-foreground mb-2">面板反馈 (Backend)</h3>
+      {/* 等宽字体逐行显示：标签后直接跟数字 */}
+      <div className="border border-default-200 bg-default-50 rounded-md px-3 py-2 font-mono text-sm leading-relaxed text-foreground">
+        <div>发出任务 {stats?.sent ?? 0}</div>
+        <div>发出失败 {stats?.failed ?? 0}</div>
+        <div>回收任务 {stats?.recovered ?? 0}</div>
       </div>
     </div>
   );

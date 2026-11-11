@@ -54,7 +54,7 @@ class ForwardPauseUnsyncedTest {
         R result = service.saveStatusPendingSync(forward, tunnel, 0, "节点 10 不在线");
 
         assertEquals(0, result.getCode());
-        assertEquals("服务已暂停，节点暂未同步，节点就绪后会自动补推", result.getMsg());
+        assertEquals("服务已暂停", result.getMsg());
         assertEquals(0, forward.getStatus());
         verify(queue).enqueue(eq("FORWARD_SYNC"), eq("63"), anyString(), eq(Arrays.asList(10L, 20L)), eq("节点 10 不在线"));
     }
@@ -78,7 +78,7 @@ class ForwardPauseUnsyncedTest {
         R result = service.saveStatusPendingSync(forward, tunnel, 1, "节点 10 不在线");
 
         assertEquals(0, result.getCode());
-        assertEquals("服务已恢复，节点暂未同步，节点就绪后会自动补推", result.getMsg());
+        assertEquals("服务已恢复", result.getMsg());
         assertEquals(1, forward.getStatus());
         verify(queue).enqueue(eq("FORWARD_SYNC"), eq("63"), anyString(), eq(Arrays.asList(10L, 20L)), eq("节点 10 不在线"));
     }

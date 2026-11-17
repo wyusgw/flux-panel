@@ -52,6 +52,7 @@ public class ReadOnlyInterceptor implements HandlerInterceptor {
             PREFIX + "inviteCode/list",
             PREFIX + "node/config",
             PREFIX + "node/list",
+            PREFIX + "node/regions",
             PREFIX + "nodeGroup/list",
             PREFIX + "nodeGroup/names",
             PREFIX + "order/admin/list",

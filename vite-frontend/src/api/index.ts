@@ -145,6 +145,7 @@ export const clearMyDeviceGroupFlow = (ids: number[]) => Network.post("/userDevi
 // 节点CRUD操作 - 全部使用POST请求
 export const createNode = (data: any) => Network.post("/node/create", data);
 export const getNodeList = () => Network.post("/node/list");
+export const getNodeRegions = () => Network.post("/node/regions");
 export const updateNode = (data: any) => Network.post("/node/update", data);
 export const deleteNode = (id: number) => Network.post("/node/delete", { id });
 export const getNodeInstallCommand = (id: number) => Network.post("/node/install", { id });

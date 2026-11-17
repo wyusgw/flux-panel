@@ -396,10 +396,11 @@ export default function AccountCenterPage() {
   const handleCopySubscriptionUrl = async () => {
     if (!userInfo) return;
     const base = new URL(axios.defaults.baseURL || '/api/v1/', window.location.href).toString().replace(/\/?$/, '/');
-    const url = `${base}openApi/subStore?user=${encodeURIComponent(userInfo.user)}&pwd=YOUR_PASSWORD`;
+    // format=json：返回 {"upload","download","total","expire"}，响应头 subscription-userinfo 照常带上
+    const url = `${base}openApi/subStore?user=${encodeURIComponent(userInfo.user)}&pwd=YOUR_PASSWORD&format=json`;
     const success = await copyText(url);
     if (success) {
-      toast.success('已复制，请把地址末尾的 YOUR_PASSWORD 换成你的登录密码');
+      toast.success('已复制，请把地址里的 YOUR_PASSWORD 换成你的登录密码');
     } else {
       toast.error('复制失败，请手动复制');
     }
@@ -589,7 +590,7 @@ export default function AccountCenterPage() {
             }
           />
           <Row
-            label={<HelpTooltip content="供 Sub-Store、Clash 等客户端读取本账号的已用流量、总流量和到期时间（subscription-userinfo）。复制后把地址末尾的 YOUR_PASSWORD 换成你的登录密码；修改密码后需要同步更新">订阅流量</HelpTooltip>}
+            label={<HelpTooltip content="供 Sub-Store、Clash 等客户端读取本账号的已用流量、总流量和到期时间。地址返回 JSON，包含 upload、download、total（流量，字节）和 expire（到期时间，Unix 秒），同时带上 subscription-userinfo 响应头。复制后把地址里的 YOUR_PASSWORD 换成你的登录密码；修改密码后需要同步更新">订阅流量</HelpTooltip>}
             value=""
             action={
               <Button size="sm" variant="bordered" className={OUTLINE_BUTTON} startContent={<CopyOutlined />} onPress={handleCopySubscriptionUrl}>

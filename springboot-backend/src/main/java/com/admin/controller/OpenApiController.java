@@ -31,6 +31,7 @@ public class OpenApiController extends BaseController {
             @RequestParam("user") String user,
             @RequestParam("pwd") String pwd,
             @RequestParam(value = "tunnel", required = false, defaultValue = "-1") String tunnel,
+            @RequestParam(value = "format", required = false) String format,
             HttpServletResponse response) {
         JSONObject result = new JSONObject();
         result.put("upload", 0);
@@ -65,31 +66,60 @@ public class OpenApiController extends BaseController {
         }
         loginAttemptLimiter.recordSuccess(attemptKey, clientIp);
 
-        final long GIGA = 1024L * 1024L * 1024L;
-        String headerValue;
-
+        SubscriptionUsage usage;
         if ("-1".equals(tunnel)) {
             // 没有到期时间、流量为空的账号（如未购买套餐）按 0 返回，不能因为空值出错
-            headerValue = buildSubscriptionHeader(
-                    orZero(userInfo.getOutFlow()),
-                    orZero(userInfo.getInFlow()),
-                    orZero(userInfo.getFlow()) * GIGA,
-                    orZero(userInfo.getExpTime()) / 1000
-            );
+            usage = SubscriptionUsage.of(userInfo.getOutFlow(), userInfo.getInFlow(), userInfo.getFlow(), userInfo.getExpTime());
         } else {
             UserTunnel tunnelInfo = userTunnelService.getById(tunnel);
             if (tunnelInfo == null) return R.err("隧道不存在");
             if (!tunnelInfo.getUserId().toString().equals(userInfo.getId().toString())) return R.err("隧道不存在");
-            headerValue = buildSubscriptionHeader(
-                    orZero(tunnelInfo.getOutFlow()),
-                    orZero(tunnelInfo.getInFlow()),
-                    orZero(tunnelInfo.getFlow()) * GIGA,
-                    orZero(tunnelInfo.getExpTime()) / 1000
-            );
+            usage = SubscriptionUsage.of(tunnelInfo.getOutFlow(), tunnelInfo.getInFlow(), tunnelInfo.getFlow(), tunnelInfo.getExpTime());
         }
 
+        String headerValue = usage.header();
+        // 响应头始终带上，Sub-Store、Clash 等客户端照常读取；format=json 时正文改为 JSON，否则正文与响应头相同
         response.setHeader("subscription-userinfo", headerValue);
+        if ("json".equalsIgnoreCase(format)) {
+            return usage.toMap();
+        }
         return headerValue;
+    }
+
+    /**
+     * 订阅流量：upload / download 沿用原来响应头的取值（upload 为入站流量 inFlow、download 为出站流量 outFlow），
+     * total 为可用流量（GB 换算成字节），expire 为到期时间（Unix 秒）；JSON 和响应头用同一份数据，两者一致
+     */
+    static final class SubscriptionUsage {
+        private static final long GIGA = 1024L * 1024L * 1024L;
+        final long upload;
+        final long download;
+        final long total;
+        final long expire;
+
+        private SubscriptionUsage(long upload, long download, long total, long expire) {
+            this.upload = upload;
+            this.download = download;
+            this.total = total;
+            this.expire = expire;
+        }
+
+        static SubscriptionUsage of(Number outFlow, Number inFlow, Number flowGb, Number expTimeMs) {
+            return new SubscriptionUsage(orZero(inFlow), orZero(outFlow), orZero(flowGb) * GIGA, orZero(expTimeMs) / 1000);
+        }
+
+        String header() {
+            return String.format("upload=%d; download=%d; total=%d; expire=%d", upload, download, total, expire);
+        }
+
+        java.util.Map<String, Object> toMap() {
+            java.util.Map<String, Object> map = new java.util.LinkedHashMap<>();
+            map.put("upload", upload);
+            map.put("download", download);
+            map.put("total", total);
+            map.put("expire", expire);
+            return map;
+        }
     }
 
 
@@ -98,9 +128,6 @@ public class OpenApiController extends BaseController {
         return value == null ? 0L : value.longValue();
     }
 
-    private String buildSubscriptionHeader(long upload, long download, long total, long expire) {
-        return String.format("upload=%d; download=%d; total=%d; expire=%d", download, upload, total, expire);
-    }
 
 
 }

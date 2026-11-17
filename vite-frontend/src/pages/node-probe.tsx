@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@heroui/button';
 import axios from 'axios';
-import { getDeviceGroupList, getNodeList, getUserGroupNames, getNodeGroupNames } from '@/api';
+import { getDeviceGroupList, getNodeList, getNodeRegions, getUserGroupNames, getNodeGroupNames } from '@/api';
 import { ThemeSwitch } from '@/components/theme-switch';
 import { OsLogo } from '@/components/os-logo';
 import { EmptyState } from "@/components/empty-state";
@@ -35,6 +35,8 @@ type Node = {
     osName?: string; osVersion?: string; kernelVersion?: string; arch?: string; virtualization?: string;
     memoryUsage: number; memoryTotal?: number; memoryUsed?: number; memoryAvailable?: number;
     storageUsage: number; storageTotal?: number; storageUsed?: number; storageFree?: number;
+    /** 新版节点读取网卡计数的时间（Unix 毫秒），用来算两次上报的间隔 */
+    sampledAtMs?: number;
     uploadTraffic: number; downloadTraffic: number; cycleUpload?: number; cycleDownload?: number; cycleStart?: number; uploadSpeed: number; downloadSpeed: number;
     inboundTcpConnections?: number; outboundTcpConnections?: number;
     inboundUdpConnections?: number; outboundUdpConnections?: number;
@@ -51,12 +53,17 @@ type NodeGroup = { id: number; name: string };
  */
 const toSystemInfo = (info: any, prev: Node['systemInfo'] | null | undefined): NonNullable<Node['systemInfo']> => {
   const uptime = Number(info.uptime) || 0, upload = Number(info.bytes_transmitted) || 0, download = Number(info.bytes_received) || 0;
-  const elapsed = uptime - (prev?.uptime || uptime);
+  const sampledAtMs = Number(info.sampled_at_ms) || undefined;
+  // 间隔优先按节点读取网卡计数的毫秒时间算；开机时长只精确到秒，按它算偶尔会差一秒，速度翻倍或少三分之一。
+  // 旧版节点没有这个时间，或时间异常（节点时钟被调整、两次上报相隔太久）时退回按开机时长算
+  const preciseElapsed = sampledAtMs && prev?.sampledAtMs ? (sampledAtMs - prev.sampledAtMs) / 1000 : undefined;
+  const elapsed = preciseElapsed !== undefined && preciseElapsed > 0 && preciseElapsed <= 60 ? preciseElapsed : uptime - (prev?.uptime || uptime);
   return {
     cpuUsage: Number(info.cpu_usage) || 0, cpuModel: info.cpu_model || undefined,
     osName: info.os_name || undefined, osVersion: info.os_version || undefined, kernelVersion: info.kernel_version || undefined, arch: info.arch || undefined, virtualization: info.virtualization || undefined,
     memoryUsage: Number(info.memory_usage) || 0, memoryTotal: Number(info.memory_total) || undefined, memoryUsed: Number(info.memory_used) || undefined, memoryAvailable: Number(info.memory_available) || undefined,
     storageUsage: Number(info.storage_usage) || 0, storageTotal: Number(info.storage_total) || undefined, storageUsed: Number(info.storage_used) || undefined, storageFree: Number(info.storage_free) || undefined,
+    sampledAtMs,
     uploadTraffic: upload, downloadTraffic: download,
     cycleUpload: info.cycle_upload !== undefined ? Number(info.cycle_upload) : undefined,
     cycleDownload: info.cycle_download !== undefined ? Number(info.cycle_download) : undefined,
@@ -90,7 +97,13 @@ const OS_DISPLAY_NAMES: Record<string, string> = {
   ubuntu: 'Ubuntu', debian: 'Debian', centos: 'CentOS', rhel: 'RHEL', redhat: 'RHEL', rocky: 'Rocky Linux', almalinux: 'AlmaLinux',
   fedora: 'Fedora', alpine: 'Alpine', arch: 'Arch Linux', manjaro: 'Manjaro', amzn: 'Amazon Linux', ol: 'Oracle Linux', kali: 'Kali Linux',
   opensuse: 'openSUSE', 'opensuse-leap': 'openSUSE', 'opensuse-tumbleweed': 'openSUSE', sles: 'SUSE', gentoo: 'Gentoo', alpinelinux: 'Alpine',
-  windows: 'Windows', darwin: 'macOS', freebsd: 'FreeBSD', openbsd: 'OpenBSD', linux: 'Linux'
+  windows: 'Windows', darwin: 'macOS', freebsd: 'FreeBSD', openbsd: 'OpenBSD', linux: 'Linux',
+  linuxmint: 'Linux Mint', raspbian: 'Raspberry Pi OS', deepin: 'Deepin', uos: 'UOS', kylin: 'Kylin',
+  openeuler: 'openEuler', euleros: 'EulerOS', anolis: 'Anolis OS', alinux: 'Alibaba Cloud Linux', opencloudos: 'OpenCloudOS', tencentos: 'TencentOS',
+  nixos: 'NixOS', openwrt: 'OpenWrt', devuan: 'Devuan', pop: 'Pop!_OS', elementary: 'elementary OS', zorin: 'Zorin OS',
+  cloudlinux: 'CloudLinux', scientific: 'Scientific Linux',
+  // 旧版节点程序上报的标识（升级节点后改为 os-release 的 amzn / ol / sles 等）
+  amazon: 'Amazon Linux', oracle: 'Oracle Linux', suse: 'SUSE'
 };
 const osDisplayName = (name?: string) => name ? (OS_DISPLAY_NAMES[name.toLowerCase()] || name.charAt(0).toUpperCase() + name.slice(1)) : '';
 // 节点上报的虚拟化标识沿用 systemd-detect-virt 的命名，其中一些不直观（如 microsoft 是 Hyper-V、oracle 是 VirtualBox），这里转成常用名称
@@ -166,18 +179,21 @@ const buildStorageContent = (node: Node) => (
     <PopRow>总量：{formatBytes(node.systemInfo?.storageTotal)}</PopRow>
   </>
 );
+// UDP 没有连接状态：节点统计的是监听中（未指定对端）和已连接（指定了对端）的 UDP 端口数量，不是客户端会话数
 const buildReceiveConnContent = (node: Node) => (
   <>
     <PopRow><b>接收当前连接数</b></PopRow>
-    <PopRow>TCP：{node.systemInfo?.inboundTcpConnections ?? '—'}</PopRow>
-    <PopRow>UDP：{node.systemInfo?.inboundUdpConnections ?? '—'}</PopRow>
+    <PopRow>TCP 连接：{node.systemInfo?.inboundTcpConnections ?? '—'}</PopRow>
+    <PopRow>UDP 监听端口：{node.systemInfo?.inboundUdpConnections ?? '—'}</PopRow>
+    <PopRow>（UDP 没有连接状态，这里是端口数量）</PopRow>
   </>
 );
 const buildSendConnContent = (node: Node) => (
   <>
     <PopRow><b>发送当前连接数</b></PopRow>
-    <PopRow>TCP：{node.systemInfo?.outboundTcpConnections ?? '—'}</PopRow>
-    <PopRow>UDP：{node.systemInfo?.outboundUdpConnections ?? '—'}</PopRow>
+    <PopRow>TCP 连接：{node.systemInfo?.outboundTcpConnections ?? '—'}</PopRow>
+    <PopRow>UDP 已连接端口：{node.systemInfo?.outboundUdpConnections ?? '—'}</PopRow>
+    <PopRow>（UDP 没有连接状态，这里是端口数量）</PopRow>
   </>
 );
 
@@ -189,14 +205,16 @@ type DetailHandlers = {
 
 interface NodeRowProps {
   node: Node;
-  regionCode?: string;
+  /** IPv4 / IPv6 地区（两位国家代码，小写），由后端按服务器地址和连接地址查询 */
+  regionV4?: string;
+  regionV6?: string;
   detailHandlers: (key: string) => DetailHandlers;
 }
 
 // 每个节点每 2 秒推送一次系统信息，之前整张表都在一个大 .map() 里内联渲染，
 // 任何一个节点的数据更新都会导致所有行重新渲染，节点一多就会看起来卡顿。
 // 拆成独立的 memo 组件后，某个节点更新时只有它自己这一行会重渲染。
-const NodeRow = memo(function NodeRow({ node, regionCode, detailHandlers }: NodeRowProps) {
+const NodeRow = memo(function NodeRow({ node, regionV4, regionV6, detailHandlers }: NodeRowProps) {
   const isOnline = node.connectionStatus === 'online';
   // 节点离线时没有实时数据，连接数/CPU/RAM/存储的详情卡片没有意义，
   // 只在在线时才可点击查看，离线时不挂载点击/悬停处理器
@@ -213,8 +231,8 @@ const NodeRow = memo(function NodeRow({ node, regionCode, detailHandlers }: Node
         </span>
       </td>
       <td>{isOnline && node.systemInfo?.osName ? <span className="probe-os probe-clickable" {...detailHandlers(`os-${node.id}`)}><OsLogo name={node.systemInfo.osName} /><span className="truncate">{osDisplayName(node.systemInfo.osName)}</span></span> : null}</td>
-      <td><RegionCell code={regionCode} /></td>
-      <td><RegionCell /></td>
+      <td><RegionCell code={regionV4} /></td>
+      <td><RegionCell code={regionV6} /></td>
       <td className={isOnline ? 'probe-clickable' : ''} {...onlineOnlyHandlers(`conn-recv-${node.id}`)}>{formatSpeed(node.systemInfo?.uploadSpeed)}</td>
       <td className={isOnline ? 'probe-clickable' : ''} {...onlineOnlyHandlers(`conn-send-${node.id}`)}>{formatSpeed(node.systemInfo?.downloadSpeed)}</td>
       <td className="probe-uptime">{node.systemInfo ? formatUptime(node.systemInfo.uptime) : ''}</td>
@@ -250,7 +268,7 @@ export default function NodeProbePage() {
   const [groups, setGroups] = useState<DeviceGroup[]>([]);
   const [userGroups, setUserGroups] = useState<UserGroup[]>([]);
   const [nodeGroups, setNodeGroups] = useState<NodeGroup[]>([]);
-  const [regionCodes, setRegionCodes] = useState<Record<string, string>>({});
+  const [regionCodes, setRegionCodes] = useState<Record<number, { v4?: string | null; v6?: string | null }>>({});
 
   // 状态图标点击/悬停的详情 popover：只记 key（标识是哪个节点）和定位信息，内容在渲染时用
   // buildStatusContent 现算，而不是在打开那一刻把内容存成快照——这样弹窗开着的时候如果节点状态
@@ -259,7 +277,6 @@ export default function NodeProbePage() {
   const [detailRect, setDetailRect] = useState<{ top: number; left: number; bottom: number } | null>(null);
   const [detailPinned, setDetailPinned] = useState(false);
 
-  const resolvedIpsRef = useRef<Set<string>>(new Set());
   const socketRef = useRef<WebSocket | null>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
 
@@ -416,14 +433,17 @@ export default function NodeProbePage() {
     };
   }, [load]);
 
+  // IPv4 / IPv6 地区由后端在服务器地址和连接地址里分别找公网 IPv4、IPv6（域名先解析）查询并缓存，
+  // 不再从浏览器把节点地址发给第三方；节点列表加载完再单独取，不拖慢页面
   useEffect(() => {
-    // 入口 IP/域名 现在支持填多个（逗号拼接存储），地区查询只取第一个地址即可
-    const ips = Array.from(new Set(nodes.map(node => node.ip?.split(',')[0]?.trim()).filter((ip): ip is string => !!ip))).filter(ip => !resolvedIpsRef.current.has(ip));
-    ips.forEach(ip => {
-      resolvedIpsRef.current.add(ip);
-      fetch(`https://ipwho.is/${ip}`).then(res => res.json()).then(data => { if (data?.success && data.country_code) setRegionCodes(prev => ({ ...prev, [ip]: String(data.country_code).toLowerCase() })); }).catch(() => {});
-    });
-  }, [nodes]);
+    if (loading) return;
+    getNodeRegions().then(res => {
+      if (res.code !== 0) return;
+      const next: Record<number, { v4?: string | null; v6?: string | null }> = {};
+      (res.data || []).forEach((item: { id: number; v4?: string | null; v6?: string | null }) => { next[item.id] = { v4: item.v4, v6: item.v6 }; });
+      setRegionCodes(next);
+    }).catch(() => {});
+  }, [loading]);
 
   // 节点组表格里每一行仍要能展示"可见用户组/流量倍率/备注"等详情，这些信息挂在 DeviceGroup 上，
   // 所以按 nodeId 建一份反查表，供节点组分组的 NodeRow 使用（节点没有对应设备组时为 undefined，
@@ -518,7 +538,8 @@ export default function NodeProbePage() {
                           <NodeRow
                             key={node.id}
                             node={node}
-                            regionCode={node.ip ? regionCodes[node.ip.split(',')[0].trim()] : undefined}
+                            regionV4={regionCodes[node.id]?.v4 || undefined}
+                            regionV6={regionCodes[node.id]?.v6 || undefined}
                             detailHandlers={detailHandlers}
                           />
                         ))}

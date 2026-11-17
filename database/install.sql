@@ -180,6 +180,7 @@ CREATE TABLE `node_traffic_cycle` (
   `down_bytes` bigint(20) NOT NULL DEFAULT '0',
   `last_raw_up` bigint(20) NOT NULL DEFAULT '0',
   `last_raw_down` bigint(20) NOT NULL DEFAULT '0',
+  `last_boot_time` bigint(20) DEFAULT NULL COMMENT '节点上次上报的开机时间（Unix 秒），用于区分服务器重启和统计范围变化',
   `updated_time` bigint(20) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 

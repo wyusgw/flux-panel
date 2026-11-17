@@ -23,6 +23,9 @@ public interface NodeService extends IService<Node> {
     /** 普通用户能看到的节点ID，与节点列表接口的范围一致 */
     java.util.Set<Long> getVisibleNodeIds(Integer userId);
 
+    /** 节点状态页的 IPv4 / IPv6 地区：当前账号能看到的节点，每项为 {id, v4, v6}（两位国家代码，小写，查不到为空） */
+    R getNodeRegions();
+
     R updateNode(NodeUpdateDto nodeUpdateDto);
 
     R deleteNode(Long id);

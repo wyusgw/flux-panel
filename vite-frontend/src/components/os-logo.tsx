@@ -22,6 +22,10 @@ import svgRaspberrypi from 'simple-icons/icons/raspberrypi.svg?raw';
 import svgOpenwrt from 'simple-icons/icons/openwrt.svg?raw';
 import svgNixos from 'simple-icons/icons/nixos.svg?raw';
 import svgDeepin from 'simple-icons/icons/deepin.svg?raw';
+import svgDevuan from 'simple-icons/icons/devuan.svg?raw';
+import svgPopos from 'simple-icons/icons/popos.svg?raw';
+import svgElementary from 'simple-icons/icons/elementary.svg?raw';
+import svgZorin from 'simple-icons/icons/zorin.svg?raw';
 
 // 系统 Logo：品牌图形来自 simple-icons（CC0 协议）。注意不能 `import { siUbuntu } from 'simple-icons'`——
 // 它的入口会把 3000 多个图标全部打进包里（实测主包从 7MB 涨到 12MB），所以改为按文件引入用到的几个 SVG 原文，只取其中的 path。
@@ -61,6 +65,10 @@ const BRANDS: Record<string, Brand> = {
   openwrt: { svg: svgOpenwrt, color: '#00B5E2' },
   nixos: { svg: svgNixos, color: '#5277C3' },
   deepin: { svg: svgDeepin, color: '#007CFF' },
+  devuan: { svg: svgDevuan, color: '#4C4C4C' },
+  pop: { svg: svgPopos, color: '#48B9C7' },
+  elementary: { svg: svgElementary, color: '#64BAFF' },
+  zorin: { svg: svgZorin, color: '#15A6F0' },
   linux: { svg: svgLinux, color: '#FCC624' }
 };
 

@@ -214,8 +214,10 @@ public class WebSocketServer extends TextWebSocketHandler {
             if (info == null || !info.containsKey("bytes_transmitted") || !info.containsKey("bytes_received")) {
                 return payload;
             }
+            // 新版节点带上开机时间，用来区分服务器重启和统计范围变化（见 NodeTrafficCycleServiceImpl.delta）
+            Long bootTime = info.containsKey("boot_time") ? info.getLong("boot_time") : null;
             NodeTrafficCycle cycle = nodeTrafficCycleService.record(Long.valueOf(nodeId),
-                    info.getLongValue("bytes_transmitted"), info.getLongValue("bytes_received"));
+                    info.getLongValue("bytes_transmitted"), info.getLongValue("bytes_received"), bootTime);
             info.put("cycle_upload", cycle.getUpBytes());
             info.put("cycle_download", cycle.getDownBytes());
             info.put("cycle_start", cycle.getCycleStart());

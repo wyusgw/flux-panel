@@ -25,7 +25,7 @@ class MenuPermissionTest {
         PAGE_ENDPOINTS.put("orders|orders", Arrays.asList("order/list"));
         PAGE_ENDPOINTS.put("singleTunnel|single-tunnel", Arrays.asList("singleTunnelGroup/create", "singleTunnelGroup/delete", "singleTunnelGroup/list", "singleTunnelGroup/update", "userDeviceGroup/create", "userDeviceGroup/delete", "userDeviceGroup/install", "userDeviceGroup/list", "userDeviceGroup/resetSecret", "userDeviceGroup/update"));
         PAGE_ENDPOINTS.put("lookingGlass|looking-glass", Arrays.asList("lookingGlass/run", "node/list"));
-        PAGE_ENDPOINTS.put("nodeProbe|node-probe", Arrays.asList("deviceGroup/list", "node/list", "nodeGroup/names", "userGroup/names"));
+        PAGE_ENDPOINTS.put("nodeProbe|node-probe", Arrays.asList("deviceGroup/list", "node/list", "node/regions", "nodeGroup/names", "userGroup/names"));
         PAGE_ENDPOINTS.put("adminDashboard|admin-dashboard", Arrays.asList("dashboard/flowStats", "dashboard/nodeOnlineTrend", "node/list", "order/admin/list", "taskQueue/health", "user/list"));
         PAGE_ENDPOINTS.put("config|config", Arrays.asList("config/list", "config/update"));
         PAGE_ENDPOINTS.put("pushNotification|push-notification", Arrays.asList("config/list", "config/update", "deviceGroup/list", "deviceGroup/offlineConfig", "telegramLog/list", "user/telegram/test"));

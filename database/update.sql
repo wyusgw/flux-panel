@@ -1945,3 +1945,19 @@ SET @sql = (
 PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
+
+-- node_traffic_cycle 新增 last_boot_time：节点上报的开机时间，周期流量据此区分服务器重启和统计范围变化
+-- （容器的虚拟网卡消失、节点程序升级后只统计物理网卡时读数会变小，不再当作重启把开机以来的流量重复累加）
+SET @sql = (
+    SELECT IF(
+        NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = DATABASE() AND table_name = 'node_traffic_cycle' AND column_name = 'last_boot_time'
+        ),
+        'ALTER TABLE `node_traffic_cycle` ADD COLUMN `last_boot_time` bigint(20) DEFAULT NULL COMMENT "节点上次上报的开机时间（Unix 秒）";',
+        'SELECT "Column `last_boot_time` already exists in `node_traffic_cycle`";'
+    )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;

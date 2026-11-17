@@ -42,8 +42,16 @@ public class NodeTrafficCycleServiceImpl extends ServiceImpl<NodeTrafficCycleMap
     private final Map<Long, NodeTrafficCycle> states = new ConcurrentHashMap<>();
     private final Set<Long> dirty = ConcurrentHashMap.newKeySet();
 
+    /** 两次上报的开机时间相差不超过这么多秒，按同一次开机处理 */
+    static final long BOOT_TIME_TOLERANCE_SECONDS = 30;
+
     @Override
     public NodeTrafficCycle record(Long nodeId, long rawUp, long rawDown) {
+        return record(nodeId, rawUp, rawDown, null);
+    }
+
+    @Override
+    public NodeTrafficCycle record(Long nodeId, long rawUp, long rawDown, Long bootTime) {
         long now = System.currentTimeMillis();
         long cycleStart = currentCycleStart(now, getResetDay(), getResetTime());
 
@@ -60,13 +68,16 @@ public class NodeTrafficCycleServiceImpl extends ServiceImpl<NodeTrafficCycleMap
                 state.setUpBytes(0L);
                 state.setDownBytes(0L);
             }
-            // 网卡计数器比上次小说明服务器重启过，新值整体就是重启后的增量
-            long deltaUp = rawUp >= state.getLastRawUp() ? rawUp - state.getLastRawUp() : rawUp;
-            long deltaDown = rawDown >= state.getLastRawDown() ? rawDown - state.getLastRawDown() : rawDown;
+            Boolean rebooted = rebooted(state.getLastBootTime(), bootTime);
+            long deltaUp = delta(state.getLastRawUp(), rawUp, rebooted);
+            long deltaDown = delta(state.getLastRawDown(), rawDown, rebooted);
             state.setUpBytes(state.getUpBytes() + deltaUp);
             state.setDownBytes(state.getDownBytes() + deltaDown);
             state.setLastRawUp(rawUp);
             state.setLastRawDown(rawDown);
+            if (bootTime != null && bootTime > 0) {
+                state.setLastBootTime(bootTime);
+            }
             state.setUpdatedTime(now);
             dirty.add(nodeId);
 
@@ -77,6 +88,36 @@ public class NodeTrafficCycleServiceImpl extends ServiceImpl<NodeTrafficCycleMap
             snapshot.setDownBytes(state.getDownBytes());
             return snapshot;
         }
+    }
+
+    /**
+     * 是否重启过：两次都有开机时间时按开机时间判断；节点没上报开机时间（旧版）返回 null，按读数判断；
+     * 第一次带开机时间（刚升级的节点）时不知道之前的开机时间，返回 false
+     */
+    static Boolean rebooted(Long lastBootTime, Long bootTime) {
+        if (bootTime == null || bootTime <= 0) {
+            return null;
+        }
+        if (lastBootTime == null) {
+            return false;
+        }
+        return Math.abs(bootTime - lastBootTime) > BOOT_TIME_TOLERANCE_SECONDS;
+    }
+
+    /**
+     * 本次上报相对上次的增量：
+     * 重启过（开机时间变了）时网卡计数从 0 开始，本次读数整体就是增量；
+     * 没重启但读数变小，是统计范围变了（容器的虚拟网卡消失、节点程序升级后只统计物理网卡），从本次读数重新计数，不算增量；
+     * 不知道是否重启（旧版节点）时沿用原来的做法：读数变小就当作重启
+     */
+    static long delta(long last, long raw, Boolean rebooted) {
+        if (Boolean.TRUE.equals(rebooted)) {
+            return raw;
+        }
+        if (raw >= last) {
+            return raw - last;
+        }
+        return rebooted == null ? raw : 0L;
     }
 
     @Override
@@ -188,6 +229,7 @@ public class NodeTrafficCycleServiceImpl extends ServiceImpl<NodeTrafficCycleMap
                     copy.setDownBytes(state.getDownBytes());
                     copy.setLastRawUp(state.getLastRawUp());
                     copy.setLastRawDown(state.getLastRawDown());
+                    copy.setLastBootTime(state.getLastBootTime());
                     copy.setUpdatedTime(state.getUpdatedTime());
                 }
                 this.saveOrUpdate(copy);

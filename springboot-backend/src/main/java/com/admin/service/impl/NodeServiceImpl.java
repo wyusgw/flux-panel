@@ -37,6 +37,7 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -109,6 +110,9 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
 
     @Resource
     private OfflineRetainPolicy offlineRetainPolicy;
+
+    @Resource
+    private com.admin.common.utils.NodeRegionLookup nodeRegionLookup;
 
     @Resource
     private DeviceGroupUserGroupRelationMapper deviceGroupUserGroupRelationMapper;
@@ -222,6 +226,28 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
         hideNodeSecrets(nodeList);
         attachRetainedInfo(nodeList);
         return R.ok(nodeList);
+    }
+
+    @Override
+    public R getNodeRegions() {
+        Integer roleId = JwtUtil.getRoleIdFromToken();
+        List<Node> nodeList;
+        if (roleId != null && roleId == 0) {
+            nodeList = this.list();
+        } else {
+            Set<Long> visibleNodeIds = getVisibleNodeIds(JwtUtil.getUserIdFromToken());
+            nodeList = visibleNodeIds.isEmpty() ? Collections.emptyList() : this.list(new QueryWrapper<Node>().in("id", visibleNodeIds));
+        }
+        Map<Long, Map<String, String>> regions = nodeRegionLookup.regionsOf(nodeList);
+        List<Map<String, Object>> result = new ArrayList<>();
+        regions.forEach((id, region) -> {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("id", id);
+            item.put("v4", region.get("v4"));
+            item.put("v6", region.get("v6"));
+            result.add(item);
+        });
+        return R.ok(result);
     }
 
     /** 设备离线保留期：离线且还在保留期内的节点带上最后一次上报的状态，节点状态页刷新后也能继续显示 */

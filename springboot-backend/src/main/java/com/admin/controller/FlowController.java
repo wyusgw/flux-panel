@@ -78,6 +78,15 @@ public class FlowController extends BaseController {
     com.admin.common.utils.FlowRecordBuffer flowRecordBuffer;
 
     /**
+     * 容器健康检查入口
+     * Docker healthcheck 会访问 /flow/test
+     */
+    @GetMapping("/test")
+    public String test() {
+        return SUCCESS_RESPONSE;
+    }
+
+    /**
      * 加密消息包装器
      */
     public static class EncryptedMessage {

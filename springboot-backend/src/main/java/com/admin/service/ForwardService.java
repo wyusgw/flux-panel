@@ -5,6 +5,7 @@ import com.admin.common.dto.ForwardUpdateDto;
 import com.admin.common.lang.R;
 import com.admin.entity.Forward;
 import com.baomidou.mybatisplus.extension.service.IService;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -54,6 +55,12 @@ public interface ForwardService extends IService<Forward> {
      * @return 结果
      */
     R forceDeleteForward(Long id);
+
+    /**
+     * 清空转发规则自己的已用流量统计（入站 / 出站流量归零），不影响账号的流量额度。
+     * 普通用户只能清空自己的规则，有一条不存在或无权限时整批不清
+     */
+    R clearForwardFlow(List<Long> ids);
 
     /**
      * 暂停转发服务

@@ -53,6 +53,7 @@ CREATE TABLE `forward` (
   `in_device_group_id` bigint(20) DEFAULT NULL,
   `out_device_group_id` bigint(20) DEFAULT NULL,
   `backup_out_node_ids` varchar(100) DEFAULT NULL COMMENT '故障转移：实际部署的备用出口节点ID，英文逗号分隔，按优先级',
+  `chain_hops` varchar(1000) DEFAULT NULL COMMENT '链式出口：实际部署的路径（JSON，每一跳的节点、设备组、端口、协议）',
   `speed_limit` int(11) NOT NULL DEFAULT '0'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -179,6 +180,7 @@ CREATE TABLE `node_traffic_cycle` (
   `down_bytes` bigint(20) NOT NULL DEFAULT '0',
   `last_raw_up` bigint(20) NOT NULL DEFAULT '0',
   `last_raw_down` bigint(20) NOT NULL DEFAULT '0',
+  `last_boot_time` bigint(20) DEFAULT NULL COMMENT '节点上次上报的开机时间（Unix 秒），用于区分服务器重启和统计范围变化',
   `updated_time` bigint(20) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -218,6 +220,8 @@ CREATE TABLE `node` (
   `socks` int(10) NOT NULL DEFAULT '0',
   `ss` int(10) NOT NULL DEFAULT '0',
   `proxy` varchar(500) DEFAULT NULL,
+  `last_info` text DEFAULT NULL COMMENT '离线前最后一次上报的状态（JSON）',
+  `offline_time` bigint(20) DEFAULT NULL COMMENT '最近一次被标记为离线的时间（毫秒）',
   `created_time` bigint(20) NOT NULL,
   `updated_time` bigint(20) DEFAULT NULL,
   `status` int(10) NOT NULL
@@ -352,7 +356,8 @@ CREATE TABLE `user` (
   `demo_areas` varchar(255) DEFAULT NULL,
   `demo_restore_time` varchar(5) DEFAULT NULL,
   `menu_permissions` varchar(500) DEFAULT NULL,
-  `remark` varchar(500) DEFAULT NULL
+  `remark` varchar(500) DEFAULT NULL,
+  `sub_token` varchar(64) DEFAULT NULL COMMENT '订阅流量查询地址用的 Token，可在个人中心重置'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 --
@@ -372,6 +377,7 @@ CREATE TABLE `user_group` (
   `id` int(10) NOT NULL,
   `name` varchar(200) DEFAULT NULL,
   `sort` int(10) NOT NULL DEFAULT '0',
+  `node_group_ids` varchar(500) DEFAULT NULL COMMENT '可用节点组：英文逗号分隔的节点组ID，空表示不限制',
   `created_time` bigint(20) NOT NULL,
   `updated_time` bigint(20) DEFAULT NULL,
   `status` int(10) NOT NULL DEFAULT '1'
@@ -706,7 +712,8 @@ ALTER TABLE `tunnel`
 -- 表的索引 `user`
 --
 ALTER TABLE `user`
-  ADD PRIMARY KEY (`id`);
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uk_user_sub_token` (`sub_token`);
 
 --
 -- 表的索引 `user_tunnel`

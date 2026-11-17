@@ -51,4 +51,22 @@ public class Node extends BaseEntity {
     @TableField(exist = false)
     private List<Long> nodeGroupIds;
 
+    /**
+     * 离线前最后一次上报的状态（节点上报的原始 JSON），离线时记录，用于「设备离线保留期」内继续在节点状态页显示。
+     * 不直接返回给前端，保留期内才通过 retainedInfo 返回
+     */
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    private String lastInfo;
+
+    /** 最近一次被标记为离线的时间（毫秒），在线时不使用 */
+    private Long offlineTime;
+
+    /** 保留期内的最后状态（非持久化，只在节点列表里离线且未过保留期时返回） */
+    @TableField(exist = false)
+    private String retainedInfo;
+
+    /** 最后状态保留到什么时候（毫秒，非持久化） */
+    @TableField(exist = false)
+    private Long retainedUntil;
+
 }

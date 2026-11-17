@@ -38,7 +38,9 @@ class GroupCustomIdTest {
         DataSource ds = new DriverManagerDataSource("jdbc:h2:mem:groupid" + System.nanoTime() + ";MODE=MySQL;DB_CLOSE_DELAY=-1", "sa", "");
         try (Connection c = ds.getConnection(); Statement s = c.createStatement()) {
             for (String table : new String[]{"user_group", "node_group"}) {
-                s.execute("CREATE TABLE " + table + " (id BIGINT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(100), sort INT, created_time BIGINT, updated_time BIGINT, status INT)");
+                // 用户组多一列可用节点组（node_group_ids）
+                String extra = "user_group".equals(table) ? ", node_group_ids VARCHAR(500)" : "";
+                s.execute("CREATE TABLE " + table + " (id BIGINT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(100), sort INT" + extra + ", created_time BIGINT, updated_time BIGINT, status INT)");
             }
         }
         MybatisConfiguration cfg = new MybatisConfiguration();

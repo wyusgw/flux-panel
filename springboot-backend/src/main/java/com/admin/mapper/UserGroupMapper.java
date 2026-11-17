@@ -15,7 +15,7 @@ import org.apache.ibatis.annotations.Insert;
 public interface UserGroupMapper extends BaseMapper<UserGroup> {
 
     /** 主键是自增的，insert 会忽略传入的 id；需要指定 ID 时用这个 */
-    @Insert("INSERT INTO user_group (id, name, sort, created_time, updated_time, status) "
-            + "VALUES (#{id}, #{name}, #{sort}, #{createdTime}, #{updatedTime}, #{status})")
+    @Insert("INSERT INTO user_group (id, name, sort, node_group_ids, created_time, updated_time, status) "
+            + "VALUES (#{id}, #{name}, #{sort}, #{nodeGroupIds}, #{createdTime}, #{updatedTime}, #{status})")
     int insertWithId(UserGroup group);
 }

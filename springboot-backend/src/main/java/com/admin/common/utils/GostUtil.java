@@ -103,30 +103,33 @@ public class GostUtil {
     }
 
     public static GostDto AddRemoteService(Long node_id, String name, Integer out_port, String remoteAddr,  String protocol, String strategy, String weights, String interfaceName) {
-        JSONObject data = new JSONObject();
-        data.put("name", name + "_tls");
-        data.put("addr", ":" + out_port);
+        return AddRemoteService(node_id, name, out_port, remoteAddr, protocol, strategy, weights, interfaceName, null);
+    }
 
-        if (StringUtils.isNotBlank(interfaceName)) {
-            JSONObject metadata = new JSONObject();
-            metadata.put("interface", interfaceName);
-            data.put("metadata", metadata);
-        }
-
-
-        JSONObject handler = new JSONObject();
-        handler.put("type", "relay");
-        data.put("handler", handler);
-        JSONObject listener = new JSONObject();
-        listener.put("type", protocol);
-        data.put("listener", listener);
-        data.put("forwarder", createForwarder(remoteAddr, strategy, weights));
+    /**
+     * @param chain 不为空时远端服务带上这条链：收到的连接经链转发出去（链式出口的中间跳用它连到下一跳），为空时直接转发到 remoteAddr
+     */
+    public static GostDto AddRemoteService(Long node_id, String name, Integer out_port, String remoteAddr, String protocol, String strategy, String weights, String interfaceName, String chain) {
         JSONArray services = new JSONArray();
-        services.add(data);
+        services.add(buildRemoteService(name, out_port, remoteAddr, protocol, strategy, weights, interfaceName, chain));
         return WebSocketServer.send_msg(node_id, services, "AddService");
     }
 
     public static GostDto UpdateRemoteService(Long node_id, String name, Integer out_port, String remoteAddr,String protocol, String strategy, String weights, String interfaceName) {
+        return UpdateRemoteService(node_id, name, out_port, remoteAddr, protocol, strategy, weights, interfaceName, null);
+    }
+
+    public static GostDto UpdateRemoteService(Long node_id, String name, Integer out_port, String remoteAddr, String protocol, String strategy, String weights, String interfaceName, String chain) {
+        JSONArray services = new JSONArray();
+        services.add(buildRemoteService(name, out_port, remoteAddr, protocol, strategy, weights, interfaceName, chain));
+        return WebSocketServer.send_msg(node_id, services, "UpdateService");
+    }
+
+    /**
+     * 出口节点上的远端服务：relay 处理器按 protocol 监听 out_port，收到的连接转发到 remoteAddr。
+     * 服务名以 _tls 结尾，节点不统计它的流量（流量只在入口节点统计）
+     */
+    static JSONObject buildRemoteService(String name, Integer out_port, String remoteAddr, String protocol, String strategy, String weights, String interfaceName, String chain) {
         JSONObject data = new JSONObject();
         data.put("name", name + "_tls");
         data.put("addr", ":" + out_port);
@@ -137,17 +140,17 @@ public class GostUtil {
             data.put("metadata", metadata);
         }
 
-
         JSONObject handler = new JSONObject();
         handler.put("type", "relay");
+        if (StringUtils.isNotBlank(chain)) {
+            handler.put("chain", chain);
+        }
         data.put("handler", handler);
         JSONObject listener = new JSONObject();
         listener.put("type", protocol);
         data.put("listener", listener);
         data.put("forwarder", createForwarder(remoteAddr, strategy, weights));
-        JSONArray services = new JSONArray();
-        services.add(data);
-        return WebSocketServer.send_msg(node_id, services, "UpdateService");
+        return data;
     }
 
     public static GostDto DeleteRemoteService(Long node_id, String name) {

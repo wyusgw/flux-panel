@@ -13,6 +13,11 @@ public interface NodeTrafficCycleService extends IService<NodeTrafficCycle> {
      */
     NodeTrafficCycle record(Long nodeId, long rawUp, long rawDown);
 
+    /**
+     * @param bootTime 节点上报的开机时间（Unix 秒），旧版节点没有时传 null
+     */
+    NodeTrafficCycle record(Long nodeId, long rawUp, long rawDown, Long bootTime);
+
     /** 节点当前周期已用的上传加下载字节数，还没有记录或已进入新周期时为 0 */
     long usedBytes(Long nodeId);
 

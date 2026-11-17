@@ -216,6 +216,43 @@ html.theme-transparent .home-accordion {
   }
 }
 
+/* 通用展开收起（components/collapse.tsx）：和导航栏「管理」分组同一条先快后慢的曲线，
+   高度 0fr↔1fr 过渡，内容淡入并轻微下滑；收起动画结束后才隐藏，隐藏后不可聚焦。
+   展开动画结束后加 is-settled 放开裁剪，里面的下拉框才能超出面板 */
+.collapse-panel {
+  --collapse-ease: cubic-bezier(0.22, 0.8, 0.24, 1);
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  visibility: hidden;
+  transition: grid-template-rows 0.32s var(--collapse-ease), opacity 0.22s ease, visibility 0.32s;
+}
+.collapse-panel.is-open {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  visibility: visible;
+}
+.collapse-panel > * {
+  min-height: 0;
+  overflow: hidden;
+}
+.collapse-panel.is-open.is-settled > * {
+  overflow: visible;
+}
+.collapse-panel > * > * {
+  transform: translateY(-6px);
+  transition: transform 0.32s var(--collapse-ease);
+}
+.collapse-panel.is-open > * > * {
+  transform: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .collapse-panel,
+  .collapse-panel > * > * {
+    transition: none;
+  }
+}
+
 /* 后台桌面端内容区：各页面根元素的内边距统一成与侧栏、顶栏等距 */
 .admin-main > * {
   padding: 12px 16px 16px 14px;

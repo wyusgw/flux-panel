@@ -39,6 +39,8 @@ export const refreshUserLimits = (id: number) => Network.post("/user/refreshLimi
 export const deleteUser = (id: number) => Network.post("/user/delete", { id });
 export const getUserPackageInfo = () => Network.post("/user/package");
 export const updateAutoRenew = (autoRenew: boolean) => Network.post("/user/autoRenew", { autoRenew });
+export const getSubscriptionToken = () => Network.post("/user/subscriptionToken");
+export const resetSubscriptionToken = () => Network.post("/user/resetSubscriptionToken");
 export const resetPassword = (currentPassword: string, newPassword?: string, newUsername?: string) => Network.post("/user/resetPassword", { currentPassword, newPassword, newUsername });
 export interface NotifySettingsPayload {
   paymentMode: number;
@@ -128,7 +130,6 @@ export const deleteTaskQueue = (id: number) => Network.post("/taskQueue/delete",
 export const createDeviceGroup = (data: any) => Network.post("/deviceGroup/create", data);
 export const getDeviceGroupList = () => Network.post("/deviceGroup/list");
 export const updateDeviceGroup = (data: any) => Network.post("/deviceGroup/update", data);
-export const updateDeviceGroupConfig = (id: number, config: string) => Network.post("/deviceGroup/updateConfig", { id, config });
 export const deleteDeviceGroup = (id: number) => Network.post("/deviceGroup/delete", { id });
 export const batchDeleteDeviceGroups = (ids: number[]) => Network.post("/deviceGroup/batchDelete", { ids });
 export const reorderDeviceGroups = (groups: Array<{ id: number; sort: number }>) => Network.post("/deviceGroup/reorder", { groups });
@@ -146,20 +147,16 @@ export const clearMyDeviceGroupFlow = (ids: number[]) => Network.post("/userDevi
 // 节点CRUD操作 - 全部使用POST请求
 export const createNode = (data: any) => Network.post("/node/create", data);
 export const getNodeList = () => Network.post("/node/list");
+export const getNodeRegions = () => Network.post("/node/regions");
 export const updateNode = (data: any) => Network.post("/node/update", data);
 export const deleteNode = (id: number) => Network.post("/node/delete", { id });
 export const getNodeInstallCommand = (id: number) => Network.post("/node/install", { id });
 export const getNodeConfig = (id: number) => Network.post("/node/config", { id });
 export const resetNodeSecret = (id: number) => Network.post("/node/resetSecret", { id });
-export const checkNodeStatus = (nodeId?: number) => {
-  const params = nodeId ? { nodeId } : {};
-  return Network.post("/node/checkStatus", params);
-};
 
 // 隧道CRUD操作 - 全部使用POST请求
 export const createTunnel = (data: any) => Network.post("/tunnel/create", data);
 export const getTunnelList = () => Network.post("/tunnel/list");
-export const getTunnelById = (id: number) => Network.post("/tunnel/get", { id });
 export const updateTunnel = (data: any) => Network.post("/tunnel/update", data);
 export const deleteTunnel = (id: number) => Network.post("/tunnel/delete", { id });
 // 诊断要依次对多段做 TCP ping，次数可配置，耗时可能超过默认的 30 秒请求超时
@@ -181,6 +178,7 @@ export const getForwardList = () => Network.post("/forward/list");
 export const updateForward = (data: any) => Network.post("/forward/update", data);
 export const deleteForward = (id: number) => Network.post("/forward/delete", { id });
 export const forceDeleteForward = (id: number) => Network.post("/forward/forceDelete", { id });
+export const clearForwardFlow = (ids: number[]) => Network.post("/forward/clearFlow", { ids });
 
 // 转发服务控制操作 - 通过Java后端接口
 export const pauseForwardService = (forwardId: number) => Network.post("/forward/pause", { id: forwardId });
@@ -200,12 +198,6 @@ export const getForwardGroupList = () => Network.post("/forwardGroup/list");
 export const updateForwardGroup = (data: any) => Network.post("/forwardGroup/update", data);
 export const deleteForwardGroup = (id: number) => Network.post("/forwardGroup/delete", { id });
 
-// 限速规则CRUD操作 - 全部使用POST请求
-export const createSpeedLimit = (data: any) => Network.post("/speedLimit/create", data);
-export const getSpeedLimitList = () => Network.post("/speedLimit/list");
-export const updateSpeedLimit = (data: any) => Network.post("/speedLimit/update", data);
-export const deleteSpeedLimit = (id: number) => Network.post("/speedLimit/delete", { id });
-
 // 重置流量接口
 export const resetUserFlow = (data: { id: number; type: number }) => Network.post("/user/reset", data);
 
@@ -214,10 +206,8 @@ export const getConfigs = () => Network.post("/config/list");
 export const getConfigByName = (name: string) => Network.post("/config/get", { name });
 export const getBackendInfo = () => Network.post("/config/backendInfo");
 export const updateConfigs = (configMap: Record<string, string>) => Network.post("/config/update", configMap);
-export const updateConfig = (name: string, value: string) => Network.post("/config/updateSingle", { name, value });
 
 
 // 验证码相关接口
+// 生成、校验验证码由登录页的验证码组件直接请求 captcha/generate、captcha/verify
 export const checkCaptcha = () => Network.post("/captcha/check");
-export const generateCaptcha = () => Network.post(`/captcha/generate`);
-export const verifyCaptcha = (data: { captchaId: string; trackData: string }) => Network.post("/captcha/verify", data); 

@@ -80,12 +80,6 @@ public class UserController extends BaseController {
     }
 
     @LogAnnotation
-    @PostMapping("/updatePassword")
-    public R updatePassword(@Validated @RequestBody ChangePasswordDto changePasswordDto) {
-        return userService.updatePassword(changePasswordDto);
-    }
-
-    @LogAnnotation
     @RequireRole
     @PostMapping("/reset")
     public R reset(@Validated @RequestBody ResetFlowDto resetFlowDto) {
@@ -97,6 +91,20 @@ public class UserController extends BaseController {
     public R updateAutoRenew(@RequestBody Map<String, Object> params) {
         Boolean autoRenew = Boolean.valueOf(String.valueOf(params.get("autoRenew")));
         return userService.updateAutoRenew(autoRenew);
+    }
+
+    /** 个人中心「订阅流量」：取当前账号的订阅 Token（没有时生成） */
+    @LogAnnotation
+    @PostMapping("/subscriptionToken")
+    public R subscriptionToken() {
+        return userService.getSubscriptionToken();
+    }
+
+    /** 个人中心「订阅流量」：重置订阅 Token，原来的订阅地址立即失效 */
+    @LogAnnotation
+    @PostMapping("/resetSubscriptionToken")
+    public R resetSubscriptionToken() {
+        return userService.resetSubscriptionToken();
     }
 
     @LogAnnotation

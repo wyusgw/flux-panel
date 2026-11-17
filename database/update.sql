@@ -1885,3 +1885,108 @@ ALTER TABLE `package_plan` ALTER COLUMN `type` SET DEFAULT 'traffic';
 
 -- 永久（不限时）套餐的到期时间由 2099-12-31 23:59:59（4102415999000）改为 9999-09-09 08:09:09（UTC+8，253392451749000）
 UPDATE `user` SET `exp_time` = 253392451749000 WHERE `exp_time` = 4102415999000;
+
+-- forward 表新增 chain_hops：出口是链式出口设备组时，规则创建/更新时实际部署的路径（JSON 数组，每一跳的节点、设备组、端口、协议），
+-- 暂停、恢复、删除、重新推送都按它处理，不受之后修改链式出口配置的影响
+SET @sql = (
+    SELECT IF(
+        NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = DATABASE() AND table_name = 'forward' AND column_name = 'chain_hops'
+        ),
+        'ALTER TABLE `forward` ADD COLUMN `chain_hops` varchar(1000) DEFAULT NULL COMMENT "链式出口：实际部署的路径（JSON，每一跳的节点、设备组、端口、协议）";',
+        'SELECT "Column `chain_hops` already exists in `forward`";'
+    )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- user_group 新增 node_group_ids：用户组的可用节点组（英文逗号分隔的节点组 ID），设置后该组的普通用户只能使用节点属于这些节点组的设备组，空表示不限制
+SET @sql = (
+    SELECT IF(
+        NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = DATABASE() AND table_name = 'user_group' AND column_name = 'node_group_ids'
+        ),
+        'ALTER TABLE `user_group` ADD COLUMN `node_group_ids` varchar(500) DEFAULT NULL COMMENT "可用节点组：英文逗号分隔的节点组ID，空表示不限制";',
+        'SELECT "Column `node_group_ids` already exists in `user_group`";'
+    )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- node 表新增 last_info / offline_time：设备离线保留期内，节点状态页继续显示离线前最后一次上报的状态
+SET @sql = (
+    SELECT IF(
+        NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = DATABASE() AND table_name = 'node' AND column_name = 'last_info'
+        ),
+        'ALTER TABLE `node` ADD COLUMN `last_info` text DEFAULT NULL COMMENT "离线前最后一次上报的状态（JSON）";',
+        'SELECT "Column `last_info` already exists in `node`";'
+    )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @sql = (
+    SELECT IF(
+        NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = DATABASE() AND table_name = 'node' AND column_name = 'offline_time'
+        ),
+        'ALTER TABLE `node` ADD COLUMN `offline_time` bigint(20) DEFAULT NULL COMMENT "最近一次被标记为离线的时间（毫秒）";',
+        'SELECT "Column `offline_time` already exists in `node`";'
+    )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- node_traffic_cycle 新增 last_boot_time：节点上报的开机时间，周期流量据此区分服务器重启和统计范围变化
+-- （容器的虚拟网卡消失、节点程序升级后只统计物理网卡时读数会变小，不再当作重启把开机以来的流量重复累加）
+SET @sql = (
+    SELECT IF(
+        NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = DATABASE() AND table_name = 'node_traffic_cycle' AND column_name = 'last_boot_time'
+        ),
+        'ALTER TABLE `node_traffic_cycle` ADD COLUMN `last_boot_time` bigint(20) DEFAULT NULL COMMENT "节点上次上报的开机时间（Unix 秒）";',
+        'SELECT "Column `last_boot_time` already exists in `node_traffic_cycle`";'
+    )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- user 新增 sub_token：订阅流量查询地址（openApi/subStore?token=...）用的 Token，地址里不再需要账号密码；可在个人中心重置
+SET @sql = (
+    SELECT IF(
+        NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = DATABASE() AND table_name = 'user' AND column_name = 'sub_token'
+        ),
+        'ALTER TABLE `user` ADD COLUMN `sub_token` varchar(64) DEFAULT NULL COMMENT "订阅流量查询地址用的 Token，可在个人中心重置";',
+        'SELECT "Column `sub_token` already exists in `user`";'
+    )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @sql = (
+    SELECT IF(
+        NOT EXISTS (
+            SELECT 1 FROM information_schema.statistics
+            WHERE table_schema = DATABASE() AND table_name = 'user' AND index_name = 'uk_user_sub_token'
+        ),
+        'ALTER TABLE `user` ADD UNIQUE KEY `uk_user_sub_token` (`sub_token`);',
+        'SELECT "Index `uk_user_sub_token` already exists in `user`";'
+    )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;

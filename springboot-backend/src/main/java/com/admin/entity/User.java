@@ -189,6 +189,13 @@ public class User extends BaseEntity {
     private Integer notifyFlowMode;
 
     /**
+     * 订阅流量查询地址（openApi/subStore）用的 Token：第一次在个人中心取地址时生成，可重置，重置后原地址立即失效。
+     * 只返回给账号本人（个人中心），不出现在用户列表等其它接口里
+     */
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    private String subToken;
+
+    /**
      * 上次收到到期提醒推送的日期（yyyy-MM-dd），用于每日去重
      */
     private String telegramLastExpiryReminderDate;

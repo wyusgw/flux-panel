@@ -69,17 +69,7 @@ class NodeConfigTest {
     }
 
     @Test
-    void configMustBeAJsonObject() {
-        for (String ok : new String[]{"{}", "{\"a\": 1}", " {\n} "}) {
-            assertTrue(DeviceGroupServiceImpl.isJsonObject(ok), ok);
-        }
-        for (String bad : new String[]{null, "", "  ", "[]", "1", "\"x\"", "{", "{a:1}", "***"}) {
-            assertFalse(DeviceGroupServiceImpl.isJsonObject(bad), String.valueOf(bad));
-        }
-    }
-
-    @Test
-    void configDefaultsToEmptyObjectAndIsMaskedForDemo() {
+    void unusedGroupConfigIsNotShownInNodeConfig() {
         Node node = new Node();
         node.setId(7L);
         DeviceGroup empty = new DeviceGroup();
@@ -89,7 +79,9 @@ class NodeConfigTest {
         filled.setConfig("{\"token\":\"real-config-value\"}");
         JsonNode json = new ObjectMapper().valueToTree(NodeServiceImpl.buildNodeConfig(node, Arrays.asList(empty, filled),
                 Collections.emptyMap(), Collections.emptyList()));
-        assertEquals("{}", json.get("deviceGroups").get(0).get("config").asText());
+        // 设备组原来单独保存的 config 已不再使用，不再出现在节点配置里
+        assertFalse(json.get("deviceGroups").get(0).has("config"));
+        assertFalse(json.toString().contains("real-config-value"));
         assertFalse(DemoDataMasker.mask(json).toString().contains("real-config-value"));
     }
 

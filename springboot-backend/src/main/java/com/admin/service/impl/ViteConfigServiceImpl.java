@@ -34,7 +34,6 @@ public class ViteConfigServiceImpl extends ServiceImpl<ViteConfigMapper, ViteCon
     private static final String ERROR_UPDATE_MSG = "配置更新失败";
     private static final String ERROR_CONFIG_NOT_FOUND = "配置不存在";
     private static final String ERROR_CONFIG_NAME_REQUIRED = "配置名称不能为空";
-    private static final String ERROR_CONFIG_VALUE_REQUIRED = "配置值不能为空";
 
     // ========== 公共接口实现 ==========
 
@@ -158,31 +157,6 @@ public class ViteConfigServiceImpl extends ServiceImpl<ViteConfigMapper, ViteCon
 
     private static String emptyToNull(String value) {
         return value == null || value.isEmpty() ? null : value;
-    }
-
-    /**
-     * 更新单个配置项
-     * 
-     * @param name 配置名
-     * @param value 配置值
-     * @return 更新结果响应
-     */
-    @Override
-    public R updateConfig(String name, String value) {
-        // 1. 验证必填字段
-        if (!StringUtils.hasText(name)) {
-            return R.err(ERROR_CONFIG_NAME_REQUIRED);
-        }
-        if (!StringUtils.hasText(value)) {
-            return R.err(ERROR_CONFIG_VALUE_REQUIRED);
-        }
-
-        try {
-            updateOrCreateConfig(name, value);
-            return R.ok(SUCCESS_UPDATE_MSG);
-        } catch (Exception e) {
-            return R.err(ERROR_UPDATE_MSG + ": " + e.getMessage());
-        }
     }
 
     // ========== 私有辅助方法 ==========

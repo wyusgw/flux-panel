@@ -59,6 +59,12 @@ public class WebSocketServer extends TextWebSocketHandler {
     ViteConfigService viteConfigService;
 
     @Resource
+    OfflineRetainPolicy offlineRetainPolicy;
+
+    /** 各节点最后一次上报的状态（带周期流量），离线时写进节点记录 */
+    private static final java.util.Map<Long, String> lastNodeInfo = new java.util.concurrent.ConcurrentHashMap<>();
+
+    @Resource
     TaskQueueService taskQueueService;
 
     @Resource
@@ -169,10 +175,17 @@ public class WebSocketServer extends TextWebSocketHandler {
 
                 // 如果是节点类型，转发消息给其他会话
                 if (Objects.equals(type, "1")) {
+                    String info = withCycleTraffic(id, decryptedPayload);
+                    // 记住最后一次上报的状态，离线时存下来供「设备离线保留期」使用
+                    try {
+                        lastNodeInfo.put(Long.valueOf(id), info);
+                    } catch (NumberFormatException ignored) {
+                        // 节点 ID 不是数字时不记录
+                    }
                     JSONObject jsonObject = new JSONObject();
                     jsonObject.put("id", id);
                     jsonObject.put("type", "info");
-                    jsonObject.put("data", withCycleTraffic(id, decryptedPayload));
+                    jsonObject.put("data", info);
                     String broadcastMessage = jsonObject.toJSONString();
                     
                     // 异步处理广播消息，避免阻塞当前线程
@@ -201,8 +214,10 @@ public class WebSocketServer extends TextWebSocketHandler {
             if (info == null || !info.containsKey("bytes_transmitted") || !info.containsKey("bytes_received")) {
                 return payload;
             }
+            // 新版节点带上开机时间，用来区分服务器重启和统计范围变化（见 NodeTrafficCycleServiceImpl.delta）
+            Long bootTime = info.containsKey("boot_time") ? info.getLong("boot_time") : null;
             NodeTrafficCycle cycle = nodeTrafficCycleService.record(Long.valueOf(nodeId),
-                    info.getLongValue("bytes_transmitted"), info.getLongValue("bytes_received"));
+                    info.getLongValue("bytes_transmitted"), info.getLongValue("bytes_received"), bootTime);
             info.put("cycle_upload", cycle.getUpBytes());
             info.put("cycle_download", cycle.getDownBytes());
             info.put("cycle_start", cycle.getCycleStart());
@@ -507,7 +522,13 @@ public class WebSocketServer extends TextWebSocketHandler {
                 log.info("节点 {} 不存在，无法更新离线状态", nodeId);
                 return;
             }
+            long offlineTime = System.currentTimeMillis();
             node.setStatus(0);
+            node.setOfflineTime(offlineTime);
+            String lastInfo = lastNodeInfo.remove(nodeId);
+            if (lastInfo != null) {
+                node.setLastInfo(lastInfo);
+            }
             boolean updateResult = nodeService.updateById(node);
             if (updateResult) {
                 log.info("节点 {} 状态更新为离线成功", nodeId);
@@ -515,6 +536,11 @@ public class WebSocketServer extends TextWebSocketHandler {
                 res.put("id", nodeId.toString());
                 res.put("type", "status");
                 res.put("data", 0);
+                // 设备离线保留期：告诉节点状态页最后状态保留到什么时候；没启用时不带，页面沿用原来的行为
+                long retainSeconds = offlineRetainPolicy.retainSeconds(nodeId);
+                if (retainSeconds >= 0) {
+                    res.put("retainedUntil", offlineTime + retainSeconds * 1000L);
+                }
                 broadcastNodeMessage(nodeId, res.toJSONString());
                 notificationUtil.notifyDeviceStatus(node, false);
             } else {

@@ -1,11 +1,14 @@
 package com.admin.common.utils;
 
+import com.admin.common.dto.ChainExitHop;
 import com.admin.entity.DeviceGroup;
+import com.admin.entity.DeviceGroupChainHop;
 import com.admin.entity.Forward;
 import com.admin.entity.Node;
 import com.admin.entity.Tunnel;
 import com.admin.entity.User;
 import com.admin.entity.UserTunnel;
+import com.admin.mapper.DeviceGroupChainHopMapper;
 import com.admin.service.DeviceGroupService;
 import com.admin.service.NodeService;
 import com.admin.service.TunnelService;
@@ -56,11 +59,20 @@ public class TunnelResolver {
     @Resource
     private NodeService nodeService;
 
+    @Resource
+    private DeviceGroupChainHopMapper chainHopMapper;
+
     /**
      * 解析转发规则对应的 Tunnel：旧版模式查真实记录；设备组模式在内存中拼出等效对象。
      */
     public Tunnel resolveTunnel(Forward forward) {
         if (forward == null) return null;
+        // 链式出口：已有规则按创建/更新时记录的路径（暂停、恢复、删除、重新推送都按它），
+        // 不随链式出口之后的配置变化，链式出口的配置暂时有问题（某一跳的设备组被改掉）时也能照常删除和暂停
+        List<ChainExitHop> recordedHops = ChainExit.parse(forward.getChainHops());
+        if (forward.getTunnelId() == null && !recordedHops.isEmpty()) {
+            return buildRecordedChainTunnel(forward.getInDeviceGroupId(), recordedHops);
+        }
         Tunnel tunnel = resolveTunnel(forward.getTunnelId(), forward.getInDeviceGroupId(), forward.getOutDeviceGroupId());
         // 已有规则的备用出口以创建/更新时记录的为准（暂停、恢复、删除、重新推送都按它），
         // 不随出口设备组之后的故障转移组设置变化
@@ -100,6 +112,11 @@ public class TunnelResolver {
         if (outDeviceGroupId != null) {
             outGroup = deviceGroupService.getById(outDeviceGroupId);
             if (outGroup == null) return null;
+            if (isChainGroup(outGroup)) {
+                // 链式出口没有自己的节点，按当前的跳配置拼出路径（端口在分配后填入）
+                List<ChainExitHop> hops = resolveChainHops(outGroup);
+                return hops == null ? null : chainTunnel(inGroup, inNode, hops);
+            }
             outNode = nodeService.getById(outGroup.getNodeId());
             if (outNode == null) return null;
         }
@@ -121,6 +138,109 @@ public class TunnelResolver {
         if (outGroup != null) {
             applyBackups(tunnel, resolveBackupNodeIds(outGroup, inGroup.getNodeId(), outGroup.getNodeId()));
         }
+        return tunnel;
+    }
+
+    static boolean isChainGroup(DeviceGroup group) {
+        return group != null && "chain".equals(group.getDirection());
+    }
+
+    /**
+     * 按链式出口当前的跳配置解析路径：每一跳的节点、设备组、协议（已按 Mux 换成复用版本）和连接地址，端口为空待分配。
+     * 配置有问题（见 {@link #chainExitError}）时返回 null
+     */
+    List<ChainExitHop> resolveChainHops(DeviceGroup chainGroup) {
+        List<DeviceGroupChainHop> configured = chainHopMapper.selectList(new QueryWrapper<DeviceGroupChainHop>()
+                .eq("device_group_id", chainGroup.getId())
+                .orderByAsc("hop_order"));
+        if (configured.isEmpty() || configured.size() > ChainExit.MAX_HOPS) {
+            return null;
+        }
+        List<ChainExitHop> hops = new ArrayList<>();
+        for (DeviceGroupChainHop hop : configured) {
+            DeviceGroup target = hop.getTargetDeviceGroupId() == null ? null : deviceGroupService.getById(hop.getTargetDeviceGroupId());
+            if (target == null || target.getNodeId() == null || !"outbound".equals(target.getDirection())) {
+                return null;
+            }
+            Node node = nodeService.getById(target.getNodeId());
+            if (node == null || node.getServerIp() == null || node.getServerIp().trim().isEmpty()) {
+                return null;
+            }
+            String protocol = ChainExit.effectiveProtocol(target.getProtocol(), hop.getMux() != null && hop.getMux() == 1);
+            hops.add(new ChainExitHop(node.getId(), target.getId(), null, protocol, node.getServerIp()));
+        }
+        return hops;
+    }
+
+    /**
+     * 链式出口当前能否用来创建 / 修改转发规则：没有配置任何一跳、某一跳的设备组被删除、不再是出口设备组、
+     * 没有绑定设备或设备没有连接地址时返回原因，可以用时返回 null
+     */
+    public String chainExitError(DeviceGroup chainGroup) {
+        List<DeviceGroupChainHop> configured = chainHopMapper.selectList(new QueryWrapper<DeviceGroupChainHop>()
+                .eq("device_group_id", chainGroup.getId())
+                .orderByAsc("hop_order"));
+        String prefix = "链式出口「" + chainGroup.getName() + "」";
+        if (configured.isEmpty()) {
+            return prefix + "还没有配置任何一跳";
+        }
+        if (configured.size() > ChainExit.MAX_HOPS) {
+            return prefix + "最多支持 " + ChainExit.MAX_HOPS + " 跳";
+        }
+        for (int i = 0; i < configured.size(); i++) {
+            DeviceGroupChainHop hop = configured.get(i);
+            String hopName = prefix + "第 " + (i + 1) + " 跳";
+            DeviceGroup target = hop.getTargetDeviceGroupId() == null ? null : deviceGroupService.getById(hop.getTargetDeviceGroupId());
+            if (target == null) {
+                return hopName + "的设备组不存在";
+            }
+            if (!"outbound".equals(target.getDirection())) {
+                return hopName + "「" + target.getName() + "」不是出口设备组";
+            }
+            Node node = target.getNodeId() == null ? null : nodeService.getById(target.getNodeId());
+            if (node == null) {
+                return hopName + "「" + target.getName() + "」没有绑定设备";
+            }
+            if (node.getServerIp() == null || node.getServerIp().trim().isEmpty()) {
+                return hopName + "「" + target.getName() + "」的设备没有连接地址";
+            }
+        }
+        return null;
+    }
+
+    /** 已有规则按记录的路径拼隧道：连接地址按节点当前的 serverIp，节点已被删除的跳地址为空（推送时会失败，删除 / 暂停照常按节点 ID） */
+    private Tunnel buildRecordedChainTunnel(Long inDeviceGroupId, List<ChainExitHop> recordedHops) {
+        if (inDeviceGroupId == null) return null;
+        DeviceGroup inGroup = deviceGroupService.getById(inDeviceGroupId);
+        if (inGroup == null) return null;
+        Node inNode = nodeService.getById(inGroup.getNodeId());
+        if (inNode == null) return null;
+        for (ChainExitHop hop : recordedHops) {
+            Node node = nodeService.getById(hop.getNodeId());
+            hop.setIp(node != null ? node.getServerIp() : null);
+        }
+        return chainTunnel(inGroup, inNode, recordedHops);
+    }
+
+    /** 出口是链式出口的等效隧道：出口节点 / 地址 / 协议即第 1 跳，没有备用出口 */
+    private Tunnel chainTunnel(DeviceGroup inGroup, Node inNode, List<ChainExitHop> hops) {
+        ChainExitHop first = hops.get(0);
+        Tunnel tunnel = new Tunnel();
+        tunnel.setInNodeId(inGroup.getNodeId());
+        tunnel.setInIp(inNode.getIp());
+        tunnel.setOutNodeId(first.getNodeId());
+        tunnel.setOutIp(first.getIp());
+        tunnel.setType(2);
+        tunnel.setProtocol(first.getProtocol());
+        tunnel.setTcpListenAddr("0.0.0.0");
+        tunnel.setUdpListenAddr("0.0.0.0");
+        tunnel.setUdpSourceInOut(inGroup.getUdpSourceInOut() != null && inGroup.getUdpSourceInOut() == 1);
+        tunnel.setFlow(2);
+        tunnel.setTrafficRatio(inGroup.getRatio() != null ? inGroup.getRatio() : BigDecimal.ONE);
+        tunnel.setStatus(1);
+        tunnel.setBackupOutNodeIds(new ArrayList<>());
+        tunnel.setBackupOutIps(new ArrayList<>());
+        tunnel.setChainHops(hops);
         return tunnel;
     }
 

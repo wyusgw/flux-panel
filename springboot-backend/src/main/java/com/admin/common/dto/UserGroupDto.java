@@ -9,4 +9,7 @@ public class UserGroupDto {
     private Long id;
 
     private String name;
+
+    /** 可用节点组；不传或为空表示不限制 */
+    private java.util.List<Long> nodeGroupIds;
 }

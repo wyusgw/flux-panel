@@ -38,6 +38,12 @@ public class NodeController extends BaseController {
         return nodeService.getAllNodes();
     }
 
+    /** 节点状态页的 IPv4 / IPv6 地区（由后端查询并缓存） */
+    @PostMapping("/regions")
+    public R regions() {
+        return nodeService.getNodeRegions();
+    }
+
     @LogAnnotation
     @RequireRole
     @PostMapping("/update")

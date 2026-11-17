@@ -52,6 +52,7 @@ public class ReadOnlyInterceptor implements HandlerInterceptor {
             PREFIX + "inviteCode/list",
             PREFIX + "node/config",
             PREFIX + "node/list",
+            PREFIX + "node/regions",
             PREFIX + "nodeGroup/list",
             PREFIX + "nodeGroup/names",
             PREFIX + "order/admin/list",
@@ -83,7 +84,6 @@ public class ReadOnlyInterceptor implements HandlerInterceptor {
     static {
         EditRoute config = new EditRoute(Arrays.asList(DemoArea.SITE.getCode(), DemoArea.PUSH.getCode()), Collections.singletonList("config"));
         EDIT_ROUTES.put(PREFIX + "config/update", config);
-        EDIT_ROUTES.put(PREFIX + "config/updateSingle", config);
         EDIT_ROUTES.put(PREFIX + "deviceGroup/offlineConfig",
                 new EditRoute(Arrays.asList(DemoArea.PUSH.getCode(), DemoArea.DEVICE_GROUP.getCode()), Collections.singletonList("device_group")));
         EditRoute userGroup = new EditRoute(Collections.singletonList(DemoArea.USER_GROUP.getCode()),
@@ -122,12 +122,12 @@ public class ReadOnlyInterceptor implements HandlerInterceptor {
         addRoutes("tunnel", DemoArea.TUNNEL, Arrays.asList("tunnel", "user_tunnel", "forward"),
                 "create", "update", "delete", "user/assign", "user/remove", "user/update");
         addRoutes("forward", DemoArea.FORWARD, Collections.singletonList("forward"),
-                "create", "update", "delete", "forceDelete", "pause", "resume", "updateOrder");
+                "create", "update", "delete", "forceDelete", "pause", "resume", "updateOrder", "clearFlow");
         addRoutes("forwardGroup", DemoArea.FORWARD_GROUP, Arrays.asList("forward_group", "forward"),
                 "create", "update", "delete");
         addRoutes("deviceGroup", DemoArea.DEVICE_GROUP,
                 Arrays.asList("device_group", "device_group_chain_hop", "device_group_user_group_relation"),
-                "create", "update", "updateConfig", "delete", "batchDelete");
+                "create", "update", "delete", "batchDelete");
         addRoutes("speedLimit", DemoArea.SPEED_LIMIT, Collections.singletonList("speed_limit"),
                 "create", "update", "delete");
         addRoutes("user", DemoArea.USER, Arrays.asList("user", "user_tunnel", "forward"),

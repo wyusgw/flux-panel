@@ -1,7 +1,5 @@
 package com.admin.service.impl;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.admin.common.dto.DeviceGroupChainHopDto;
 import com.admin.common.dto.DeviceGroupDto;
 import com.admin.common.dto.DeviceGroupUpdateDto;
@@ -46,7 +44,6 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
 
     private static final String ERROR_NODE_NOT_FOUND = "所属节点不存在";
     private static final String ERROR_GROUP_NOT_FOUND = "设备组不存在";
-    private static final String EMPTY_CONFIG = "{}";
     private static final String ERROR_CREATE_FAILED = "设备组创建失败";
     private static final String ERROR_UPDATE_FAILED = "设备组更新失败";
     private static final String ERROR_IN_USE = "该设备组仍被转发规则使用，请先删除相关规则";
@@ -80,6 +77,9 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
 
     @Autowired
     private DeviceGroupChainHopMapper chainHopMapper;
+
+    @Autowired
+    private com.admin.common.utils.NodeGroupScope nodeGroupScope;
 
     @Autowired
     private DeviceGroupUserGroupRelationMapper userGroupRelationMapper;
@@ -244,13 +244,16 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
                     .collect(Collectors.toList());
             Map<Long, List<Long>> userGroupIdsByGroup = loadUserGroupIds(adminGroupIds);
             final Long effectiveUserGroupId = userGroupId;
+            // 用户组设置了可用节点组时，管理员建立的设备组还要求节点在这些节点组里（链式出口要求每一跳都在）
+            java.util.Set<Long> allowedNodeGroups = nodeGroupScope.allowedNodeGroups(user);
             groups = candidates.stream()
                     .filter(g -> {
                         if (g.getOwnerUserId() != null) {
                             return true;
                         }
                         List<Long> allowed = userGroupIdsByGroup.getOrDefault(g.getId(), Collections.emptyList());
-                        return allowed.isEmpty() || (effectiveUserGroupId != null && allowed.contains(effectiveUserGroupId));
+                        return (allowed.isEmpty() || (effectiveUserGroupId != null && allowed.contains(effectiveUserGroupId)))
+                                && nodeGroupScope.groupAllowed(g, allowedNodeGroups);
                     })
                     .collect(Collectors.toList());
         }
@@ -319,7 +322,6 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
             item.put("sort", group.getSort());
             if (isAdmin) {
                 item.put("remark", group.getRemark());
-                item.put("config", group.getConfig() == null ? EMPTY_CONFIG : group.getConfig());
                 item.put("offlineGraceEnabled", group.getOfflineGraceEnabled() != null && group.getOfflineGraceEnabled() == 1);
                 item.put("offlineGraceSeconds", group.getOfflineGraceSeconds());
                 item.put("offlineRetainEnabled", group.getOfflineRetainEnabled() != null && group.getOfflineRetainEnabled() == 1);
@@ -339,6 +341,8 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
                         hopItem.put("targetName", targetGroup.getName());
                         Node targetNode = targetGroup.getNodeId() != null ? nodeService.getById(targetGroup.getNodeId()) : null;
                         hopItem.put("targetNodeName", targetNode != null ? targetNode.getName() : "未知节点");
+                        // 转发规则列表按各跳设备是否在线显示链式出口的状态
+                        hopItem.put("targetNodeStatus", targetNode != null ? targetNode.getStatus() : null);
                     }
                     return hopItem;
                 }).collect(Collectors.toList());
@@ -348,30 +352,6 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
         }).collect(Collectors.toList());
 
         return R.ok(result);
-    }
-
-    @Override
-    public R updateDeviceGroupConfig(Long id, String config) {
-        DeviceGroup group = id == null ? null : this.getById(id);
-        if (group == null) {
-            return R.err(ERROR_GROUP_NOT_FOUND);
-        }
-        if (!isJsonObject(config)) {
-            return R.err("配置必须是合法的 JSON 对象");
-        }
-        group.setConfig(config);
-        return this.updateById(group) ? R.ok() : R.err("配置保存失败");
-    }
-
-    static boolean isJsonObject(String config) {
-        if (config == null || config.trim().isEmpty()) {
-            return false;
-        }
-        try {
-            return new ObjectMapper().readTree(config).isObject();
-        } catch (JsonProcessingException e) {
-            return false;
-        }
     }
 
     @Override
@@ -388,6 +368,12 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
         }
 
         boolean isChain = "chain".equals(dto.getDirection());
+
+        // 已有转发规则在用的设备组不能在链式出口和其它类型之间切换：规则按创建时的类型部署（链式出口部署在各跳的节点上），
+        // 切换后规则记录的部署和设备组对不上
+        if (isChain != "chain".equals(group.getDirection()) && isUsedByForwards(group.getId())) {
+            return R.err("该设备组已被转发规则使用，不能在链式出口和其它类型之间切换");
+        }
 
         String allowedOut = normalizeAllowedOutGroupIds(dto.getAllowedOutGroupIds());
         if (ALLOWED_OUT_INVALID.equals(allowedOut)) {
@@ -484,6 +470,13 @@ public class DeviceGroupServiceImpl extends ServiceImpl<DeviceGroupMapper, Devic
     /**
      * 实际执行删除（用量校验 + 删除 + 链路清理 + 孤儿节点清理），供管理员删除与用户删除自己名下设备组复用
      */
+    private boolean isUsedByForwards(Long groupId) {
+        return forwardService.count(new QueryWrapper<Forward>()
+                .eq("in_device_group_id", groupId)
+                .or()
+                .eq("out_device_group_id", groupId)) > 0;
+    }
+
     private R doDeleteGroup(DeviceGroup group) {
         Long id = group.getId();
 

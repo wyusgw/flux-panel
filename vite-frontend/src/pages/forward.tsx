@@ -36,8 +36,10 @@ import {
   createForward,
   getForwardList,
   updateForward,
+  updateForwardOrder,
   deleteForward,
   forceDeleteForward,
+  clearForwardFlow,
   userTunnel,
   pauseForwardService,
   resumeForwardService,
@@ -158,8 +160,10 @@ interface DeviceGroupOption {
   name: string;
   nodeName: string;
   ratio?: number;
-  direction?: 'inbound' | 'outbound' | 'monitor' | 'both';
+  direction?: 'inbound' | 'outbound' | 'monitor' | 'both' | 'chain';
   node?: { status?: number };
+  /** 链式出口的各跳（只有链式出口有），targetNodeStatus 是该跳设备的在线状态 */
+  chainHops?: { targetNodeStatus?: number | null }[];
   ownerUserId?: number | null;
   allowedOutGroupIds?: string | null;
   allowedInGroupIds?: string | null;
@@ -185,11 +189,18 @@ const getDirectMode = (entry?: DeviceGroupOption): number => entry?.directForwar
 const isPairAllowed = (entry: DeviceGroupOption | undefined, exit: DeviceGroupOption | undefined): boolean =>
   !!entry && !!exit && isOutAllowedForEntry(entry, exit.id) && isInAllowedForExit(exit, entry.id);
 
-const isDeviceGroupOnline = (group?: DeviceGroupOption) => !!group?.nodeName && group.node?.status === 1;
+// 链式出口没有自己的设备：配置了至少一跳、且每一跳的设备都在线才算在线
+const isDeviceGroupOnline = (group?: DeviceGroupOption) => {
+  if (group?.direction === 'chain') return !!group.chainHops?.length && group.chainHops.every(hop => hop.targetNodeStatus === 1);
+  return !!group?.nodeName && group.node?.status === 1;
+};
+
+// 可以作为出口的设备组：出口、入口＋出口、链式出口
+const isExitGroup = (group: DeviceGroupOption) => group.direction === 'outbound' || group.direction === 'both' || group.direction === 'chain';
 
 // 表格里入口/出口设备的状态标签：没有绑定设备显示「无设备」，绑定了则按设备当前是否在线显示「在线」或「离线」
 const deviceStatusTag = (group: DeviceGroupOption) => {
-  if (!group.nodeName) return { text: '无设备', color: 'danger' as const };
+  if (group.direction === 'chain' ? !group.chainHops?.length : !group.nodeName) return { text: '无设备', color: 'danger' as const };
   return isDeviceGroupOnline(group) ? { text: '在线', color: 'success' as const } : { text: '离线', color: 'danger' as const };
 };
 
@@ -1571,6 +1582,34 @@ export default function ForwardPage() {
     return sorted.slice((safePage - 1) * pageSize, safePage * pageSize);
   };
 
+  // 手动排序：拖动规则名前的把手调整顺序，按排序值（inx）保存。点了表头排序时按表头排，不能拖动
+  const draggedForwardIdRef = useRef<number | null>(null);
+  const canDragSort = !sortDescriptor?.column;
+  const handleForwardRowDrop = async (targetId: number) => {
+    const draggedId = draggedForwardIdRef.current;
+    draggedForwardIdRef.current = null;
+    if (!canDragSort || draggedId === null || draggedId === targetId) return;
+    const ordered = [...forwards].sort((a, b) => (a.inx ?? 0) - (b.inx ?? 0) || a.id - b.id);
+    const from = ordered.findIndex(f => f.id === draggedId);
+    const to = ordered.findIndex(f => f.id === targetId);
+    if (from === -1 || to === -1) return;
+    const [moved] = ordered.splice(from, 1);
+    ordered.splice(to, 0, moved);
+    const previous = forwards;
+    const orderById = new Map(ordered.map((f, index) => [f.id, index]));
+    setForwards(prev => prev.map(f => ({ ...f, inx: orderById.get(f.id) ?? f.inx })));
+    try {
+      const res = await updateForwardOrder({ forwards: ordered.map((f, index) => ({ id: f.id, inx: index })) });
+      if (res.code !== 0) {
+        setForwards(previous);
+        toast.error(res.msg || '排序保存失败');
+      }
+    } catch (error) {
+      setForwards(previous);
+      toast.error('排序保存失败');
+    }
+  };
+
   // 已选中的规则 ID（供右侧工具列的批量操作使用）
   const getSelectedIds = (): number[] => {
     // 只对当前页可见的规则生效，避免「全选」误操作到翻页后看不到的规则
@@ -1664,11 +1703,32 @@ export default function ForwardPage() {
     }
   };
 
-  // 清空流量：面板暂未提供对应接口，先给出明确提示，避免误以为已生效
+  // 清空流量：只把选中规则自己的已用流量统计归零，不影响账号的流量额度
+  const [clearFlowOpen, setClearFlowOpen] = useState(false);
+  const [clearFlowLoading, setClearFlowLoading] = useState(false);
   const handleBatchClearFlow = () => {
+    if (getSelectedIds().length === 0) return;
+    setClearFlowOpen(true);
+  };
+  const confirmClearFlow = async () => {
     const ids = getSelectedIds();
     if (ids.length === 0) return;
-    toast('清空流量功能需要后端支持，暂未实现', { icon: '' });
+    setClearFlowLoading(true);
+    try {
+      const res = await clearForwardFlow(ids);
+      if (res.code === 0) {
+        toast.success('流量已清空');
+        setClearFlowOpen(false);
+        setSelectedKeys(new Set([]));
+        loadData();
+      } else {
+        toast.error(res.msg || '清空失败');
+      }
+    } catch (error) {
+      toast.error('清空失败');
+    } finally {
+      setClearFlowLoading(false);
+    }
   };
 
   if (loading) {
@@ -1837,9 +1897,24 @@ export default function ForwardPage() {
                       const inGroup = findDeviceGroup(forward.inDeviceGroupId);
                       const outGroup = findDeviceGroup(forward.outDeviceGroupId);
                       return (
-                        <TableRow key={forward.id}>
+                        <TableRow key={forward.id} onDragOver={(e: React.DragEvent) => { if (canDragSort) e.preventDefault(); }} onDrop={() => handleForwardRowDrop(forward.id)}>
                           <TableCell>
-                            <span className="text-sm text-foreground whitespace-nowrap">{forward.name} (#{forward.id})</span>
+                            <span className="inline-flex items-center gap-1.5 text-sm text-foreground whitespace-nowrap">
+                              {canDragSort && (
+                                <span
+                                  draggable
+                                  title="拖动调整顺序"
+                                  aria-label="拖动调整顺序"
+                                  className="inline-flex cursor-grab active:cursor-grabbing text-default-400"
+                                  // 拖动把手时不要触发整行的勾选
+                                  onPointerDown={(e) => e.stopPropagation()}
+                                  onDragStart={() => { draggedForwardIdRef.current = forward.id; }}
+                                >
+                                  <IconDragHandle />
+                                </span>
+                              )}
+                              {forward.name} (#{forward.id})
+                            </span>
                           </TableCell>
                           <TableCell>
                             {/* 第一行：入口名称 + 设备状态、倍率标签；第二行：完整入口地址（地址:端口），多个地址时可点开列表 */}
@@ -2063,14 +2138,13 @@ export default function ForwardPage() {
                             variant="bordered"
                             renderValue={(items) => items.map((item) => <div key={item.key}>{item.rendered}</div>)}
                           >
-                            {deviceGroups.filter((group) => {
-                              const direction = group.direction || 'inbound';
-                              return (direction === 'outbound' || direction === 'both')
-                                && isPairAllowed(deviceGroups.find(g => g.id === form.inDeviceGroupId), group);
-                            }).map((group) => (
+                            {deviceGroups.filter((group) => isExitGroup(group)
+                                && isPairAllowed(deviceGroups.find(g => g.id === form.inDeviceGroupId), group)
+                            ).map((group) => (
                               <SelectItem key={group.id.toString()} textValue={group.name}>
                                 <div className="flex items-center gap-1.5 flex-wrap">
                                   <span className="font-medium">{group.name}</span>
+                                  {group.direction === 'chain' && <RuleTag color="primary">链式 {group.chainHops?.length ?? 0} 跳</RuleTag>}
                                   <RuleTag color={deviceStatusTag(group).color}>{deviceStatusTag(group).text}</RuleTag>
                                   <RuleTag color="success">倍率 {group.ratio ?? 0}</RuleTag>
                                   {group.ownerUserId != null && <RuleTag color="secondary">用户自带设备</RuleTag>}
@@ -2343,6 +2417,17 @@ export default function ForwardPage() {
         />
 
         <ConfirmDialog
+          isOpen={clearFlowOpen}
+          onOpenChange={setClearFlowOpen}
+          title="清空流量"
+          message={<>确定要清空选中的 {selectedIds.length} 条规则的已用流量吗？清空后无法恢复。这里只是规则的流量统计，不影响账号的流量额度。</>}
+          confirmText="确定"
+          confirmColor="danger"
+          onConfirm={confirmClearFlow}
+          loading={clearFlowLoading}
+        />
+
+        <ConfirmDialog
           isOpen={batchDeleteOpen}
           onOpenChange={setBatchDeleteOpen}
           title="删除规则"
@@ -2443,7 +2528,7 @@ export default function ForwardPage() {
                               }}
                               variant="bordered"
                             >
-                              {deviceGroups.filter(g => (g.direction === 'outbound' || g.direction === 'both') && isPairAllowed(importEntry, g)).map((group) => (
+                              {deviceGroups.filter(g => isExitGroup(g) && isPairAllowed(importEntry, g)).map((group) => (
                                 <SelectItem key={group.id.toString()} textValue={group.name}>{group.name}</SelectItem>
                               ))}
                             </Select>

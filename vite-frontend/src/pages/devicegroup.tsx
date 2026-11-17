@@ -16,12 +16,12 @@ import { HoverDropdown } from "@/components/hover-dropdown";
 import { Switch } from "@heroui/switch";
 import toast from 'react-hot-toast';
 import { copyText } from '@/utils/clipboard';
+import { DEFAULT_PORT_END, DEFAULT_PORT_STA, parsePortRange, PORT_RANGE_ERROR } from '@/utils/port-range';
 
 import {
   createDeviceGroup,
   getDeviceGroupList,
   updateDeviceGroup,
-  updateDeviceGroupConfig,
   deleteDeviceGroup,
   batchDeleteDeviceGroups,
   reorderDeviceGroups,
@@ -69,12 +69,13 @@ interface DeviceGroupItem {
   name: string;
   nodeId: number | null;
   nodeName?: string;
+  /** 绑定设备的摘要（列表接口返回），status 为 1 表示在线 */
+  node?: { status?: number } | null;
   userGroupIds: number[];
   ratio: number;
   hideInProbe: number;
   direction?: 'inbound' | 'outbound' | 'monitor' | 'both' | 'chain';
   protocol?: string;
-  config?: string;
   remark?: string;
   allowedOutGroupIds?: string | null;
   allowedInGroupIds?: string | null;
@@ -149,6 +150,20 @@ interface DeviceGroupForm {
 
 const MAX_CHAIN_HOPS = 3;
 
+// 设备状态小标签（与转发规则列表的标签同一样式）：没有绑定设备显示「无设备」，否则按设备是否在线显示「在线」/「离线」
+const DEVICE_TAG_STYLES = {
+  success: 'text-success border-success/40 bg-success/10',
+  danger: 'text-danger border-danger/40 bg-danger/10',
+};
+const deviceStatusOf = (group: DeviceGroupItem): { text: string; color: keyof typeof DEVICE_TAG_STYLES } => {
+  if (!group.nodeId || !group.node) return { text: '无设备', color: 'danger' };
+  return group.node.status === 1 ? { text: '在线', color: 'success' } : { text: '离线', color: 'danger' };
+};
+const DeviceStatusTag = ({ group }: { group: DeviceGroupItem }) => {
+  const status = deviceStatusOf(group);
+  return <span className={`inline-flex items-center h-5 px-1.5 rounded border text-xs leading-none whitespace-nowrap ${DEVICE_TAG_STYLES[status.color]}`}>{status.text}</span>;
+};
+
 // 入口 IP/域名 存进后端时是逗号拼接的单个字符串（跟转发规则的目标地址是同一套约定），
 // 这里负责跟表单里"一行一个输入框"的字符串数组互相转换
 const parseEntryIps = (value?: string | null): string[] => {
@@ -186,20 +201,148 @@ const DEFAULT_FORM: DeviceGroupForm = {
   nodeGroupIds: []
 };
 
+const ADVANCED_PROTOCOLS = ['tls', 'wss', 'tcp', 'mtls', 'mwss', 'mtcp'];
+const ADVANCED_TYPES: DeviceGroupForm['direction'][] = ['inbound', 'outbound', 'monitor', 'both', 'chain'];
+const isEntryType = (type: DeviceGroupForm['direction']) => type === 'inbound' || type === 'both';
+const isExitType = (type: DeviceGroupForm['direction']) => type === 'outbound' || type === 'both';
+
+/** 高级编辑里该类型可用的字段，与编辑弹窗里该类型显示的选项一一对应 */
+const advancedKeysFor = (type: DeviceGroupForm['direction']): string[] => {
+  const keys = ['name', 'type', 'user_groups', 'ratio', 'hide_in_probe', 'remark'];
+  if (type === 'chain') return [...keys, 'hops'];
+  if (type !== 'monitor') keys.push('server_ip', 'entry_ips', 'port_range');
+  keys.push('node_groups');
+  if (isExitType(type)) keys.push('protocol', 'allowed_in', 'failover');
+  if (isEntryType(type)) keys.push('allowed_out', 'direct_forward', 'udp_source_in_out');
+  return keys;
+};
+
+const csvToIds = (value: string): number[] => value.split(',').map(s => parseInt(s.trim(), 10)).filter(id => Number.isInteger(id) && id > 0);
+
+/** 编辑表单 → 高级编辑的 JSON（只放该类型用得到的字段） */
+const formToAdvancedJson = (f: DeviceGroupForm): Record<string, unknown> => {
+  const json: Record<string, unknown> = {
+    name: f.name,
+    type: f.direction,
+    user_groups: f.userGroupIds,
+    ratio: f.ratio,
+    hide_in_probe: f.hideInProbe,
+    remark: f.remark,
+  };
+  if (f.direction === 'chain') {
+    json.hops = f.chainHops.map(hop => ({ group: hop.targetDeviceGroupId, mux: hop.mux }));
+    return json;
+  }
+  if (f.direction !== 'monitor') {
+    json.server_ip = f.serverIp;
+    json.entry_ips = f.entryIps.map(ip => ip.trim()).filter(Boolean);
+    json.port_range = `${f.portSta}-${f.portEnd}`;
+  }
+  json.node_groups = f.nodeGroupIds;
+  if (isExitType(f.direction)) {
+    json.protocol = f.protocol || 'tls';
+    json.allowed_in = csvToIds(f.allowedInGroupIds);
+    json.failover = f.failoverGroupId || 0;
+  }
+  if (isEntryType(f.direction)) {
+    json.allowed_out = csvToIds(f.allowedOutGroupIds);
+    json.direct_forward = f.directForwardMode;
+    json.udp_source_in_out = f.udpSourceInOut;
+  }
+  return json;
+};
+
+/**
+ * 校验高级编辑的 JSON，并合并到设备组当前的编辑表单上（没写的字段保持原值）。
+ * 链式出口和其它类型之间不能在这里切换（链式出口没有自己的设备），请用编辑
+ */
+const applyAdvancedJson = (base: DeviceGroupForm, text: string): { form?: DeviceGroupForm; error?: string } => {
+  let json: any;
+  try {
+    json = JSON.parse(text);
+  } catch (error) {
+    return { error: `JSON 格式错误：${(error as Error).message}` };
+  }
+  if (!json || typeof json !== 'object' || Array.isArray(json)) return { error: '应为 JSON 对象' };
+
+  const type = (json.type ?? base.direction) as DeviceGroupForm['direction'];
+  if (!ADVANCED_TYPES.includes(type)) return { error: `type 只能是 ${ADVANCED_TYPES.join(' / ')}` };
+  if ((type === 'chain') !== (base.direction === 'chain')) return { error: '链式出口和其它类型之间不能在高级编辑里切换，请使用编辑' };
+  const allowed = advancedKeysFor(type);
+  const unknown = Object.keys(json).filter(key => !allowed.includes(key));
+  if (unknown.length > 0) return { error: `不支持的字段：${unknown.join('、')}，可用字段：${allowed.join('、')}` };
+
+  const isIdList = (value: unknown) => Array.isArray(value) && value.every(id => Number.isInteger(id) && (id as number) > 0);
+  for (const key of ['user_groups', 'node_groups', 'allowed_in', 'allowed_out']) {
+    if (json[key] !== undefined && !isIdList(json[key])) return { error: `${key} 应为设备组 / 用户组 ID 组成的数组，例如 [1, 2]` };
+  }
+  const f: DeviceGroupForm = { ...base, direction: type };
+  if (json.name !== undefined) f.name = String(json.name).trim();
+  if (!f.name) return { error: 'name 不能为空' };
+  if (json.user_groups !== undefined) f.userGroupIds = json.user_groups;
+  if (json.ratio !== undefined) {
+    if (typeof json.ratio !== 'number' || json.ratio < 0) return { error: 'ratio 应为不小于 0 的数字' };
+    f.ratio = json.ratio;
+  }
+  if (json.hide_in_probe !== undefined) {
+    if (![0, 1, 2].includes(json.hide_in_probe)) return { error: 'hide_in_probe 只能是 0（不隐藏）、1（对非管理员隐藏）、2（对所有用户隐藏）' };
+    f.hideInProbe = json.hide_in_probe;
+  }
+  if (json.remark !== undefined) f.remark = json.remark == null ? '' : String(json.remark);
+
+  if (type === 'chain') {
+    if (json.hops !== undefined) {
+      if (!Array.isArray(json.hops) || json.hops.some((hop: any) => !hop || typeof hop !== 'object' || !Number.isInteger(hop.group) || hop.group < 1)) {
+        return { error: 'hops 应为数组，每一跳形如 {"group": 出口设备组ID, "mux": false}' };
+      }
+      f.chainHops = json.hops.map((hop: any) => ({ targetDeviceGroupId: hop.group, mux: !!hop.mux }));
+    }
+    if (f.chainHops.length === 0) return { error: '链式出口至少需要配置 1 跳' };
+    if (f.chainHops.length > MAX_CHAIN_HOPS) return { error: `链式出口最多 ${MAX_CHAIN_HOPS} 跳` };
+    return { form: f };
+  }
+
+  if (json.server_ip !== undefined) f.serverIp = String(json.server_ip).trim();
+  if (json.entry_ips !== undefined) {
+    const ips = Array.isArray(json.entry_ips) ? json.entry_ips : [json.entry_ips];
+    f.entryIps = ips.map((ip: unknown) => String(ip).trim()).filter(Boolean);
+    if (f.entryIps.length === 0) f.entryIps = [''];
+  }
+  if (json.port_range !== undefined) {
+    const text = json.port_range == null ? '' : String(json.port_range).trim();
+    const parsed = text ? parsePortRange(text) : [DEFAULT_PORT_STA, DEFAULT_PORT_END] as [number, number];
+    if (!parsed) return { error: `port_range ${PORT_RANGE_ERROR.replace('端口范围', '')}` };
+    [f.portSta, f.portEnd] = parsed;
+  }
+  if (type !== 'monitor' && !f.serverIp) return { error: 'server_ip 不能为空' };
+  if (json.node_groups !== undefined) f.nodeGroupIds = json.node_groups;
+  if (json.protocol !== undefined) {
+    const protocol = json.protocol == null ? '' : String(json.protocol).trim();
+    if (protocol && !ADVANCED_PROTOCOLS.includes(protocol)) return { error: `protocol 只能是 ${ADVANCED_PROTOCOLS.join(' / ')}` };
+    f.protocol = protocol;
+  }
+  if (json.allowed_in !== undefined) f.allowedInGroupIds = json.allowed_in.join(',');
+  if (json.allowed_out !== undefined) f.allowedOutGroupIds = json.allowed_out.join(',');
+  if (json.failover !== undefined) {
+    if (!Number.isInteger(json.failover) || json.failover < 0) return { error: 'failover 应为故障转移设备组 ID，0 表示无' };
+    f.failoverGroupId = json.failover;
+  }
+  if (json.direct_forward !== undefined) {
+    if (![0, 1, 2].includes(json.direct_forward)) return { error: 'direct_forward 只能是 0（禁止）、1（可选）、2（强制）' };
+    f.directForwardMode = json.direct_forward;
+  }
+  if (json.udp_source_in_out !== undefined) {
+    if (typeof json.udp_source_in_out !== 'boolean') return { error: 'udp_source_in_out 应为 true 或 false' };
+    f.udpSourceInOut = json.udp_source_in_out;
+  }
+  return { form: f };
+};
+
 const HIDE_OPTIONS = [
   { key: '0', label: '不隐藏' },
   { key: '1', label: '对非管理员用户隐藏' },
   { key: '2', label: '对所有用户隐藏' }
 ];
-
-// 解析「起始-结束」格式的端口范围，格式不对或超出 1-65535、起始大于结束时返回 null
-const parsePortRange = (text: string): [number, number] | null => {
-  const m = text.trim().match(/^(\d{1,5})\s*-\s*(\d{1,5})$/);
-  if (!m) return null;
-  const sta = Number(m[1]), end = Number(m[2]);
-  if (sta < 1 || end > 65535 || sta > end) return null;
-  return [sta, end];
-};
 
 export default function DeviceGroupPage() {
   const [loading, setLoading] = useState(true);
@@ -243,7 +386,8 @@ export default function DeviceGroupPage() {
 
   const [advancedModalOpen, setAdvancedModalOpen] = useState(false);
   const [advancedTarget, setAdvancedTarget] = useState<NodeItem | null>(null);
-  const [advancedForm, setAdvancedForm] = useState<{ http: number; tls: number; socks: number; ss: number; proxy: string; nodeGroupIds: number[] }>({ http: 0, tls: 0, socks: 0, ss: 0, proxy: '', nodeGroupIds: [] });
+  // 设备设置只改协议屏蔽和代理；节点组在设备组的编辑里设置，这里不提交 nodeGroupIds，后端保持原有归属
+  const [advancedForm, setAdvancedForm] = useState<{ http: number; tls: number; socks: number; ss: number; proxy: string }>({ http: 0, tls: 0, socks: 0, ss: 0, proxy: '' });
   const [advancedLoading, setAdvancedLoading] = useState(false);
 
   const [resetModalOpen, setResetModalOpen] = useState(false);
@@ -321,18 +465,17 @@ export default function DeviceGroupPage() {
     setModalOpen(true);
   };
 
-  const handleEdit = (group: DeviceGroupItem) => {
-    setIsEdit(true);
-    setChainPanelOpen(false);
-    setTypeChosen(true);
-    setForm({
+  // 设备组 → 编辑表单：编辑弹窗和高级编辑共用
+  const groupToForm = (group: DeviceGroupItem): DeviceGroupForm => {
+    const node = nodes.find(n => n.id === group.nodeId);
+    return {
       id: group.id,
       name: group.name,
       nodeId: group.nodeId,
-      serverIp: nodes.find(node => node.id === group.nodeId)?.serverIp || '',
-      entryIps: parseEntryIps(nodes.find(node => node.id === group.nodeId)?.ip),
-      portSta: nodes.find(node => node.id === group.nodeId)?.portSta || 1000,
-      portEnd: nodes.find(node => node.id === group.nodeId)?.portEnd || 65535,
+      serverIp: node?.serverIp || '',
+      entryIps: parseEntryIps(node?.ip),
+      portSta: node?.portSta || 1000,
+      portEnd: node?.portEnd || 65535,
       userGroupIds: group.userGroupIds || [],
       ratio: group.ratio,
       hideInProbe: group.hideInProbe,
@@ -344,12 +487,19 @@ export default function DeviceGroupPage() {
       failoverGroupId: group.failoverGroupId || 0,
       udpSourceInOut: !!group.udpSourceInOut,
       directForwardMode: group.directForwardMode ?? 1,
-      nodeGroupIds: nodes.find(node => node.id === group.nodeId)?.nodeGroupIds || [],
+      nodeGroupIds: node?.nodeGroupIds || [],
       chainHops: (group.chainHops || [])
         .slice()
         .sort((a, b) => a.hopOrder - b.hopOrder)
         .map(hop => ({ targetDeviceGroupId: hop.targetDeviceGroupId, mux: hop.mux }))
-    });
+    };
+  };
+
+  const handleEdit = (group: DeviceGroupItem) => {
+    setIsEdit(true);
+    setChainPanelOpen(false);
+    setTypeChosen(true);
+    setForm(groupToForm(group));
     setErrors({});
     setModalOpen(true);
   };
@@ -367,11 +517,57 @@ export default function DeviceGroupPage() {
       }
     } else if (form.direction !== 'monitor') {
       if (!form.serverIp.trim()) newErrors.serverIp = '请输入服务器 IP 或域名';
-      if (portRangeText.trim() && !parsePortRange(portRangeText)) newErrors.portRange = '端口范围格式应为「起始-结束」，如 2000-65535，且在 1-65535 之间、起始不大于结束';
+      if (portRangeText.trim() && !parsePortRange(portRangeText)) newErrors.portRange = PORT_RANGE_ERROR;
     }
     if (form.ratio < 0) newErrors.ratio = '流量倍率不能小于0';
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
+  };
+
+  /**
+   * 把表单保存到后端：链式出口只保存设备组；其它类型先创建 / 更新设备（节点），再保存设备组。
+   * 编辑弹窗和高级编辑共用，返回接口结果，提示由调用方显示
+   */
+  const persistGroupForm = async (f: DeviceGroupForm, editing: boolean): Promise<{ code: number; msg?: string }> => {
+    // 链式出口设备组没有自己的物理节点，不需要创建/更新 Node，直接提交设备组本身
+    if (f.direction === 'chain') {
+      const groupData = {
+        id: f.id,
+        name: f.name,
+        direction: f.direction,
+        userGroupIds: f.userGroupIds,
+        ratio: f.ratio,
+        hideInProbe: f.hideInProbe,
+        remark: f.remark,
+        chainHops: f.chainHops.map(hop => ({ targetDeviceGroupId: hop.targetDeviceGroupId, mux: hop.mux }))
+      };
+      return editing ? updateDeviceGroup(groupData) : createDeviceGroup(groupData);
+    }
+
+    let nodeId = f.nodeId;
+    // 连接地址留空时默认使用服务器地址
+    const joinedEntryIp = joinEntryIps(f.entryIps) || f.serverIp.trim();
+    const nodeData = { name: f.name, ip: joinedEntryIp, serverIp: f.serverIp, portSta: f.portSta, portEnd: f.portEnd, nodeGroupIds: f.nodeGroupIds };
+    if (nodeId) {
+      // 编辑已有设备组，或补全一个已存在但尚未建立设备组的节点，都是更新同一个节点记录
+      const nodeRes = await updateNode({ id: nodeId, ...nodeData });
+      if (nodeRes.code !== 0) return { code: nodeRes.code, msg: nodeRes.msg || '更新设备失败' };
+    } else {
+      const nodeRes = await createNode(nodeData);
+      if (nodeRes.code !== 0) return { code: nodeRes.code, msg: nodeRes.msg || '创建设备失败' };
+      nodeId = nodeRes.data?.id ?? null;
+      // 兼容旧版后端：创建成功时只返回“节点创建成功”字串。
+      if (!nodeId) {
+        const listRes = await getNodeList();
+        if (listRes.code === 0) {
+          const candidates = (listRes.data || []).filter((node: NodeItem) => node.name === f.name && node.ip === joinedEntryIp && node.serverIp === f.serverIp);
+          nodeId = candidates.sort((a: NodeItem, b: NodeItem) => b.id - a.id)[0]?.id ?? null;
+        }
+      }
+      if (!nodeId) return { code: -1, msg: '设备已创建，但无法识别其 ID；请刷新后在“未配置设备”中补全配置' };
+    }
+    const groupData = { ...f, nodeId };
+    return editing ? updateDeviceGroup(groupData) : createDeviceGroup(groupData);
   };
 
   const handleSubmit = async () => {
@@ -379,53 +575,7 @@ export default function DeviceGroupPage() {
 
     setSubmitLoading(true);
     try {
-      // 链式出口设备组没有自己的物理节点，不需要创建/更新 Node，直接提交设备组本身
-      if (form.direction === 'chain') {
-        const groupData = {
-          id: form.id,
-          name: form.name,
-          direction: form.direction,
-          userGroupIds: form.userGroupIds,
-          ratio: form.ratio,
-          hideInProbe: form.hideInProbe,
-          remark: form.remark,
-          chainHops: form.chainHops.map(hop => ({ targetDeviceGroupId: hop.targetDeviceGroupId, mux: hop.mux }))
-        };
-        const res = isEdit ? await updateDeviceGroup(groupData) : await createDeviceGroup(groupData);
-        if (res.code === 0) {
-          toast.success(isEdit ? '修改成功' : '创建成功');
-          setModalOpen(false);
-          loadData();
-        } else {
-          toast.error(res.msg || '操作失败');
-        }
-        return;
-      }
-
-      let nodeId = form.nodeId;
-      // 连接地址留空时默认使用服务器地址
-      const joinedEntryIp = joinEntryIps(form.entryIps) || form.serverIp.trim();
-      const nodeData = { name: form.name, ip: joinedEntryIp, serverIp: form.serverIp, portSta: form.portSta, portEnd: form.portEnd, nodeGroupIds: form.nodeGroupIds };
-      if (nodeId) {
-        // 编辑已有设备组，或补全一个已存在但尚未建立设备组的节点，都是更新同一个节点记录
-        const nodeRes = await updateNode({ id: nodeId, ...nodeData });
-        if (nodeRes.code !== 0) { toast.error(nodeRes.msg || '更新设备失败'); return; }
-      } else {
-        const nodeRes = await createNode(nodeData);
-        if (nodeRes.code !== 0) { toast.error(nodeRes.msg || '创建设备失败'); return; }
-        nodeId = nodeRes.data?.id ?? null;
-        // 兼容旧版后端：创建成功时只返回“节点创建成功”字串。
-        if (!nodeId) {
-          const listRes = await getNodeList();
-          if (listRes.code === 0) {
-            const candidates = (listRes.data || []).filter((node: NodeItem) => node.name === form.name && node.ip === joinedEntryIp && node.serverIp === form.serverIp);
-            nodeId = candidates.sort((a: NodeItem, b: NodeItem) => b.id - a.id)[0]?.id ?? null;
-          }
-        }
-        if (!nodeId) { toast.error('设备已创建，但无法识别其 ID；请刷新后在“未配置设备”中补全配置'); return; }
-      }
-      const groupData = { ...form, nodeId };
-      const res = isEdit ? await updateDeviceGroup(groupData) : await createDeviceGroup(groupData);
+      const res = await persistGroupForm(form, isEdit);
       if (res.code === 0) {
         toast.success(isEdit ? '修改成功' : '创建成功');
         setModalOpen(false);
@@ -518,28 +668,23 @@ export default function DeviceGroupPage() {
     window.open(`/nodeConfig?id=${nodeId}`, '_blank');
   };
 
+  // 高级编辑：以 JSON 编辑设备组本身的设置，保存与编辑弹窗走同一套接口，立即生效
   const handleOpenJsonEdit = (group: DeviceGroupItem) => {
     setJsonTarget(group);
-    setJsonText(group.config || '{}');
+    setJsonText(JSON.stringify(formToAdvancedJson(groupToForm(group)), null, 2));
     setJsonError('');
   };
 
   const submitJsonEdit = async () => {
     if (!jsonTarget) return;
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(jsonText);
-    } catch (error) {
-      setJsonError(`JSON 格式错误：${(error as Error).message}`);
-      return;
-    }
-    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      setJsonError('配置必须是 JSON 对象，例如 {}');
+    const { form: next, error } = applyAdvancedJson(groupToForm(jsonTarget), jsonText);
+    if (error || !next) {
+      setJsonError(error || '保存失败');
       return;
     }
     setJsonLoading(true);
     try {
-      const res = await updateDeviceGroupConfig(jsonTarget.id, jsonText);
+      const res = await persistGroupForm(next, true);
       if (res.code !== 0) {
         setJsonError(res.msg || '保存失败');
         return;
@@ -557,7 +702,7 @@ export default function DeviceGroupPage() {
   const handleAdvancedEdit = (nodeId: number) => {
     const node = nodes.find(n => n.id === nodeId) || orphanNodes.find(n => n.id === nodeId) || null;
     setAdvancedTarget(node);
-    setAdvancedForm({ http: node?.http || 0, tls: node?.tls || 0, socks: node?.socks || 0, ss: node?.ss || 0, proxy: node?.proxy || '', nodeGroupIds: node?.nodeGroupIds || [] });
+    setAdvancedForm({ http: node?.http || 0, tls: node?.tls || 0, socks: node?.socks || 0, ss: node?.ss || 0, proxy: node?.proxy || '' });
     setAdvancedModalOpen(true);
   };
 
@@ -840,11 +985,11 @@ export default function DeviceGroupPage() {
                       selectionMode="multiple"
                       label={<HelpTooltip content="选填，允许使用的「出口」设备组。设置后，用户选择本入口时，未允许使用的出口将不会出现在出口选项中；留空表示不限制">限制出口</HelpTooltip>}
                       placeholder="留空则不限制"
-                      selectedKeys={new Set(idListToKeys(form.allowedOutGroupIds, groups, g => (g.direction === 'outbound' || g.direction === 'both') && g.id !== form.id))}
+                      selectedKeys={new Set(idListToKeys(form.allowedOutGroupIds, groups, g => (g.direction === 'outbound' || g.direction === 'both' || g.direction === 'chain') && g.id !== form.id))}
                       onSelectionChange={(keys) => setForm(prev => ({ ...prev, allowedOutGroupIds: Array.from(keys as Set<string>).join(',') }))}
                       variant="bordered"
                     >
-                      {groups.filter(g => (g.direction === 'outbound' || g.direction === 'both') && g.id !== form.id).map(g => (
+                      {groups.filter(g => (g.direction === 'outbound' || g.direction === 'both' || g.direction === 'chain') && g.id !== form.id).map(g => (
                         <SelectItem key={g.id.toString()} textValue={`${g.name} (#${g.id})`}>{`${g.name} (#${g.id})`}</SelectItem>
                       ))}
                     </Select>
@@ -906,7 +1051,7 @@ export default function DeviceGroupPage() {
                       <Select listboxProps={{ emptyContent: <EmptyState compact /> }} labelPlacement="outside-top"
                         size="sm"
                         selectionMode="multiple"
-                        label={<HelpTooltip content="该节点所属的节点组，用于分配套餐/用户组可使用的节点范围；一个节点可以同时属于多个节点组">节点组</HelpTooltip>}
+                        label={<HelpTooltip content="该节点所属的节点组，一个节点可以同时属于多个节点组。用户组设置了「可用节点组」时，该组用户只能使用节点在这些节点组里的设备组；节点状态页也按节点组分类显示">节点组</HelpTooltip>}
                         placeholder="未归属任何节点组"
                         selectedKeys={new Set(form.nodeGroupIds.map(String))}
                         onSelectionChange={(keys) => {
@@ -995,7 +1140,7 @@ export default function DeviceGroupPage() {
                   {typeChosen && (form.direction === 'inbound' || form.direction === 'both') && (
                     <div className="flex items-center gap-3">
                       <span className="whitespace-nowrap text-sm font-semibold text-foreground">
-                        <HelpTooltip content="通过监听每个网卡的 IP 地址实现 UDP 源进源出，优先级高于 BIND_INBOUND。双 IP 的机器且对 UDP 有需求的，建议打开。需要节点版本 1.2.7 及以上；修改后，已有的转发规则需要重新保存或重启后才会生效">UDP 智能绑定 (源进源出)</HelpTooltip>
+                        <HelpTooltip content="通过监听每个网卡的 IP 地址实现 UDP 源进源出。双 IP 的机器且对 UDP 有需求的，建议打开。需要节点版本 1.2.7 及以上；修改后，已有的转发规则需要重新保存或重启后才会生效">UDP 智能绑定 (源进源出)</HelpTooltip>
                       </span>
                       <Switch size="sm" aria-label="UDP 智能绑定 (源进源出)" isSelected={form.udpSourceInOut} onValueChange={(v) => setForm(prev => ({ ...prev, udpSourceInOut: v }))} />
                     </div>
@@ -1037,6 +1182,7 @@ export default function DeviceGroupPage() {
                     <div className="rounded-small border-1 border-foreground/80">
                       <div className="border-b-1 border-default-200 px-3 py-2 text-sm font-semibold text-foreground">链式出口配置</div>
                       <div className="space-y-3 p-3">
+                        <p className="text-xs text-default-500">流量依次经过每一跳，最后一跳连到目标地址；修改跳数后，已在使用的转发规则重新保存才会按新配置部署。</p>
                         {errors.chainHops && <p className="text-xs text-danger">{errors.chainHops}</p>}
                         {form.chainHops.length === 0 && (
                           <p className="text-sm text-default-600">当前没有配置任何出口链，请点击“添加跳数”按钮。</p>
@@ -1064,9 +1210,16 @@ export default function DeviceGroupPage() {
                                 const selectedKey = Array.from(keys)[0] as string;
                                 setForm(prev => ({ ...prev, chainHops: prev.chainHops.map((h, i) => i === index ? { ...h, targetDeviceGroupId: selectedKey ? parseInt(selectedKey) : null } : h) }));
                               }}
+                              renderValue={(items) => items.map((item) => <div key={item.key}>{item.rendered}</div>)}
                             >
+                              {/* 每个出口后面显示它的设备是否在线（与添加规则的出口下拉一致），方便避开离线的设备 */}
                               {groups.filter(g => g.direction === 'outbound').map(g => (
-                                <SelectItem key={g.id.toString()} description={g.nodeName}>{g.name}</SelectItem>
+                                <SelectItem key={g.id.toString()} textValue={g.name}>
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="truncate">{g.name}</span>
+                                    <DeviceStatusTag group={g} />
+                                  </div>
+                                </SelectItem>
                               ))}
                             </Select>
                           </div>
@@ -1173,60 +1326,44 @@ export default function DeviceGroupPage() {
         </ModalContent>
       </Modal>
 
-      <Modal isOpen={advancedModalOpen} onOpenChange={setAdvancedModalOpen} size="lg" scrollBehavior="outside" backdrop="opaque" placement="center">
+      {/* 设备设置：与添加设备组弹窗同一样式（紧凑宽度、无右上角关闭、标签加粗、32px 细边框控件、取消 / 确定带字距） */}
+      <Modal isOpen={advancedModalOpen} onOpenChange={setAdvancedModalOpen} size="sm" scrollBehavior="outside" backdrop="opaque" placement="center" hideCloseButton classNames={{ base: "max-w-[416px]" }}>
         <ModalContent>
           {(onClose) => (
             <>
-              <ModalHeader className="flex flex-col gap-1">
-                <h2 className="text-base font-semibold">设备设置 - {advancedTarget?.name || '—'}</h2>
-              </ModalHeader>
-              <ModalBody>
-                <div>
-                  <div className="text-sm font-medium text-foreground mb-1.5">
-                    <HelpTooltip content="开启开关后，该设备屏蔽对应协议">屏蔽协议</HelpTooltip>
-                  </div>
+              <ModalHeader>设备设置 {advancedTarget ? `${advancedTarget.name} (#${advancedTarget.id})` : ''}</ModalHeader>
+              <ModalBody className="py-0">
+                <div className="dialog-form space-y-3">
                   <div>
-                    {([
-                      { key: 'http', label: 'HTTP' },
-                      { key: 'tls', label: 'TLS' },
-                      { key: 'socks', label: 'SOCKS' },
-                      { key: 'ss', label: 'Shadowsocks', tip: 'Shadowsocks 没有固定特征，只能按「首包像随机数据」判断：同时会拦截 VMess 等其他全加密协议，也可能误伤传输压缩或加密数据的普通 TCP 业务；UDP 流量不检测。需要节点版本 1.2.5 及以上且在线' },
-                    ] as const).map(({ key, label, ...rest }) => (
-                      <div key={key} className="flex items-center justify-between py-2">
-                        <span className="text-sm text-foreground">{'tip' in rest ? <HelpTooltip content={rest.tip}>{label}</HelpTooltip> : label}</span>
-                        <Switch size="sm" aria-label={`屏蔽 ${label}`} isSelected={advancedForm[key] === 1} onValueChange={(v) => setAdvancedForm(prev => ({ ...prev, [key]: v ? 1 : 0 }))} />
-                      </div>
-                    ))}
+                    <div className="text-sm font-semibold text-foreground">
+                      <HelpTooltip content="开启开关后，该设备屏蔽对应协议">屏蔽协议</HelpTooltip>
+                    </div>
+                    <div className="mt-1">
+                      {([
+                        { key: 'http', label: 'HTTP' },
+                        { key: 'tls', label: 'TLS' },
+                        { key: 'socks', label: 'SOCKS' },
+                        { key: 'ss', label: 'Shadowsocks', tip: 'Shadowsocks 没有固定特征，只能按「首包像随机数据」判断：同时会拦截 VMess 等其他全加密协议，也可能误伤传输压缩或加密数据的普通 TCP 业务；UDP 流量不检测。需要节点版本 1.2.5 及以上且在线' },
+                      ] as const).map(({ key, label, ...rest }) => (
+                        <div key={key} className="flex items-center justify-between py-1.5">
+                          <span className="text-sm text-foreground">{'tip' in rest ? <HelpTooltip content={rest.tip}>{label}</HelpTooltip> : label}</span>
+                          <Switch size="sm" aria-label={`屏蔽 ${label}`} isSelected={advancedForm[key] === 1} onValueChange={(v) => setAdvancedForm(prev => ({ ...prev, [key]: v ? 1 : 0 }))} />
+                        </div>
+                      ))}
+                    </div>
                   </div>
+
+                  <Input labelPlacement="outside-top" size="sm" autoComplete="off" variant="bordered"
+                    label={<HelpTooltip content="节点连接面板使用的 SOCKS5 或 SSH 代理，留空表示直连">代理</HelpTooltip>}
+                    placeholder="socks5://用户名:密码@主机:端口 或 ssh://用户名:密码@主机:端口"
+                    value={advancedForm.proxy}
+                    onChange={(e) => setAdvancedForm(prev => ({ ...prev, proxy: e.target.value }))}
+                  />
                 </div>
-
-                <Input labelPlacement="outside-top" size="sm" autoComplete="off" variant="bordered"
-                  label={<HelpTooltip content="节点连接面板使用的 SOCKS5 或 SSH 代理">代理</HelpTooltip>}
-                  placeholder="socks5://用户名:密码@主机:端口 或 ssh://用户名:密码@主机:端口"
-                  value={advancedForm.proxy}
-                  onChange={(e) => setAdvancedForm(prev => ({ ...prev, proxy: e.target.value }))}
-                />
-
-                <Select listboxProps={{ emptyContent: <EmptyState compact /> }} labelPlacement="outside-top"
-                  size="sm"
-                  selectionMode="multiple"
-                  label={<HelpTooltip content="该节点所属的节点组，用于分配套餐/用户组可使用的节点范围；一个节点可以同时属于多个节点组">节点组</HelpTooltip>}
-                  placeholder="未归属任何节点组"
-                  selectedKeys={new Set(advancedForm.nodeGroupIds.map(String))}
-                  onSelectionChange={(keys) => {
-                    const ids = Array.from(keys as Set<string>).map(Number);
-                    setAdvancedForm(prev => ({ ...prev, nodeGroupIds: ids }));
-                  }}
-                  variant="bordered"
-                >
-                  {nodeGroups.map(group => (
-                    <SelectItem key={group.id.toString()}>{group.name || `#${group.id}`}</SelectItem>
-                  ))}
-                </Select>
               </ModalBody>
               <ModalFooter>
-                <Button size="sm" variant="bordered" onPress={onClose}>取消</Button>
-                <Button size="sm" color="primary" onPress={submitAdvancedEdit} isLoading={advancedLoading}>保存</Button>
+                <Button size="sm" variant="bordered" className="dialog-btn" onPress={onClose}>取消</Button>
+                <Button size="sm" color="primary" className="dialog-btn" onPress={submitAdvancedEdit} isLoading={advancedLoading}>确定</Button>
               </ModalFooter>
             </>
           )}

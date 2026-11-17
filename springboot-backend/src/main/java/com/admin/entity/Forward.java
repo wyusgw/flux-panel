@@ -101,6 +101,14 @@ public class Forward extends BaseEntity{
     private String backupOutNodeIds;
 
     /**
+     * 链式出口：实际部署的路径（JSON 数组，按跳序，每一跳的节点 ID、设备组 ID、端口、协议，见 {@link com.admin.common.utils.ChainExit}）。
+     * 出口是链式出口设备组时，创建/更新规则时按链式出口当时的配置解析并分配端口后记录，暂停、恢复、删除、重新推送都按它处理，
+     * 不受之后修改链式出口配置的影响；第 1 跳的端口与 outPort 相同。不是链式出口时为空
+     */
+    @TableField(updateStrategy = FieldStrategy.IGNORED)
+    private String chainHops;
+
+    /**
      * 规则限速（Mbps，0 为不限速；与套餐用户限速、管理员指派的限速取较严格值）
      */
     private Integer speedLimit;

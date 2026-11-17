@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, ReactNode } from "react";
 import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Button } from "@heroui/button";
 import { Input } from "@heroui/input";
+import { Select, SelectItem } from "@heroui/select";
 import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter } from "@heroui/modal";
 import { Spinner } from "@heroui/spinner";
 import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from "@heroui/table";
@@ -12,7 +13,8 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { TipButton } from "@/components/tip-button";
 import { EditIcon, DeleteIcon } from "@/components/icons";
 import { InfoCircleFilled, QuestionCircleOutlined } from "@/components/ant-icons";
-import { ToolbarAddIcon } from "@/components/toolbar-icons";
+import { ToolbarAddIcon, ToolbarDeleteIcon } from "@/components/toolbar-icons";
+import type { Selection } from "@react-types/shared";
 
 const DragHandleIcon = () => (
   <svg className="w-4 h-4 text-default-400" viewBox="0 0 24 24" fill="currentColor">
@@ -29,6 +31,19 @@ interface GroupItem {
   [key: string]: any;
 }
 
+/** 额外的多选字段（目前只有用户组的「可用节点组」）：列表多一列，添加 / 编辑弹窗多一个多选框 */
+export interface SimpleGroupExtraField {
+  /** 提交和列表数据里的字段名，值为 ID 数组，如 nodeGroupIds */
+  key: string;
+  label: ReactNode;
+  columnLabel: string;
+  placeholder: string;
+  /** 列表里没有选择任何项时显示的文字，如「不限制」 */
+  emptyText: string;
+  /** 加载可选项，返回 { code, data: [{ id, name }] } */
+  loadOptions: () => Promise<any>;
+}
+
 export interface SimpleGroupPageProps {
   /** 如「用户组」「节点组」 */
   label: string;
@@ -43,12 +58,15 @@ export interface SimpleGroupPageProps {
     create: (data: any) => Promise<any>;
     update: (data: any) => Promise<any>;
     remove: (id: number) => Promise<any>;
+    /** 批量删除；传了才显示勾选框和「批量删除」按钮 */
+    batchRemove?: (ids: number[]) => Promise<any>;
     reorder: (groups: Array<{ id: number; sort: number }>) => Promise<any>;
   };
+  extraField?: SimpleGroupExtraField;
 }
 
-/** 用户组管理、节点组管理共用的列表页：排序、添加（可指定 ID）、编辑名称、删除 */
-export function SimpleGroupPage({ label, countLabel, countKey, help, api }: SimpleGroupPageProps) {
+/** 用户组管理、节点组管理共用的列表页：排序、添加（可指定 ID）、编辑名称、删除、批量删除 */
+export function SimpleGroupPage({ label, countLabel, countKey, help, api, extraField }: SimpleGroupPageProps) {
   const [loading, setLoading] = useState(true);
   const [groups, setGroups] = useState<GroupItem[]>([]);
 
@@ -59,8 +77,12 @@ export function SimpleGroupPage({ label, countLabel, countKey, help, api }: Simp
   const [submitLoading, setSubmitLoading] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [groupToDelete, setGroupToDelete] = useState<GroupItem | null>(null);
+  const [selectedKeys, setSelectedKeys] = useState<Selection>(new Set([]));
+  const [batchDeleteOpen, setBatchDeleteOpen] = useState(false);
+  const [batchDeleteLoading, setBatchDeleteLoading] = useState(false);
 
-  const [form, setForm] = useState({ id: '', name: '' });
+  const [form, setForm] = useState<{ id: string; name: string; extra: string[] }>({ id: '', name: '', extra: [] });
+  const [extraOptions, setExtraOptions] = useState<Array<{ id: number; name: string }>>([]);
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const draggedIdRef = useRef<number | null>(null);
 
@@ -71,6 +93,10 @@ export function SimpleGroupPage({ label, countLabel, countKey, help, api }: Simp
   const loadData = async (showLoading = true) => {
     setLoading(showLoading);
     try {
+      if (extraField) {
+        const optionRes = await extraField.loadOptions();
+        if (optionRes.code === 0) setExtraOptions(optionRes.data || []);
+      }
       const res = await api.list();
       if (res.code === 0) {
         setGroups(res.data || []);
@@ -87,6 +113,18 @@ export function SimpleGroupPage({ label, countLabel, countKey, help, api }: Simp
 
   const groupText = (group: GroupItem) => `${group.name || ''} (#${group.id})`.trim();
 
+  // 额外字段在列表里的显示：已选项的名称，选项已被删除的显示 ID 并注明
+  const extraText = (group: GroupItem) => {
+    if (!extraField) return '';
+    const ids: number[] = group[extraField.key] || [];
+    if (ids.length === 0) return extraField.emptyText;
+    return ids.map(id => {
+      const option = extraOptions.find(o => o.id === id);
+      return option ? (option.name || `#${id}`) : `#${id}（已删除）`;
+    }).join('、');
+  };
+  const extraPayload = () => (extraField ? { [extraField.key]: form.extra.map(Number) } : {});
+
   const validateForm = (): boolean => {
     const newErrors: { [key: string]: string } = {};
     if (!editing && form.id.trim() && !/^[1-9]\d{0,17}$/.test(form.id.trim())) {
@@ -101,14 +139,14 @@ export function SimpleGroupPage({ label, countLabel, countKey, help, api }: Simp
 
   const handleAdd = () => {
     setEditing(null);
-    setForm({ id: '', name: '' });
+    setForm({ id: '', name: '', extra: [] });
     setErrors({});
     setModalOpen(true);
   };
 
   const handleEdit = (group: GroupItem) => {
     setEditing(group);
-    setForm({ id: String(group.id), name: group.name });
+    setForm({ id: String(group.id), name: group.name, extra: extraField ? (group[extraField.key] || []).map(String) : [] });
     setErrors({});
     setModalOpen(true);
   };
@@ -139,6 +177,29 @@ export function SimpleGroupPage({ label, countLabel, countKey, help, api }: Simp
     }
   };
 
+  // 勾选的分组（全选时为当前列表里的全部）
+  const selectedIds = selectedKeys === 'all' ? groups.map(g => g.id) : Array.from(selectedKeys).map(Number).filter(id => groups.some(g => g.id === id));
+
+  const confirmBatchDelete = async () => {
+    if (!api.batchRemove || selectedIds.length === 0) return;
+    setBatchDeleteLoading(true);
+    try {
+      const res = await api.batchRemove(selectedIds);
+      if (res.code === 0) {
+        toast.success('删除成功');
+        setBatchDeleteOpen(false);
+        setSelectedKeys(new Set([]));
+        loadData();
+      } else {
+        toast.error(res.msg || '删除失败');
+      }
+    } catch (error) {
+      toast.error('删除失败');
+    } finally {
+      setBatchDeleteLoading(false);
+    }
+  };
+
   const handleSubmit = async () => {
     if (!validateForm()) return;
 
@@ -146,10 +207,10 @@ export function SimpleGroupPage({ label, countLabel, countKey, help, api }: Simp
     try {
       let res;
       if (editing) {
-        res = await api.update({ id: editing.id, name: form.name.trim() });
+        res = await api.update({ id: editing.id, name: form.name.trim(), ...extraPayload() });
       } else {
         const customId = form.id.trim();
-        res = await api.create({ ...(customId ? { id: Number(customId) } : {}), name: form.name.trim() });
+        res = await api.create({ ...(customId ? { id: Number(customId) } : {}), name: form.name.trim(), ...extraPayload() });
       }
 
       if (res.code === 0) {
@@ -209,23 +270,32 @@ export function SimpleGroupPage({ label, countLabel, countKey, help, api }: Simp
         <CardBody className="p-4 space-y-3">
           <div className="flex flex-wrap items-center gap-3.5">
             <Button size="sm" variant="bordered" startContent={<ToolbarAddIcon />} onPress={handleAdd}>添加{label}</Button>
+            {api.batchRemove && (
+              <Button size="sm" variant="bordered" startContent={<ToolbarDeleteIcon />} isDisabled={selectedIds.length === 0} onPress={() => setBatchDeleteOpen(true)}>批量删除</Button>
+            )}
             <Button size="sm" variant="bordered" startContent={<QuestionCircleOutlined />} onPress={() => setHelpOpen(true)}>查看说明</Button>
           </div>
           <div className="settings-table-scroll">
-            <Table removeWrapper aria-label={`${label}列表`} classNames={{ base: "w-full", table: "w-full min-w-[600px] table-fixed", th: "management-table-heading", td: "management-table-cell" }}>
+            <Table removeWrapper aria-label={`${label}列表`}
+              selectionMode={api.batchRemove ? 'multiple' : 'none'}
+              selectedKeys={selectedKeys}
+              onSelectionChange={setSelectedKeys}
+              classNames={{ base: "w-full", table: "w-full min-w-[600px] table-fixed", th: "management-table-heading", td: "management-table-cell" }}>
               <TableHeader>
                 <TableColumn className="w-16">排序</TableColumn>
                 <TableColumn className="w-40">{label} ID</TableColumn>
                 <TableColumn>名称</TableColumn>
+                {extraField ? <TableColumn>{extraField.columnLabel}</TableColumn> : <TableColumn className="hidden">-</TableColumn>}
                 <TableColumn className="w-40">{countLabel}</TableColumn>
                 <TableColumn align="end" className="w-32 text-right">操作</TableColumn>
               </TableHeader>
               <TableBody emptyContent={<EmptyState />}>
                 {groups.map(group => (
                   <TableRow key={group.id} onDragOver={(e: React.DragEvent) => e.preventDefault()} onDrop={() => handleRowDrop(group.id)}>
-                    <TableCell><span draggable className="cursor-grab active:cursor-grabbing inline-flex" onDragStart={() => { draggedIdRef.current = group.id; }}><DragHandleIcon /></span></TableCell>
+                    <TableCell><span draggable className="cursor-grab active:cursor-grabbing inline-flex" onPointerDown={(e) => e.stopPropagation()} onDragStart={() => { draggedIdRef.current = group.id; }}><DragHandleIcon /></span></TableCell>
                     <TableCell>{group.id}</TableCell>
                     <TableCell className="font-medium">{group.name || `#${group.id}`}</TableCell>
+                    <TableCell className={extraField ? 'text-default-600' : 'hidden'}>{extraText(group)}</TableCell>
                     <TableCell>{group[countKey] ?? 0}</TableCell>
                     <TableCell>
                       <div className="flex justify-end gap-2">
@@ -268,6 +338,21 @@ export function SimpleGroupPage({ label, countLabel, countKey, help, api }: Simp
                   errorMessage={errors.name}
                   variant="bordered"
                 />
+                {extraField && (
+                  <Select listboxProps={{ emptyContent: <EmptyState compact /> }} labelPlacement="outside-top"
+                    size="sm"
+                    selectionMode="multiple"
+                    label={extraField.label}
+                    placeholder={extraField.placeholder}
+                    selectedKeys={new Set(form.extra)}
+                    onSelectionChange={(keys) => setForm(prev => ({ ...prev, extra: Array.from(keys as Set<string>) }))}
+                    variant="bordered"
+                  >
+                    {extraOptions.map(option => (
+                      <SelectItem key={String(option.id)} textValue={`${option.name || ''} (#${option.id})`}>{`${option.name || ''} (#${option.id})`.trim()}</SelectItem>
+                    ))}
+                  </Select>
+                )}
               </ModalBody>
               <ModalFooter>
                 <Button size="sm" variant="bordered" className="dialog-btn" onPress={onClose}>取消</Button>
@@ -277,6 +362,16 @@ export function SimpleGroupPage({ label, countLabel, countKey, help, api }: Simp
           )}
         </ModalContent>
       </Modal>
+
+      <ConfirmDialog
+        isOpen={batchDeleteOpen}
+        onOpenChange={setBatchDeleteOpen}
+        title={`删除${label}`}
+        message={<>你确定要删除选中的 {selectedIds.length} 个{label}吗？</>}
+        confirmText="确定"
+        onConfirm={confirmBatchDelete}
+        loading={batchDeleteLoading}
+      />
 
       <ConfirmDialog
         isOpen={deleteModalOpen}

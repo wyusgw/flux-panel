@@ -7,6 +7,8 @@ import com.admin.common.dto.NodeDto;
 import com.admin.common.dto.NodeUpdateDto;
 import com.admin.common.lang.R;
 import com.admin.common.utils.JwtUtil;
+import com.admin.common.utils.NodeGroupScope;
+import com.admin.common.utils.OfflineRetainPolicy;
 import com.admin.common.utils.WebSocketServer;
 import com.admin.entity.DeviceGroup;
 import com.admin.entity.DeviceGroupUserGroupRelation;
@@ -35,6 +37,7 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -101,6 +104,15 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
 
     @Resource
     private NodeGroupRelationMapper nodeGroupRelationMapper;
+
+    @Resource
+    private NodeGroupScope nodeGroupScope;
+
+    @Resource
+    private OfflineRetainPolicy offlineRetainPolicy;
+
+    @Resource
+    private com.admin.common.utils.NodeRegionLookup nodeRegionLookup;
 
     @Resource
     private DeviceGroupUserGroupRelationMapper deviceGroupUserGroupRelationMapper;
@@ -177,13 +189,19 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
                     .collect(Collectors.groupingBy(DeviceGroupUserGroupRelation::getDeviceGroupId,
                             Collectors.mapping(DeviceGroupUserGroupRelation::getUserGroupId, Collectors.toList())));
 
+        // 用户组设置了可用节点组时，管理员建立的设备组还要求节点在这些节点组里
+        Set<Long> allowedNodeGroups = nodeGroupScope.allowedNodeGroups(user);
+        Map<Long, Set<Long>> nodeGroupsByNode = allowedNodeGroups == null ? Collections.emptyMap()
+                : nodeGroupScope.nodeGroupsOf(candidateGroups.stream().map(DeviceGroup::getNodeId).filter(Objects::nonNull).collect(Collectors.toList()));
+
         return candidateGroups.stream()
                 .filter(g -> {
                     if (g.getOwnerUserId() != null) {
                         return true;
                     }
                     List<Long> allowed = userGroupIdsByGroup.getOrDefault(g.getId(), Collections.emptyList());
-                    return allowed.isEmpty() || (userGroupId != null && allowed.contains(userGroupId));
+                    return (allowed.isEmpty() || (userGroupId != null && allowed.contains(userGroupId)))
+                            && NodeGroupScope.nodeAllowed(g.getNodeId(), allowedNodeGroups, nodeGroupsByNode);
                 })
                 .map(DeviceGroup::getNodeId)
                 .filter(Objects::nonNull)
@@ -206,7 +224,43 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
         }
         attachNodeGroupIds(nodeList);
         hideNodeSecrets(nodeList);
+        attachRetainedInfo(nodeList);
         return R.ok(nodeList);
+    }
+
+    @Override
+    public R getNodeRegions() {
+        Integer roleId = JwtUtil.getRoleIdFromToken();
+        List<Node> nodeList;
+        if (roleId != null && roleId == 0) {
+            nodeList = this.list();
+        } else {
+            Set<Long> visibleNodeIds = getVisibleNodeIds(JwtUtil.getUserIdFromToken());
+            nodeList = visibleNodeIds.isEmpty() ? Collections.emptyList() : this.list(new QueryWrapper<Node>().in("id", visibleNodeIds));
+        }
+        Map<Long, Map<String, String>> regions = nodeRegionLookup.regionsOf(nodeList);
+        List<Map<String, Object>> result = new ArrayList<>();
+        regions.forEach((id, region) -> {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("id", id);
+            item.put("v4", region.get("v4"));
+            item.put("v6", region.get("v6"));
+            result.add(item);
+        });
+        return R.ok(result);
+    }
+
+    /** 设备离线保留期：离线且还在保留期内的节点带上最后一次上报的状态，节点状态页刷新后也能继续显示 */
+    private void attachRetainedInfo(List<Node> nodeList) {
+        long now = System.currentTimeMillis();
+        for (Node node : nodeList) {
+            Long until = node.getStatus() != null && node.getStatus() == 1 ? null
+                    : OfflineRetainPolicy.retainedUntil(node, offlineRetainPolicy.retainSeconds(node.getId()), now);
+            if (until != null) {
+                node.setRetainedInfo(node.getLastInfo());
+                node.setRetainedUntil(until);
+            }
+        }
     }
 
     /**
@@ -484,7 +538,7 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
             item.put("ratio", group.getRatio());
             item.put("hideInProbe", group.getHideInProbe());
             item.put("remark", group.getRemark());
-            item.put("config", group.getConfig() == null ? "{}" : group.getConfig());
+            // 设备组原来单独保存的 JSON 配置（config）已不再使用：高级编辑改为直接编辑设备组本身的设置
             item.put("userGroupIds", userGroupIds.getOrDefault(group.getId(), Collections.emptyList()));
             return item;
         }).collect(Collectors.toList()));

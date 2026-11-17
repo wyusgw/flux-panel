@@ -2,6 +2,7 @@ package com.admin.common.task;
 
 import com.admin.common.dto.*;
 import com.admin.common.lang.R;
+import com.admin.common.utils.ChainExit;
 import com.admin.common.utils.GostUtil;
 import com.admin.entity.*;
 import com.admin.service.*;
@@ -89,6 +90,14 @@ public class CheckGostConfigAsync {
                             }
                         }
 
+                    } else if (serviceIds.length == 5 && Objects.equals(serviceIds[4], "tls")) {
+                        // 链式出口第 n 跳（n ≥ 2）的中继服务：{name}_h{n}_tls
+                        Integer hopIndex = chainHopIndex(serviceIds[3]);
+                        String base = serviceIds[0] + "_" + serviceIds[1] + "_" + serviceIds[2] + "_" + serviceIds[3];
+                        if (hopIndex != null && !isDeployedChainHop(serviceIds[0], hopIndex, node.getId(), false)) {
+                            log.info("删除孤立的链式出口中继服务: {} (节点: {})", service.getName(), node.getId());
+                            GostUtil.DeleteRemoteService(node.getId(), base);
+                        }
                     }
                 }
 
@@ -122,6 +131,14 @@ public class CheckGostConfigAsync {
                             log.info("删除孤立的链: {} (节点: {})", chain.getName(), node.getId());
                             GostUtil.DeleteChains(node.getId(), forwardId+"_"+userId+"_"+userTunnelId);
                         }
+                    }
+                } else if (serviceIds.length == 5 && Objects.equals(serviceIds[4], "chains")) {
+                    // 链式出口第 n 跳通往下一跳的链：{name}_h{n}_chains
+                    Integer hopIndex = chainHopIndex(serviceIds[3]);
+                    String base = serviceIds[0] + "_" + serviceIds[1] + "_" + serviceIds[2] + "_" + serviceIds[3];
+                    if (hopIndex != null && !isDeployedChainHop(serviceIds[0], hopIndex, node.getId(), true)) {
+                        log.info("删除孤立的链式出口链: {} (节点: {})", chain.getName(), node.getId());
+                        GostUtil.DeleteChains(node.getId(), base);
                     }
                 }
             }, "清理链 " + chain.getName());
@@ -206,6 +223,29 @@ public class CheckGostConfigAsync {
         }
     }
 
+
+    /** 「h{n}」里的跳序号（从 1 开始）转成下标（从 0 开始）；格式不对返回 null */
+    static Integer chainHopIndex(String part) {
+        if (part == null || !part.matches("h\\d{1,2}")) {
+            return null;
+        }
+        int hop = Integer.parseInt(part.substring(1));
+        return hop >= 1 ? hop - 1 : null;
+    }
+
+    /**
+     * 规则还在、仍是链式出口、且记录的路径里这一跳确实在这个节点上时才算在用（链只有中间跳才有，最后一跳的链不算）；
+     * 规则已删除、改成了别的出口、或这一跳换到了别的节点（当时节点离线没删掉）都算孤立
+     */
+    private boolean isDeployedChainHop(String forwardId, int hopIndex, Long nodeId, boolean isChainConfig) {
+        Forward forward = forwardService.getById(forwardId);
+        if (forward == null) {
+            return false;
+        }
+        List<com.admin.common.dto.ChainExitHop> hops = ChainExit.parse(forward.getChainHops());
+        int limit = isChainConfig ? hops.size() - 1 : hops.size();
+        return hopIndex < limit && Objects.equals(hops.get(hopIndex).getNodeId(), nodeId);
+    }
 
     /**
      * 解析服务名称

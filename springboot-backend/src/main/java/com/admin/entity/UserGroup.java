@@ -28,4 +28,10 @@ public class UserGroup extends BaseEntity {
     private String name;
 
     private Integer sort;
+
+    /**
+     * 可用节点组：英文逗号分隔的节点组 ID。设置后该组的普通用户只能使用节点属于这些节点组的设备组（见 NodeGroupScope），
+     * 空串或空表示不限制。不用 IGNORED 更新策略：排序等只带部分字段的更新不能把它清掉
+     */
+    private String nodeGroupIds;
 }

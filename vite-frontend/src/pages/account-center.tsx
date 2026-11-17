@@ -1,14 +1,17 @@
-import { CheckOutlined, DisconnectOutlined, DownOutlined, LinkOutlined, LockOutlined, PlusCircleOutlined, RightOutlined, SearchOutlined, SettingOutlined, SyncOutlined, UserOutlined } from "@/components/ant-icons";
+import { CheckOutlined, CopyOutlined, DisconnectOutlined, DownOutlined, LinkOutlined, LockOutlined, PlusCircleOutlined, RightOutlined, SearchOutlined, SettingOutlined, SyncOutlined, UserOutlined } from "@/components/ant-icons";
 import { useState, useEffect, useRef, ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
 import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Button } from "@heroui/button";
 import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure } from "@heroui/modal";
 import { Input } from "@heroui/input";
 import { Switch } from "@heroui/switch";
 import { Spinner } from "@heroui/spinner";
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import toast from 'react-hot-toast';
 
+import { Collapse } from '@/components/collapse';
 import { EmptyState } from '@/components/empty-state';
 import { showInfoDialog } from '@/components/error-dialog';
 import { HelpTooltip } from '@/components/help-tooltip';
@@ -27,6 +30,8 @@ import {
   updateNotifySettings,
   getTelegramBindCode,
   unbindTelegram,
+  getSubscriptionToken,
+  resetSubscriptionToken,
 } from '@/api';
 
 interface UserInfo {
@@ -139,6 +144,7 @@ const GroupMultiSelect = ({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const containerRef = useRef<HTMLDivElement>(null);
+  const reduceMotion = useReducedMotion();
 
   useEffect(() => {
     if (!open) return;
@@ -179,27 +185,36 @@ const GroupMultiSelect = ({
           open ? <SearchOutlined className="w-4 h-4 text-default-400 flex-shrink-0" /> : <DownOutlined className="w-4 h-4 text-default-400 flex-shrink-0" />
         }
       />
-      {open && (
-        <div className="absolute z-50 left-0 right-0 mt-1 max-h-48 overflow-y-auto rounded-medium border-1 border-default-200 bg-content1 shadow-medium p-1">
-          {filtered.length === 0 ? (
-            <EmptyState compact className="py-3" />
-          ) : (
-            filtered.map((group) => (
-              <button
-                key={group.id}
-                type="button"
-                onClick={() => onToggle(group.id)}
-                className={`flex w-full items-center justify-between rounded-small px-2.5 py-1.5 text-left text-sm hover:bg-default-100 ${selected.includes(group.id) ? 'text-primary' : 'text-foreground'}`}
-              >
-                <span className="truncate">{group.name}</span>
-                {selected.includes(group.id) && (
-                  <CheckOutlined className="w-4 h-4 flex-shrink-0" />
-                )}
-              </button>
-            ))
-          )}
-        </div>
-      )}
+      {/* 下拉列表展开 / 收起时淡入淡出并轻微下滑，和展开面板同一条曲线 */}
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={{ duration: reduceMotion ? 0 : 0.16, ease: [0.22, 0.8, 0.24, 1] }}
+            className="absolute z-50 left-0 right-0 mt-1 max-h-48 overflow-y-auto rounded-medium border-1 border-default-200 bg-content1 shadow-medium p-1"
+          >
+            {filtered.length === 0 ? (
+              <EmptyState compact className="py-3" />
+            ) : (
+              filtered.map((group) => (
+                <button
+                  key={group.id}
+                  type="button"
+                  onClick={() => onToggle(group.id)}
+                  className={`flex w-full items-center justify-between rounded-small px-2.5 py-1.5 text-left text-sm hover:bg-default-100 ${selected.includes(group.id) ? 'text-primary' : 'text-foreground'}`}
+                >
+                  <span className="truncate">{group.name}</span>
+                  {selected.includes(group.id) && (
+                    <CheckOutlined className="w-4 h-4 flex-shrink-0" />
+                  )}
+                </button>
+              ))
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
@@ -242,6 +257,19 @@ export default function AccountCenterPage() {
   const [flowMode, setFlowMode] = useState(1);
   const [pushSaving, setPushSaving] = useState(false);
   const [pushChannelOpen, setPushChannelOpen] = useState(false);
+
+  // 订阅流量 Token：页面打开时就取好（没有时后端生成），点击复制时直接用。
+  // HTTP 站点降级用的 execCommand 复制要求紧跟用户操作，点击后再等一次接口返回会静默失败
+  const [subToken, setSubToken] = useState('');
+  const [subTokenResetting, setSubTokenResetting] = useState(false);
+  useEffect(() => {
+    getSubscriptionToken().then(res => {
+      if (res.code === 0 && res.data?.token) setSubToken(res.data.token);
+    }).catch(() => {});
+  }, []);
+  // 白名单 / 黑名单切到其它模式时，设备组一行收起过程中仍显示原来的名称，不跟着变
+  const lastListModeRef = useRef(1);
+  if (deviceMode === 1 || deviceMode === 2) lastListModeRef.current = deviceMode;
 
   useEffect(() => {
     let adminFlag = localStorage.getItem('admin') === 'true';
@@ -372,6 +400,55 @@ export default function AccountCenterPage() {
       toast.error('重置失败');
     } finally {
       setResetLoading(false);
+    }
+  };
+
+  // 订阅流量查询地址（openApi/subStore）：用账号专属的 Token，地址里不含账号密码。
+  // 面板接口地址可能是相对路径（与页面同域）也可能是 App 里设置的绝对地址，统一转成完整地址；
+  // format=json 时返回 {"upload","download","total","expire"}，响应头 subscription-userinfo 照常带上
+  const subscriptionUrl = (token: string) => {
+    const base = new URL(axios.defaults.baseURL || '/api/v1/', window.location.href).toString().replace(/\/?$/, '/');
+    return `${base}openApi/subStore?token=${token}&format=json`;
+  };
+
+  const handleCopySubscriptionUrl = async () => {
+    let token = subToken;
+    if (!token) {
+      try {
+        const res = await getSubscriptionToken();
+        if (res.code !== 0 || !res.data?.token) {
+          toast.error(res.msg || '获取订阅地址失败');
+          return;
+        }
+        token = res.data.token;
+        setSubToken(token);
+      } catch (error) {
+        toast.error('获取订阅地址失败');
+        return;
+      }
+    }
+    const success = await copyText(subscriptionUrl(token));
+    if (success) {
+      toast.success('已复制订阅流量地址');
+    } else {
+      toast.error('复制失败，请手动复制');
+    }
+  };
+
+  const handleResetSubscriptionToken = async () => {
+    setSubTokenResetting(true);
+    try {
+      const res = await resetSubscriptionToken();
+      if (res.code === 0 && res.data?.token) {
+        setSubToken(res.data.token);
+        toast.success('已重置，原来的订阅地址已失效，请复制新地址');
+      } else {
+        toast.error(res.msg || '重置失败');
+      }
+    } catch (error) {
+      toast.error('重置失败');
+    } finally {
+      setSubTokenResetting(false);
     }
   };
 
@@ -558,6 +635,22 @@ export default function AccountCenterPage() {
               </Button>
             }
           />
+          <Row
+            label={<HelpTooltip content="供 Sub-Store、Clash 等客户端读取本账号的已用流量、总流量和到期时间。地址返回 JSON，包含 upload、download、total（流量，字节）和 expire（到期时间，Unix 秒），同时带上 subscription-userinfo 响应头。地址里是本账号专属的 Token，不含密码，改密码后也不用更新；地址泄露时点「重置」，原来的地址立即失效">订阅流量</HelpTooltip>}
+            value=""
+            action={
+              <>
+                <Button size="sm" variant="bordered" className={OUTLINE_BUTTON} startContent={<CopyOutlined />} onPress={handleCopySubscriptionUrl}>
+                  复制地址
+                </Button>
+                <PopConfirm title="重置后原来的订阅地址立即失效，确定重置？" onConfirm={handleResetSubscriptionToken}>
+                  <Button size="sm" variant="bordered" className={OUTLINE_BUTTON} startContent={<SyncOutlined />} isLoading={subTokenResetting}>
+                    重置
+                  </Button>
+                </PopConfirm>
+              </>
+            }
+          />
         </CardBody>
       </Card>
 
@@ -630,13 +723,14 @@ export default function AccountCenterPage() {
                 type="button"
                 aria-expanded={pushChannelOpen}
                 onClick={() => setPushChannelOpen((open) => !open)}
-                className={`flex w-full items-center gap-2.5 rounded-medium bg-default-100 px-4 py-3 text-left text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-primary ${pushChannelOpen ? 'rounded-b-none border-b-1 border-default-200' : ''}`}
+                // 分隔线放在展开内容里跟着一起过渡；下圆角展开时立即去掉，收起时等高度收完再恢复
+                className={`flex w-full items-center gap-2.5 rounded-t-medium bg-default-100 px-4 py-3 text-left text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-primary transition-[border-radius] duration-0 ${pushChannelOpen ? 'rounded-b-none' : 'rounded-b-medium delay-300'}`}
               >
-                <RightOutlined className={`w-4 h-4 flex-shrink-0 transition-transform motion-reduce:transition-none ${pushChannelOpen ? 'rotate-90' : ''}`} />
+                <RightOutlined className={`w-4 h-4 flex-shrink-0 transition-transform duration-[320ms] ease-[cubic-bezier(0.22,0.8,0.24,1)] motion-reduce:transition-none ${pushChannelOpen ? 'rotate-90' : ''}`} />
                 <span>通道: Telegram</span>
               </button>
-              {pushChannelOpen && (
-                <div className="p-3 sm:p-4 space-y-3.5">
+              <Collapse isOpen={pushChannelOpen}>
+                <div className="p-3 sm:p-4 space-y-3.5 border-t-1 border-default-200">
                   {isAdminUser ? (
                     <>
                       <NotifyCard title="收款信息">
@@ -645,23 +739,28 @@ export default function AccountCenterPage() {
                         </NotifyRow>
                       </NotifyCard>
                       <NotifyCard title={<HelpTooltip content="接收全部设备组的通知；白名单只接收勾选的设备组；黑名单接收除勾选之外的所有设备组">设备离线与恢复</HelpTooltip>}>
-                        <NotifyRow label="模式">
-                          <ModePicker
-                            value={deviceMode}
-                            options={[{ value: 0, label: '不接收' }, { value: 3, label: '接收' }, { value: 1, label: '白名单' }, { value: 2, label: '黑名单' }]}
-                            onChange={setDeviceMode}
-                          />
-                        </NotifyRow>
-                        {(deviceMode === 1 || deviceMode === 2) && (
-                          <NotifyRow label="List">
-                            <GroupMultiSelect
-                              placeholder={`搜索并选择${deviceMode === 1 ? '白名单' : '黑名单'}设备组`}
-                              options={deviceGroups}
-                              selected={selectedGroupIds}
-                              onToggle={toggleGroupSelected}
+                        {/* 包一层，避免卡片的 space-y 在设备组一行收起后还留着间距；间距改由展开内容的 pt-2.5 提供 */}
+                        <div>
+                          <NotifyRow label="模式">
+                            <ModePicker
+                              value={deviceMode}
+                              options={[{ value: 0, label: '不接收' }, { value: 3, label: '接收' }, { value: 1, label: '白名单' }, { value: 2, label: '黑名单' }]}
+                              onChange={setDeviceMode}
                             />
                           </NotifyRow>
-                        )}
+                          <Collapse isOpen={deviceMode === 1 || deviceMode === 2}>
+                            <div className="pt-2.5">
+                              <NotifyRow label="List">
+                                <GroupMultiSelect
+                                  placeholder={`搜索并选择${lastListModeRef.current === 1 ? '白名单' : '黑名单'}设备组`}
+                                  options={deviceGroups}
+                                  selected={selectedGroupIds}
+                                  onToggle={toggleGroupSelected}
+                                />
+                              </NotifyRow>
+                            </div>
+                          </Collapse>
+                        </div>
                       </NotifyCard>
                     </>
                   ) : (
@@ -684,7 +783,7 @@ export default function AccountCenterPage() {
                     </>
                   )}
                 </div>
-              )}
+              </Collapse>
             </div>
           </ModalBody>
           <ModalFooter className="!px-4 sm:!px-6 pt-3">
@@ -721,7 +820,7 @@ export default function AccountCenterPage() {
   );
 }
 
-const Row = ({ label, value, action, valueClassName }: { label: string; value: string; action?: ReactNode; valueClassName?: string }) => (
+const Row = ({ label, value, action, valueClassName }: { label: ReactNode; value: string; action?: ReactNode; valueClassName?: string }) => (
   <div className="flex flex-wrap items-center gap-x-3.5 gap-y-2 min-h-8">
     <span className="text-sm font-semibold text-foreground flex-shrink-0">{label}</span>
     {value && <span className={`text-sm ${valueClassName || 'text-foreground'}`}>{value}</span>}

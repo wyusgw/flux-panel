@@ -3,6 +3,7 @@ package com.admin.service.impl;
 import com.admin.common.dto.UserGroupDto;
 import com.admin.common.dto.UserGroupUpdateDto;
 import com.admin.common.lang.R;
+import com.admin.common.utils.NodeGroupScope;
 import com.admin.entity.User;
 import com.admin.entity.UserGroup;
 import com.admin.mapper.UserGroupMapper;
@@ -44,6 +45,7 @@ public class UserGroupServiceImpl extends ServiceImpl<UserGroupMapper, UserGroup
     public R createUserGroup(UserGroupDto userGroupDto) {
         UserGroup userGroup = new UserGroup();
         BeanUtils.copyProperties(userGroupDto, userGroup);
+        userGroup.setNodeGroupIds(NodeGroupScope.joinIds(userGroupDto.getNodeGroupIds()));
 
         // 自定义 ID：必须是正数且没被占用，不传则由数据库自动生成
         if (userGroup.getId() != null) {
@@ -83,6 +85,7 @@ public class UserGroupServiceImpl extends ServiceImpl<UserGroupMapper, UserGroup
             item.put("id", group.getId());
             item.put("name", group.getName());
             item.put("sort", group.getSort());
+            item.put("nodeGroupIds", new java.util.ArrayList<>(NodeGroupScope.parseIds(group.getNodeGroupIds())));
             item.put("userCount", userCountMap.getOrDefault(group.getId(), 0L));
             return item;
         }).collect(java.util.stream.Collectors.toList());
@@ -110,6 +113,10 @@ public class UserGroupServiceImpl extends ServiceImpl<UserGroupMapper, UserGroup
         }
 
         userGroup.setName(userGroupUpdateDto.getName());
+        if (userGroupUpdateDto.getNodeGroupIds() != null) {
+            // 清空时存空串而不是 null：默认更新策略会跳过 null，存空串才能把限制去掉
+            userGroup.setNodeGroupIds(NodeGroupScope.joinIds(userGroupUpdateDto.getNodeGroupIds()));
+        }
         userGroup.setUpdatedTime(System.currentTimeMillis());
 
         boolean result = this.updateById(userGroup);

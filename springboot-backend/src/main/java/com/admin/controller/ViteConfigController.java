@@ -72,22 +72,6 @@ public class ViteConfigController extends BaseController {
         return demoAreas != null ? viteConfigService.updateConfigsAsDemo(configMap, demoAreas) : viteConfigService.updateConfigs(configMap);
     }
 
-    /**
-     * 更新单个配置项
-     * 需要管理员权限
-     */
-    @LogAnnotation
-    @RequireRole
-    @PostMapping("/updateSingle")
-    public R updateConfig(@RequestBody Map<String, Object> params, HttpServletRequest request) {
-        String name = params.get("name").toString();
-        String value = params.get("value").toString();
-        Set<String> demoAreas = demoAreas(request);
-        return demoAreas != null
-                ? viteConfigService.updateConfigsAsDemo(java.util.Collections.singletonMap(name, value), demoAreas)
-                : viteConfigService.updateConfig(name, value);
-    }
-
     @SuppressWarnings("unchecked")
     private static Set<String> demoAreas(HttpServletRequest request) {
         return (Set<String>) request.getAttribute(com.admin.common.interceptor.ReadOnlyInterceptor.DEMO_AREAS_ATTRIBUTE);

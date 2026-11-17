@@ -1,11 +1,13 @@
 package com.admin.service.impl;
 
+import com.admin.common.dto.ChainExitHop;
 import com.admin.common.dto.ForwardDto;
 import com.admin.common.dto.ForwardUpdateDto;
 import com.admin.common.dto.ForwardWithTunnelDto;
 import com.admin.common.dto.GostDto;
 import com.admin.common.dto.TcpPingDiagnosisResult;
 import com.admin.common.lang.R;
+import com.admin.common.utils.ChainExit;
 import com.admin.common.utils.ExitFailover;
 import com.admin.common.utils.GostUtil;
 import com.admin.common.utils.JwtUtil;
@@ -105,6 +107,10 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
 
     @Resource
     @Lazy
+    private com.admin.common.utils.NodeGroupScope nodeGroupScope;
+
+    @Resource
+    @Lazy
     private TaskQueueService taskQueueService;
 
     @Resource
@@ -197,6 +203,8 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             // 5. 创建并保存Forward对象（归属 effectiveUser，即目标用户）
             forward = createForwardEntity(forwardDto, effectiveUser, portAllocation);
             forward.setBackupOutNodeIds(ExitFailover.join(tunnel.getBackupOutNodeIds()));
+            // 链式出口：记录实际部署的路径（各跳的节点、端口、协议），之后暂停、恢复、删除、重新推送都按它
+            forward.setChainHops(ChainExit.serialize(tunnel.getChainHops()));
             if (!this.save(forward)) {
                 return R.err("端口转发创建失败");
             }
@@ -260,6 +268,12 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
                 if (!nodeIds.contains(outNodeId)) {
                     nodeIds.add(outNodeId);
                 }
+            }
+        }
+        // 链式出口：每一跳的节点都要就绪
+        for (Long hopNodeId : ChainExit.nodeIds(tunnel.getChainHops())) {
+            if (!nodeIds.contains(hopNodeId)) {
+                nodeIds.add(hopNodeId);
             }
         }
         JSONObject payload = new JSONObject();
@@ -352,7 +366,8 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         boolean tunnelChanged = isTunnelChanged(existForward, forwardUpdateDto);
         // 出口设备组的故障转移组变了（或规则创建后才给出口配了故障转移组）：备用出口节点与已部署的不一致，
         // 需要像换隧道一样重新分配出口端口并重建配置，旧备用出口上的服务才会被清理
-        boolean backupsChanged = isBackupSetChanged(existForward, tunnel);
+        // 链式出口的路径（各跳的节点或协议）和已部署的不同，同样要重新分配端口并重建
+        boolean backupsChanged = isBackupSetChanged(existForward, tunnel) || isChainPathChanged(existForward, tunnel);
 
         // 4. 解析新隧道选择对应的UserTunnel（即使隧道未变化也需要，用于权限检查和构建服务名称）
         UserTunnel userTunnel;
@@ -565,6 +580,25 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         }
     }
 
+    @Override
+    public R clearForwardFlow(List<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return R.err("请选择要清空流量的规则");
+        }
+        UserInfo currentUser = getCurrentUserInfo();
+        Set<Long> unique = new LinkedHashSet<>(ids);
+        for (Long id : unique) {
+            if (validateForwardExists(id, currentUser) == null) {
+                return R.err("转发规则不存在或无权限操作");
+            }
+        }
+        // 直接把计数归零：节点上报流量是在数据库里累加（in_flow = in_flow + x），清空和上报不会互相覆盖
+        this.update(null, new UpdateWrapper<Forward>().in("id", unique)
+                .set("in_flow", 0L)
+                .set("out_flow", 0L));
+        return R.ok();
+    }
+
     /**
      * 改变转发状态（暂停/恢复）
      */
@@ -671,6 +705,13 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
                         return saveStatusPendingSync(forward, tunnel, targetStatus, remoteResult.getMsg());
                     }
                 }
+                // 链式出口第 2 跳起的中继服务（第 1 跳就是上面的出口）
+                for (Map.Entry<Long, String> hop : chainHopServicesAfterFirst(tunnel, serviceName)) {
+                    GostDto hopResult = GostUtil.PauseRemoteService(hop.getKey(), hop.getValue());
+                    if (!isGostOperationSuccess(hopResult)) {
+                        return saveStatusPendingSync(forward, tunnel, targetStatus, hopResult.getMsg());
+                    }
+                }
             }
         } else {
             gostResult = GostUtil.ResumeService(nodeInfo.getInNode().getId(), serviceName);
@@ -685,6 +726,12 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
                     GostDto remoteResult = GostUtil.ResumeRemoteService(outNodeId, serviceName);
                     if (!isGostOperationSuccess(remoteResult)) {
                         return saveStatusPendingSync(forward, tunnel, targetStatus, remoteResult.getMsg());
+                    }
+                }
+                for (Map.Entry<Long, String> hop : chainHopServicesAfterFirst(tunnel, serviceName)) {
+                    GostDto hopResult = GostUtil.ResumeRemoteService(hop.getKey(), hop.getValue());
+                    if (!isGostOperationSuccess(hopResult)) {
+                        return saveStatusPendingSync(forward, tunnel, targetStatus, hopResult.getMsg());
                     }
                 }
             }
@@ -810,6 +857,8 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
                 }
                 probes.add(new TcpPingDiagnosisUtil.Probe(inNode, targetIp, targetPort, "转发->目标", "inbound", forward.getInDeviceGroupId()));
             }
+        } else if (ChainExit.isChain(tunnel)) {
+            addChainDiagnosisProbes(probes, forward, tunnel, inNode, remoteAddresses);
         } else {
             // 隧道转发：入口TCP ping出口，出口TCP ping目标
             Node outNode = nodeService.getNodeById(tunnel.getOutNodeId());
@@ -848,6 +897,36 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         return probes;
     }
 
+    /**
+     * 链式出口：入口测第 1 跳，每一跳测下一跳（用下一跳的中继端口），最后一跳测目标地址。
+     * 入口那一段归入口诊断，其余归出口诊断，显示各跳自己的设备组
+     */
+    private void addChainDiagnosisProbes(List<TcpPingDiagnosisUtil.Probe> probes, Forward forward, Tunnel tunnel, Node inNode, String[] remoteAddresses) {
+        List<ChainExitHop> hops = tunnel.getChainHops();
+        List<Node> hopNodes = new ArrayList<>();
+        for (int i = 0; i < hops.size(); i++) {
+            Node node = nodeService.getNodeById(hops.get(i).getNodeId());
+            if (node == null) {
+                throw new IllegalArgumentException("链式出口第 " + (i + 1) + " 跳的节点不存在");
+            }
+            hopNodes.add(node);
+        }
+        probes.add(new TcpPingDiagnosisUtil.Probe(inNode, hopNodes.get(0).getServerIp(), hops.get(0).getPort(), "入口->第1跳", "inbound", forward.getInDeviceGroupId()));
+        for (int i = 0; i + 1 < hops.size(); i++) {
+            probes.add(new TcpPingDiagnosisUtil.Probe(hopNodes.get(i), hopNodes.get(i + 1).getServerIp(), hops.get(i + 1).getPort(),
+                    "第" + (i + 1) + "跳->第" + (i + 2) + "跳", "outbound", hops.get(i).getGroupId()));
+        }
+        int last = hops.size() - 1;
+        for (String remoteAddress : remoteAddresses) {
+            String targetIp = extractIpFromAddress(remoteAddress);
+            int targetPort = extractPortFromAddress(remoteAddress);
+            if (targetIp == null || targetPort == -1) {
+                throw new IllegalArgumentException("无法解析目标地址: " + remoteAddress);
+            }
+            probes.add(new TcpPingDiagnosisUtil.Probe(hopNodes.get(last), targetIp, targetPort, "第" + (last + 1) + "跳->目标", "outbound", hops.get(last).getGroupId()));
+        }
+    }
+
     @Override
     public R updateForwardOrder(Map<String, Object> params) {
         try {
@@ -870,6 +949,7 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
                 // 普通用户只能更新自己的转发
                 List<Long> forwardIds = forwardsList.stream()
                         .map(item -> Long.valueOf(item.get("id").toString()))
+                        .distinct()
                         .collect(Collectors.toList());
 
                 // 检查所有转发是否属于当前用户
@@ -883,26 +963,17 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
                 }
             }
 
-            // 4. 批量更新排序
-            List<Forward> forwardsToUpdate = new ArrayList<>();
+            // 4. 逐条只更新排序值：不能用只带 id / inx 的实体做 updateById，
+            //    入口 / 出口设备组、备用出口、链式出口路径这些字段是 IGNORED 更新策略，会被一起写成空
+            Map<Long, Integer> orders = new LinkedHashMap<>();
             for (Map<String, Object> forwardData : forwardsList) {
-                Long id = Long.valueOf(forwardData.get("id").toString());
-                Integer inx = Integer.valueOf(forwardData.get("inx").toString());
-
-                Forward forward = new Forward();
-                forward.setId(id);
-                forward.setInx(inx);
-                forwardsToUpdate.add(forward);
+                orders.put(Long.valueOf(forwardData.get("id").toString()), Integer.valueOf(forwardData.get("inx").toString()));
             }
-
-            // 5. 执行批量更新
-            boolean success = this.updateBatchById(forwardsToUpdate);
-            if (success) {
-                log.info("用户 {} 更新了 {} 个转发的排序", currentUser.getUserName(), forwardsToUpdate.size());
-                return R.ok("排序更新成功");
-            } else {
-                return R.err("排序更新失败");
+            for (Map.Entry<Long, Integer> order : orders.entrySet()) {
+                this.update(null, new UpdateWrapper<Forward>().eq("id", order.getKey()).set("inx", order.getValue()));
             }
+            log.info("用户 {} 更新了 {} 个转发的排序", currentUser.getUserName(), orders.size());
+            return R.ok("排序更新成功");
 
         } catch (Exception e) {
             log.error("更新转发排序失败", e);
@@ -1060,6 +1131,14 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             return R.err(typeError);
         }
 
+        // 链式出口的每一跳都要能用（设备组还在、是出口、绑定了有连接地址的设备）
+        if (outGroup != null && "chain".equals(outGroup.getDirection())) {
+            String chainError = tunnelResolver.chainExitError(outGroup);
+            if (chainError != null) {
+                return R.err(chainError);
+            }
+        }
+
         String directError = directForwardError(inGroup, outGroup);
         if (directError != null) {
             return R.err(directError);
@@ -1093,14 +1172,15 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
 
     /**
      * 设备组类型决定了节点的用途：仅监控的节点不转发流量（可能没有地址），入口和出口也不能互换。
-     * 前端只列出匹配的设备组，这里防止绕过前端。没有类型的旧数据按入口处理。
+     * 出口可以是出口、入口＋出口或链式出口。前端只列出匹配的设备组，这里防止绕过前端。没有类型的旧数据按入口处理。
      */
     static String deviceGroupTypeError(DeviceGroup inGroup, DeviceGroup outGroup) {
         String inDirection = inGroup.getDirection() == null ? "inbound" : inGroup.getDirection();
         if (!"inbound".equals(inDirection) && !"both".equals(inDirection)) {
             return "设备组「" + inGroup.getName() + "」不能作为入口使用";
         }
-        if (outGroup != null && !"outbound".equals(outGroup.getDirection()) && !"both".equals(outGroup.getDirection())) {
+        if (outGroup != null && !"outbound".equals(outGroup.getDirection()) && !"both".equals(outGroup.getDirection())
+                && !"chain".equals(outGroup.getDirection())) {
             return "设备组「" + outGroup.getName() + "」不能作为出口使用";
         }
         return null;
@@ -1180,11 +1260,13 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             return R.err("无权限使用设备组：" + group.getName());
         }
         List<Long> allowedUserGroupIds = deviceGroupService.getUserGroupIds(group.getId());
-        if (allowedUserGroupIds.isEmpty()) {
-            return R.ok();
-        }
         User user = userService.getById(userId);
-        if (user == null || user.getGroupId() == null || !allowedUserGroupIds.contains(user.getGroupId())) {
+        if (!allowedUserGroupIds.isEmpty()
+                && (user == null || user.getGroupId() == null || !allowedUserGroupIds.contains(user.getGroupId()))) {
+            return R.err("无权限使用设备组：" + group.getName());
+        }
+        // 用户组设置了可用节点组时，设备组的节点（链式出口是每一跳的节点）必须在这些节点组里
+        if (!nodeGroupScope.groupAllowed(group, nodeGroupScope.allowedNodeGroups(user))) {
             return R.err("无权限使用设备组：" + group.getName());
         }
         return R.ok();
@@ -1234,12 +1316,20 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
      * 普通用户的转发目标限制，见 {@link ForwardTargetPolicy}。管理员不受限；用户自己的节点也不受限，
      * 在自建节点上转发到本机服务是单端隧道的正常用法。真正去连目标的是隧道转发的出口节点、端口转发的入口节点。
      */
+    /** 实际连接目标地址的节点：端口转发是入口，隧道转发是出口，链式出口是最后一跳 */
+    static Long targetDialNodeId(Tunnel tunnel) {
+        if (ChainExit.isChain(tunnel)) {
+            return tunnel.getChainHops().get(tunnel.getChainHops().size() - 1).getNodeId();
+        }
+        return tunnel.getType() != null && tunnel.getType() == TUNNEL_TYPE_TUNNEL_FORWARD && tunnel.getOutNodeId() != null
+                ? tunnel.getOutNodeId() : tunnel.getInNodeId();
+    }
+
     private String forwardTargetBlockReason(UserInfo currentUser, String remoteAddr, Tunnel tunnel) {
         if (currentUser.getRoleId() == ADMIN_ROLE_ID) {
             return null;
         }
-        Long dialNodeId = tunnel.getType() != null && tunnel.getType() == TUNNEL_TYPE_TUNNEL_FORWARD && tunnel.getOutNodeId() != null
-                ? tunnel.getOutNodeId() : tunnel.getInNodeId();
+        Long dialNodeId = targetDialNodeId(tunnel);
         long ownedGroups = deviceGroupService.count(new QueryWrapper<DeviceGroup>()
                 .eq("node_id", dialNodeId).eq("owner_user_id", currentUser.getUserId()));
         if (ownedGroups > 0) {
@@ -1359,7 +1449,14 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         }
 
         Integer outPort = null;
-        if (tunnel.getType() == TUNNEL_TYPE_TUNNEL_FORWARD) {
+        if (ChainExit.isChain(tunnel)) {
+            // 链式出口：每一跳在各自节点上分配中继端口，第 1 跳的端口即出口端口
+            String chainError = allocateChainHopPorts(tunnel, inPort, excludeForwardId);
+            if (chainError != null) {
+                return PortAllocation.error(chainError);
+            }
+            outPort = tunnel.getChainHops().get(0).getPort();
+        } else if (tunnel.getType() == TUNNEL_TYPE_TUNNEL_FORWARD) {
             outPort = allocateOutPort(tunnel, excludeForwardId);
             if (outPort == null) {
                 return PortAllocation.error("隧道出口端口已满，无法分配新端口");
@@ -1367,6 +1464,40 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         }
 
         return PortAllocation.success(inPort, outPort);
+    }
+
+    /**
+     * 给链式出口的每一跳分配端口，直接写进隧道里的各跳。同一个节点在这条规则里出现多次（入口也是某一跳、
+     * 两跳用同一个节点）时端口互不相同。分配失败返回原因
+     */
+    private String allocateChainHopPorts(Tunnel tunnel, Integer inPort, Long excludeForwardId) {
+        return assignChainHopPorts(tunnel.getChainHops(), tunnel.getInNodeId(), inPort,
+                nodeService::getNodeById, nodeId -> getAllUsedPortsOnNode(nodeId, excludeForwardId));
+    }
+
+    static String assignChainHopPorts(List<ChainExitHop> hops, Long inNodeId, Integer inPort,
+                                      java.util.function.Function<Long, Node> nodes,
+                                      java.util.function.Function<Long, Set<Integer>> usedPortsOnNode) {
+        Map<Long, Set<Integer>> takenByThisRule = new HashMap<>();
+        if (inNodeId != null && inPort != null) {
+            takenByThisRule.computeIfAbsent(inNodeId, k -> new HashSet<>()).add(inPort);
+        }
+        for (int i = 0; i < hops.size(); i++) {
+            ChainExitHop hop = hops.get(i);
+            Node node = nodes.apply(hop.getNodeId());
+            if (node == null) {
+                return "链式出口第 " + (i + 1) + " 跳的节点不存在";
+            }
+            Set<Integer> used = new HashSet<>(usedPortsOnNode.apply(hop.getNodeId()));
+            used.addAll(takenByThisRule.getOrDefault(hop.getNodeId(), Collections.emptySet()));
+            Integer port = firstFreePort(node.getPortSta(), node.getPortEnd(), used);
+            if (port == null) {
+                return "链式出口第 " + (i + 1) + " 跳的端口已满，无法分配新端口";
+            }
+            hop.setPort(port);
+            takenByThisRule.computeIfAbsent(hop.getNodeId(), k -> new HashSet<>()).add(port);
+        }
+        return null;
     }
 
     /**
@@ -1419,11 +1550,40 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             // 隧道和端口都未变化，保持原端口
             forward.setInPort(existForward.getInPort());
             forward.setOutPort(existForward.getOutPort());
+            // 链式出口的路径没变（变了会走上面重新分配），各跳沿用已部署的端口
+            keepDeployedChainPorts(tunnel, existForward);
         }
 
         forward.setBackupOutNodeIds(ExitFailover.join(tunnel.getBackupOutNodeIds()));
+        forward.setChainHops(ChainExit.serialize(tunnel.getChainHops()));
         forward.setUpdatedTime(System.currentTimeMillis());
         return forward;
+    }
+
+    /** 把规则上记录的各跳端口填进按当前配置解析出的链式出口路径（调用前已确认两者各跳的节点和协议相同） */
+    static void keepDeployedChainPorts(Tunnel tunnel, Forward existForward) {
+        if (!ChainExit.isChain(tunnel)) {
+            return;
+        }
+        List<ChainExitHop> deployed = ChainExit.parse(existForward.getChainHops());
+        List<ChainExitHop> hops = tunnel.getChainHops();
+        if (deployed.size() != hops.size()) {
+            throw new RuntimeException("链式出口的路径与已部署的不一致，请重新保存");
+        }
+        for (int i = 0; i < hops.size(); i++) {
+            hops.get(i).setPort(deployed.get(i).getPort());
+        }
+    }
+
+    /**
+     * 设备组模式下，按当前链式出口配置解析出的路径（各跳的节点和协议），与规则上记录的已部署路径是否不同；
+     * 不是链式出口的规则两边都为空，返回 false
+     */
+    static boolean isChainPathChanged(Forward existForward, Tunnel tunnel) {
+        if (existForward.getTunnelId() != null || tunnel.getId() != null) {
+            return false;
+        }
+        return !ChainExit.topologyKey(ChainExit.parse(existForward.getChainHops())).equals(ChainExit.topologyKey(tunnel.getChainHops()));
     }
 
     /**
@@ -1452,16 +1612,26 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
                 return chainResult;
             }
 
-            // 主出口和每个备用出口都部署同一个远端服务（同一个出口端口），任何一个失败都整体回滚
-            for (Long outNodeId : ExitFailover.allOutNodeIds(tunnel)) {
-                Node outNode = Objects.equals(outNodeId, nodeInfo.getOutNode().getId()) ? nodeInfo.getOutNode() : nodeService.getNodeById(outNodeId);
-                R remoteResult = outNode == null
-                        ? R.err("备用出口节点不存在")
-                        : createRemoteService(outNode, serviceName, forward, tunnel.getProtocol(), forward.getInterfaceName());
-                if (remoteResult.getCode() != 0) {
+            if (ChainExit.isChain(tunnel)) {
+                // 链式出口：每一跳部署中继服务（中间跳带通往下一跳的链），任何一跳失败都整体回滚
+                R hopResult = pushChainHops(serviceName, forward, tunnel, false);
+                if (hopResult.getCode() != 0) {
                     GostUtil.DeleteChains(nodeInfo.getInNode().getId(), serviceName);
                     deleteRemoteOnAllOutNodes(tunnel, serviceName);
-                    return remoteResult;
+                    return hopResult;
+                }
+            } else {
+                // 主出口和每个备用出口都部署同一个远端服务（同一个出口端口），任何一个失败都整体回滚
+                for (Long outNodeId : ExitFailover.allOutNodeIds(tunnel)) {
+                    Node outNode = Objects.equals(outNodeId, nodeInfo.getOutNode().getId()) ? nodeInfo.getOutNode() : nodeService.getNodeById(outNodeId);
+                    R remoteResult = outNode == null
+                            ? R.err("备用出口节点不存在")
+                            : createRemoteService(outNode, serviceName, forward, tunnel.getProtocol(), forward.getInterfaceName());
+                    if (remoteResult.getCode() != 0) {
+                        GostUtil.DeleteChains(nodeInfo.getInNode().getId(), serviceName);
+                        deleteRemoteOnAllOutNodes(tunnel, serviceName);
+                        return remoteResult;
+                    }
                 }
             }
         }
@@ -1489,6 +1659,100 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         for (Long outNodeId : ExitFailover.allOutNodeIds(tunnel)) {
             GostUtil.DeleteRemoteService(outNodeId, serviceName);
         }
+        deleteChainHopsAfterFirst(tunnel, serviceName);
+    }
+
+    /**
+     * 链式出口第 2 跳起的中继服务（节点 ID → 服务名前缀，服务名再加 _tls）。第 1 跳的服务名与普通出口相同，
+     * 由出口那部分逻辑处理；不是链式出口时为空
+     */
+    static List<Map.Entry<Long, String>> chainHopServicesAfterFirst(Tunnel tunnel, String serviceName) {
+        List<Map.Entry<Long, String>> result = new ArrayList<>();
+        if (!ChainExit.isChain(tunnel)) {
+            return result;
+        }
+        List<ChainExitHop> hops = tunnel.getChainHops();
+        for (int i = 1; i < hops.size(); i++) {
+            result.add(new AbstractMap.SimpleEntry<>(hops.get(i).getNodeId(), ChainExit.hopServiceBase(serviceName, i)));
+        }
+        return result;
+    }
+
+    /**
+     * 删除链式出口除第 1 跳服务以外的配置：各中间跳通往下一跳的链、第 2 跳起的中继服务。
+     * 尽力而为（节点离线、已不存在都忽略），残留的由节点上线后的孤立配置清理删除
+     */
+    private void deleteChainHopsAfterFirst(Tunnel tunnel, String serviceName) {
+        if (!ChainExit.isChain(tunnel)) {
+            return;
+        }
+        List<ChainExitHop> hops = tunnel.getChainHops();
+        for (int i = 0; i < hops.size(); i++) {
+            ChainExitHop hop = hops.get(i);
+            if (i > 0) {
+                GostDto serviceResult = GostUtil.DeleteRemoteService(hop.getNodeId(), ChainExit.hopServiceBase(serviceName, i));
+                if (!isGostOperationSuccess(serviceResult)) {
+                    log.info("删除链式出口第 {} 跳（节点 {}）的中继服务失败: {}", i + 1, hop.getNodeId(), serviceResult.getMsg());
+                }
+            }
+            if (i < hops.size() - 1) {
+                GostDto chainResult = GostUtil.DeleteChains(hop.getNodeId(), ChainExit.hopChainBase(serviceName, i));
+                if (!isGostOperationSuccess(chainResult)) {
+                    log.info("删除链式出口第 {} 跳（节点 {}）通往下一跳的链失败: {}", i + 1, hop.getNodeId(), chainResult.getMsg());
+                }
+            }
+        }
+    }
+
+    /**
+     * 把链式出口的每一跳推送到节点：从最后一跳往前推，每一跳先建通往下一跳的链再建中继服务，
+     * 这样上一跳开始转发时下一跳已经在监听。update 为 true 时先更新，节点上没有再新建。任何一跳失败立即返回
+     */
+    R pushChainHops(String serviceName, Forward forward, Tunnel tunnel, boolean update) {
+        List<ChainExitHop> hops = tunnel.getChainHops();
+        for (int i = hops.size() - 1; i >= 0; i--) {
+            ChainExitHop hop = hops.get(i);
+            String hopLabel = "链式出口第 " + (i + 1) + " 跳：";
+            ChainExit.HopChain chain = ChainExit.hopChain(serviceName, i, hops);
+            if (chain != null) {
+                if (chain.nextAddress == null) {
+                    return R.err("链式出口第 " + (i + 2) + " 跳的节点不存在");
+                }
+                GostDto chainResult = pushHopChain(hop.getNodeId(), chain, update);
+                if (!isGostOperationSuccess(chainResult)) {
+                    return R.err(hopLabel + chainResult.getMsg());
+                }
+            }
+            ChainExit.HopService spec = ChainExit.hopService(serviceName, i, hops, forward.getRemoteAddr(), forward.getStrategy(), forward.getWeights(), forward.getInterfaceName());
+            GostDto serviceResult = pushHopService(hop.getNodeId(), spec, update);
+            if (!isGostOperationSuccess(serviceResult)) {
+                return R.err(hopLabel + serviceResult.getMsg());
+            }
+        }
+        return R.ok();
+    }
+
+    /** 在一跳的节点上新建 / 更新通往下一跳的链；更新时节点上没有就新建 */
+    GostDto pushHopChain(Long nodeId, ChainExit.HopChain chain, boolean update) {
+        List<String> addrs = Collections.singletonList(chain.nextAddress);
+        GostDto result = update
+                ? GostUtil.UpdateChains(nodeId, chain.base, addrs, chain.protocol, null)
+                : GostUtil.AddChains(nodeId, chain.base, addrs, chain.protocol, null);
+        if (update && result.getMsg() != null && result.getMsg().contains(GOST_NOT_FOUND_MSG)) {
+            result = GostUtil.AddChains(nodeId, chain.base, addrs, chain.protocol, null);
+        }
+        return result;
+    }
+
+    /** 在一跳的节点上新建 / 更新中继服务；更新时节点上没有就新建 */
+    GostDto pushHopService(Long nodeId, ChainExit.HopService spec, boolean update) {
+        GostDto result = update
+                ? GostUtil.UpdateRemoteService(nodeId, spec.base, spec.port, spec.remoteAddr, spec.protocol, spec.strategy, spec.weights, spec.interfaceName, spec.chain)
+                : GostUtil.AddRemoteService(nodeId, spec.base, spec.port, spec.remoteAddr, spec.protocol, spec.strategy, spec.weights, spec.interfaceName, spec.chain);
+        if (update && result.getMsg() != null && result.getMsg().contains(GOST_NOT_FOUND_MSG)) {
+            result = GostUtil.AddRemoteService(nodeId, spec.base, spec.port, spec.remoteAddr, spec.protocol, spec.strategy, spec.weights, spec.interfaceName, spec.chain);
+        }
+        return result;
     }
 
     /**
@@ -1505,14 +1769,22 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
                 return chainResult;
             }
 
-            for (Long outNodeId : ExitFailover.allOutNodeIds(tunnel)) {
-                Node outNode = Objects.equals(outNodeId, nodeInfo.getOutNode().getId()) ? nodeInfo.getOutNode() : nodeService.getNodeById(outNodeId);
-                R remoteResult = outNode == null
-                        ? R.err("备用出口节点不存在")
-                        : updateRemoteService(outNode, serviceName, forward, tunnel.getProtocol(), forward.getInterfaceName());
-                if (remoteResult.getCode() != 0) {
+            if (ChainExit.isChain(tunnel)) {
+                R hopResult = pushChainHops(serviceName, forward, tunnel, true);
+                if (hopResult.getCode() != 0) {
                     updateForwardStatusToError(forward);
-                    return remoteResult;
+                    return hopResult;
+                }
+            } else {
+                for (Long outNodeId : ExitFailover.allOutNodeIds(tunnel)) {
+                    Node outNode = Objects.equals(outNodeId, nodeInfo.getOutNode().getId()) ? nodeInfo.getOutNode() : nodeService.getNodeById(outNodeId);
+                    R remoteResult = outNode == null
+                            ? R.err("备用出口节点不存在")
+                            : updateRemoteService(outNode, serviceName, forward, tunnel.getProtocol(), forward.getInterfaceName());
+                    if (remoteResult.getCode() != 0) {
+                        updateForwardStatusToError(forward);
+                        return remoteResult;
+                    }
                 }
             }
         }
@@ -1612,6 +1884,8 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
                     log.info("删除备用出口 {} 上的远程服务失败: {}", backupId, backupResult.getMsg());
                 }
             }
+            // 原来是链式出口：按记录的路径清掉各跳的链和第 2 跳起的中继服务
+            deleteChainHopsAfterFirst(oldTunnel, serviceName);
         }
 
         return R.ok();
@@ -1658,6 +1932,8 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
                     log.info("删除备用出口 {} 上的远程服务失败: {}", backupId, backupResult.getMsg());
                 }
             }
+            // 链式出口的中间跳和后面各跳同样尽力清理
+            deleteChainHopsAfterFirst(tunnel, serviceName);
         }
 
         return R.ok();
@@ -2038,6 +2314,21 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             }
         }
 
+        // 5. 收集该节点作为链式出口某一跳时占用的中继端口（链式出口设备组没有自己的节点，第 3 步查不到）
+        QueryWrapper<Forward> chainQuery = new QueryWrapper<Forward>()
+                .isNotNull("chain_hops")
+                .ne("chain_hops", "");
+        if (excludeForwardId != null) {
+            chainQuery.ne("id", excludeForwardId);
+        }
+        for (Forward forward : this.list(chainQuery)) {
+            for (ChainExitHop hop : ChainExit.parse(forward.getChainHops())) {
+                if (nodeId.equals(hop.getNodeId()) && hop.getPort() != null) {
+                    usedPorts.add(hop.getPort());
+                }
+            }
+        }
+
         return usedPorts;
     }
 
@@ -2176,6 +2467,12 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
                 GostDto remoteResult = pauseRemoteOnNode(outNodeId, serviceName);
                 if (!isGostOperationSuccess(remoteResult)) {
                     return R.err("重新暂停远端服务失败：" + remoteResult.getMsg());
+                }
+            }
+            for (Map.Entry<Long, String> hop : chainHopServicesAfterFirst(tunnel, serviceName)) {
+                GostDto hopResult = pauseRemoteOnNode(hop.getKey(), hop.getValue());
+                if (!isGostOperationSuccess(hopResult)) {
+                    return R.err("重新暂停链式出口中继服务失败：" + hopResult.getMsg());
                 }
             }
         }

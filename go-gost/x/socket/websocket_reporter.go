@@ -33,6 +33,7 @@ type SystemInfo struct {
 	Uptime                 uint64  `json:"uptime"`                   // 开机时间	（秒）
 	BytesReceived          uint64  `json:"bytes_received"`           // 接收字节数
 	BytesTransmitted       uint64  `json:"bytes_transmitted"`        // 发送字节数
+	SampledAtMs            int64   `json:"sampled_at_ms"`            // 读取网卡计数的时间（Unix 毫秒）：面板按它算两次上报的间隔和速度
 	CPUUsage               float64 `json:"cpu_usage"`                // CPU使用率（百分比）
 	CPUModel               string  `json:"cpu_model"`                // CPU型号
 	OSName                 string  `json:"os_name"`                  // 系统标识（发行版/平台，如 ubuntu、debian、windows、darwin）
@@ -40,6 +41,7 @@ type SystemInfo struct {
 	KernelVersion          string  `json:"kernel_version"`           // 内核版本
 	Arch                   string  `json:"arch"`                     // 系统架构（如 x86_64、aarch64）
 	Virtualization         string  `json:"virtualization"`           // 虚拟化类型（如 kvm、docker，物理机为空）
+	BootTime               uint64  `json:"boot_time"`                // 开机时间（Unix 秒）：面板据此区分服务器重启和统计范围变化
 	MemoryUsage            float64 `json:"memory_usage"`             // 内存使用率（百分比）
 	MemoryTotal            uint64  `json:"memory_total"`             // 内存总量（字节）
 	MemoryUsed             uint64  `json:"memory_used"`              // 内存已用（字节）
@@ -376,7 +378,10 @@ func (w *WebSocketReporter) handleConnection() {
 
 // collectSystemInfo 收集系统信息
 func (w *WebSocketReporter) collectSystemInfo() SystemInfo {
+	// 速度 = 两次上报的流量差 ÷ 间隔。开机时长只精确到秒，而且是在 CPU 采样（约 1 秒）之后才读的，
+	// 用它算间隔会偶尔差出一秒，速度翻倍或少三分之一；这里记下读网卡计数那一刻的毫秒时间
 	networkStats := getNetworkStats()
+	sampledAt := time.Now().UnixMilli()
 	cpuInfo := getCPUInfo()
 	memoryInfo := getMemoryInfo()
 	storageInfo := getStorageInfo()
@@ -387,6 +392,7 @@ func (w *WebSocketReporter) collectSystemInfo() SystemInfo {
 		Uptime:                 getUptime(),
 		BytesReceived:          networkStats.BytesReceived,
 		BytesTransmitted:       networkStats.BytesTransmitted,
+		SampledAtMs:            sampledAt,
 		CPUUsage:               cpuInfo.Usage,
 		CPUModel:               cpuInfo.Model,
 		OSName:                 osInfo.Name,
@@ -394,6 +400,7 @@ func (w *WebSocketReporter) collectSystemInfo() SystemInfo {
 		KernelVersion:          osInfo.Kernel,
 		Arch:                   osInfo.Arch,
 		Virtualization:         osInfo.Virtualization,
+		BootTime:               getBootTime(),
 		MemoryUsage:            memoryInfo.Usage,
 		MemoryTotal:            memoryInfo.Total,
 		MemoryUsed:             memoryInfo.Used,
@@ -1318,20 +1325,43 @@ func getOSInfo() OSInfo {
 		info, err := host.Info()
 		if err != nil || info == nil {
 			osInfoCache.Virtualization = detectVirtualization("", "")
-			return
+		} else {
+			if info.Platform != "" {
+				osInfoCache.Name = info.Platform
+			}
+			osInfoCache.Version = info.PlatformVersion
+			osInfoCache.Kernel = info.KernelVersion
+			if info.KernelArch != "" {
+				osInfoCache.Arch = info.KernelArch
+			}
+			// gopsutil 能识别的平台有限，交给 detectVirtualization 按多种方式综合判断
+			osInfoCache.Virtualization = detectVirtualization(info.VirtualizationSystem, info.VirtualizationRole)
 		}
-		if info.Platform != "" {
-			osInfoCache.Name = info.Platform
+		// Linux 发行版优先按 /etc/os-release 识别（见 sysinfo_detect.go），版本也取自同一处，避免名称和版本来自不同的判断
+		if runtime.GOOS == "linux" {
+			if name, version, ok := detectLinuxRelease(); ok {
+				gopsutilPlatform, gopsutilVersion := osInfoCache.Name, osInfoCache.Version
+				osInfoCache.Name = name
+				osInfoCache.Version = refineVersion(name, version, gopsutilPlatform, gopsutilVersion)
+			}
 		}
-		osInfoCache.Version = info.PlatformVersion
-		osInfoCache.Kernel = info.KernelVersion
-		if info.KernelArch != "" {
-			osInfoCache.Arch = info.KernelArch
-		}
-		// gopsutil 能识别的平台有限，交给 detectVirtualization 按多种方式综合判断
-		osInfoCache.Virtualization = detectVirtualization(info.VirtualizationSystem, info.VirtualizationRole)
 	})
 	return osInfoCache
+}
+
+var (
+	bootTimeOnce  sync.Once
+	bootTimeCache uint64
+)
+
+// getBootTime 开机时间运行期间不变，读一次缓存；读不到时为 0，面板按没有开机时间处理
+func getBootTime() uint64 {
+	bootTimeOnce.Do(func() {
+		if t, err := host.BootTime(); err == nil {
+			bootTimeCache = t
+		}
+	})
+	return bootTimeCache
 }
 
 // getUptime 获取系统开机时间（秒）
@@ -1353,10 +1383,21 @@ func getNetworkStats() NetworkStats {
 		return stats
 	}
 
-	// 汇总所有非回环接口的流量
+	// Linux 只统计物理网卡（虚拟网卡会重复计算，见 sysinfo_detect.go）；其它系统沿用原来的做法，跳过回环接口
+	var counted map[string]bool
+	if runtime.GOOS == "linux" {
+		names := make([]string, 0, len(ioCounters))
+		for _, io := range ioCounters {
+			names = append(names, io.Name)
+		}
+		counted = selectTrafficInterfaces(names, isPhysicalInterface, interfaceMaster)
+	}
 	for _, io := range ioCounters {
-		// 跳过回环接口
-		if io.Name == "lo" || strings.HasPrefix(io.Name, "lo") {
+		if counted != nil {
+			if !counted[io.Name] {
+				continue
+			}
+		} else if io.Name == "lo" || strings.HasPrefix(io.Name, "lo") {
 			continue
 		}
 
@@ -1377,11 +1418,33 @@ func getCPUInfo() CPUInfo {
 		cpuInfo.Usage = percentages[0]
 	}
 
-	if info, err := cpu.Info(); err == nil && len(info) > 0 {
-		cpuInfo.Model = info[0].ModelName
-	}
+	cpuInfo.Model = getCPUModel()
 
 	return cpuInfo
+}
+
+var (
+	cpuModelOnce  sync.Once
+	cpuModelCache string
+)
+
+// getCPUModel CPU 型号运行期间不会变，只在第一次读取并缓存（取不到时还要调用 lscpu，不能每 2 秒执行一次）。
+// 先用 gopsutil 的结果；它在 ARM 上认不出的核心显示 Undefined、其它厂商为空，这时依次改用 lscpu、设备树里的开发板型号
+func getCPUModel() string {
+	cpuModelOnce.Do(func() {
+		fromGopsutil := func() string {
+			if info, err := cpu.Info(); err == nil && len(info) > 0 {
+				return info[0].ModelName
+			}
+			return ""
+		}
+		if runtime.GOOS != "linux" {
+			cpuModelCache = pickCPUModel(fromGopsutil)
+			return
+		}
+		cpuModelCache = pickCPUModel(fromGopsutil, lscpuModel, deviceTreeModel)
+	})
+	return cpuModelCache
 }
 
 // getMemoryInfo 获取内存信息

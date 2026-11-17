@@ -33,5 +33,8 @@ public class NodeTrafficCycle implements Serializable {
 
     private Long lastRawDown;
 
+    /** 节点上次上报的开机时间（Unix 秒）：读数变小时据此区分服务器重启和统计范围变化；旧版节点不上报，为空 */
+    private Long lastBootTime;
+
     private Long updatedTime;
 }

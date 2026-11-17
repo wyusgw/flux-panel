@@ -53,6 +53,7 @@ CREATE TABLE `forward` (
   `in_device_group_id` bigint(20) DEFAULT NULL,
   `out_device_group_id` bigint(20) DEFAULT NULL,
   `backup_out_node_ids` varchar(100) DEFAULT NULL COMMENT '故障转移：实际部署的备用出口节点ID，英文逗号分隔，按优先级',
+  `chain_hops` varchar(1000) DEFAULT NULL COMMENT '链式出口：实际部署的路径（JSON，每一跳的节点、设备组、端口、协议）',
   `speed_limit` int(11) NOT NULL DEFAULT '0'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -218,6 +219,8 @@ CREATE TABLE `node` (
   `socks` int(10) NOT NULL DEFAULT '0',
   `ss` int(10) NOT NULL DEFAULT '0',
   `proxy` varchar(500) DEFAULT NULL,
+  `last_info` text DEFAULT NULL COMMENT '离线前最后一次上报的状态（JSON）',
+  `offline_time` bigint(20) DEFAULT NULL COMMENT '最近一次被标记为离线的时间（毫秒）',
   `created_time` bigint(20) NOT NULL,
   `updated_time` bigint(20) DEFAULT NULL,
   `status` int(10) NOT NULL
@@ -372,6 +375,7 @@ CREATE TABLE `user_group` (
   `id` int(10) NOT NULL,
   `name` varchar(200) DEFAULT NULL,
   `sort` int(10) NOT NULL DEFAULT '0',
+  `node_group_ids` varchar(500) DEFAULT NULL COMMENT '可用节点组：英文逗号分隔的节点组ID，空表示不限制',
   `created_time` bigint(20) NOT NULL,
   `updated_time` bigint(20) DEFAULT NULL,
   `status` int(10) NOT NULL DEFAULT '1'

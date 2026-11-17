@@ -84,6 +84,12 @@ public class Tunnel extends BaseEntity {
 
     @com.baomidou.mybatisplus.annotation.TableField(exist = false)
     private java.util.List<String> backupOutIps;
+    /**
+     * 链式出口（非持久化）：入口之后依次经过的每一跳，第 1 跳与 outNodeId / outIp / protocol 一致。
+     * 只有出口是链式出口设备组的转发才会有；为空表示不是链式出口
+     */
+    @com.baomidou.mybatisplus.annotation.TableField(exist = false)
+    private java.util.List<com.admin.common.dto.ChainExitHop> chainHops;
 
     private String interfaceName;
 

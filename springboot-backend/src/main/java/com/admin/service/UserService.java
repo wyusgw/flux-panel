@@ -37,8 +37,6 @@ public interface UserService extends IService<User> {
 
     R getUserPackageInfo();
     
-    R updatePassword(ChangePasswordDto changePasswordDto);
-
     R reset(ResetFlowDto resetFlowDto);
 
     R updateAutoRenew(Boolean autoRenew);

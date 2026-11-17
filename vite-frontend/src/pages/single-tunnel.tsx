@@ -15,6 +15,7 @@ import { Dropdown, DropdownTrigger, DropdownMenu, DropdownItem, DropdownSection 
 import { Chip } from "@heroui/chip";
 import toast from 'react-hot-toast';
 import { copyText } from '@/utils/clipboard';
+import { DEFAULT_PORT_END, DEFAULT_PORT_STA, parsePortRange, PORT_RANGE_ERROR } from '@/utils/port-range';
 
 import {
   createUserDeviceGroup,
@@ -92,8 +93,8 @@ const DEFAULT_FORM: GroupForm = {
   direction: 'outbound',
   serverIp: '',
   entryIps: [''],
-  portSta: 1000,
-  portEnd: 65535,
+  portSta: DEFAULT_PORT_STA,
+  portEnd: DEFAULT_PORT_END,
   protocol: 'tls',
   singleTunnelGroupId: null,
 };
@@ -163,6 +164,8 @@ export default function SingleTunnelPage() {
   const [isEdit, setIsEdit] = useState(false);
   const [submitLoading, setSubmitLoading] = useState(false);
   const [form, setForm] = useState<GroupForm>(DEFAULT_FORM);
+  // 端口范围和设备管理一样用一个「起始-结束」输入框；格式不对时保留文字，提交时再提示
+  const [portRangeText, setPortRangeText] = useState('');
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
 
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
@@ -283,6 +286,8 @@ export default function SingleTunnelPage() {
   const handleAdd = () => {
     setIsEdit(false);
     setForm({ ...DEFAULT_FORM, singleTunnelGroupId: activeGroupFilter && activeGroupFilter > 0 ? activeGroupFilter : null });
+    // 新建时端口范围留空，提交时按默认 1000-65535 处理
+    setPortRangeText('');
     setErrors({});
     setModalOpen(true);
   };
@@ -295,11 +300,12 @@ export default function SingleTunnelPage() {
       direction: group.direction,
       serverIp: group.serverIp || '',
       entryIps: parseEntryIps(group.entryIp),
-      portSta: group.portSta || 1000,
-      portEnd: group.portEnd || 65535,
+      portSta: group.portSta || DEFAULT_PORT_STA,
+      portEnd: group.portEnd || DEFAULT_PORT_END,
       protocol: group.protocol || 'tls',
       singleTunnelGroupId: group.singleTunnelGroupId ?? null,
     });
+    setPortRangeText(`${group.portSta || DEFAULT_PORT_STA}-${group.portEnd || DEFAULT_PORT_END}`);
     setErrors({});
     setModalOpen(true);
   };
@@ -308,8 +314,7 @@ export default function SingleTunnelPage() {
     const newErrors: { [key: string]: string } = {};
     if (!form.name.trim()) newErrors.name = '请输入名称';
     if (!form.serverIp.trim()) newErrors.serverIp = '请输入服务器 IP 或域名';
-    if (form.portSta < 1 || form.portSta > 65535) newErrors.portSta = '端口号必须在1-65535之间';
-    if (form.portEnd < 1 || form.portEnd > 65535) newErrors.portEnd = '端口号必须在1-65535之间';
+    if (portRangeText.trim() && !parsePortRange(portRangeText)) newErrors.portRange = PORT_RANGE_ERROR;
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -554,13 +559,14 @@ export default function SingleTunnelPage() {
           </CardBody>
       </Card>
 
-      <Modal isOpen={modalOpen} onOpenChange={setModalOpen} size="lg" scrollBehavior="outside" backdrop="opaque" placement="center">
+      {/* 添加 / 编辑设备：与设备管理的添加设备组弹窗同一样式（紧凑宽度、无右上角关闭、标签加粗在上、32px 细边框控件） */}
+      <Modal isOpen={modalOpen} onOpenChange={setModalOpen} size="sm" scrollBehavior="outside" backdrop="opaque" placement="center" hideCloseButton classNames={{ base: "max-w-[416px]" }}>
         <ModalContent>
           {(onClose) => (
             <>
-              <ModalHeader><h2 className="text-base font-semibold">{isEdit ? '编辑设备' : '添加设备'}</h2></ModalHeader>
-              <ModalBody>
-                <div className="space-y-3">
+              <ModalHeader>{isEdit ? '编辑设备' : '添加设备'}</ModalHeader>
+              <ModalBody className="py-0">
+                <div className="dialog-form space-y-3">
                   <Input labelPlacement="outside-top"
                     size="sm" autoComplete="off"
                     label="名称"
@@ -590,22 +596,35 @@ export default function SingleTunnelPage() {
                   <Input labelPlacement="outside-top" size="sm" autoComplete="off" label="服务器 IP / 域名" placeholder="例如：203.0.113.10 或 node.example.com" value={form.serverIp} onChange={(e) => setForm(prev => ({ ...prev, serverIp: e.target.value }))} isInvalid={!!errors.serverIp} errorMessage={errors.serverIp} variant="bordered" />
 
                   <Textarea labelPlacement="outside-top" size="sm" autoComplete="off" variant="bordered" disableAutosize rows={3}
-                    label={<HelpTooltip content="用户连接使用的 IP 或域名，一行一个，数量不限；留空时默认使用服务器 IP / 域名">入口 IP / 域名</HelpTooltip>}
+                    label={<HelpTooltip content="用户连接使用的 IP 或域名，一行一个，数量不限；留空时默认使用服务器 IP / 域名">连接地址</HelpTooltip>}
                     placeholder="留空默认使用服务器 IP / 域名"
                     value={form.entryIps.join('\n')}
                     onChange={(e) => setForm(prev => ({ ...prev, entryIps: e.target.value.split('\n') }))}
                     classNames={{ input: 'resize-y min-h-[4.5rem]' }}
                   />
 
-                  <div className="grid grid-cols-2 gap-3">
-                    <Input labelPlacement="outside-top" size="sm" autoComplete="off" label="起始端口" type="number" value={form.portSta.toString()} onChange={(e) => setForm(prev => ({ ...prev, portSta: Number(e.target.value) || 1000 }))} isInvalid={!!errors.portSta} errorMessage={errors.portSta} variant="bordered" />
-                    <Input labelPlacement="outside-top" size="sm" autoComplete="off" label="结束端口" type="number" value={form.portEnd.toString()} onChange={(e) => setForm(prev => ({ ...prev, portEnd: Number(e.target.value) || 65535 }))} isInvalid={!!errors.portEnd} errorMessage={errors.portEnd} variant="bordered" />
-                  </div>
+                  <Input
+                    labelPlacement="outside-top" size="sm" autoComplete="off"
+                    label={<HelpTooltip content="该设备可分配给转发规则使用的监听端口范围，用 - 连接起止端口，例如 2000-65535；留空时使用默认的 1000-65535">端口范围</HelpTooltip>}
+                    placeholder="1000-65535"
+                    value={portRangeText}
+                    onChange={(e) => {
+                      const text = e.target.value;
+                      setPortRangeText(text);
+                      // 输入形如「起始-结束」时同步到表单；格式不对时保留文字，提交校验时再提示
+                      const parsed = parsePortRange(text);
+                      if (parsed) setForm(prev => ({ ...prev, portSta: parsed[0], portEnd: parsed[1] }));
+                      else if (!text.trim()) setForm(prev => ({ ...prev, portSta: DEFAULT_PORT_STA, portEnd: DEFAULT_PORT_END }));
+                    }}
+                    isInvalid={!!errors.portRange}
+                    errorMessage={errors.portRange}
+                    variant="bordered"
+                  />
 
                   {form.direction === 'outbound' && (
                     <Select labelPlacement="outside-top" listboxProps={{ emptyContent: <EmptyState compact /> }}
                       size="sm"
-                      label={<HelpTooltip content="该设备作为隧道转发出口节点时使用的传输协议">协议类型</HelpTooltip>}
+                      label={<HelpTooltip content="该设备作为隧道转发出口节点时使用的传输协议">协议</HelpTooltip>}
                       selectedKeys={[form.protocol]}
                       onSelectionChange={(keys) => {
                         const selectedKey = Array.from(keys)[0] as string;
@@ -645,8 +664,8 @@ export default function SingleTunnelPage() {
                 </div>
               </ModalBody>
               <ModalFooter>
-                <Button size="sm" variant="bordered" onPress={onClose}>取消</Button>
-                <Button size="sm" color="primary" onPress={handleSubmit} isLoading={submitLoading}>确定</Button>
+                <Button size="sm" variant="bordered" className="dialog-btn" onPress={onClose}>取消</Button>
+                <Button size="sm" color="primary" className="dialog-btn" onPress={handleSubmit} isLoading={submitLoading}>确定</Button>
               </ModalFooter>
             </>
           )}

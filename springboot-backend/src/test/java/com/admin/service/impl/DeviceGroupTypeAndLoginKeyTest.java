@@ -34,12 +34,13 @@ class DeviceGroupTypeAndLoginKeyTest {
     }
 
     @Test
-    void exitMustBeOutboundOrBoth() {
+    void exitMustBeOutboundBothOrChain() {
         assertNull(ForwardServiceImpl.deviceGroupTypeError(group("inbound"), group("outbound")));
         assertNull(ForwardServiceImpl.deviceGroupTypeError(group("both"), group("both")));
         assertNotNull(ForwardServiceImpl.deviceGroupTypeError(group("inbound"), group("inbound")));
         assertNotNull(ForwardServiceImpl.deviceGroupTypeError(group("inbound"), group("monitor")));
-        assertNotNull(ForwardServiceImpl.deviceGroupTypeError(group("inbound"), group("chain")));
+        // 链式出口可以作为出口（各跳由 TunnelResolver.chainExitError 另行校验）
+        assertNull(ForwardServiceImpl.deviceGroupTypeError(group("inbound"), group("chain")));
         assertNotNull(ForwardServiceImpl.deviceGroupTypeError(group("inbound"), group(null)));
     }
 

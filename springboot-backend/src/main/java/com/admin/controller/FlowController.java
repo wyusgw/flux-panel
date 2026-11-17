@@ -134,12 +134,6 @@ public class FlowController extends BaseController {
         return SUCCESS_RESPONSE;
     }
 
-    @RequestMapping("/test")
-    @LogAnnotation
-    public String test() {
-        return "test";
-    }
-
     /**
      * 处理流量数据上报
      *

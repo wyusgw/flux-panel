@@ -69,21 +69,22 @@ public class OpenApiController extends BaseController {
         String headerValue;
 
         if ("-1".equals(tunnel)) {
+            // 没有到期时间、流量为空的账号（如未购买套餐）按 0 返回，不能因为空值出错
             headerValue = buildSubscriptionHeader(
-                    userInfo.getOutFlow(),
-                    userInfo.getInFlow(),
-                    userInfo.getFlow() * GIGA,
-                    userInfo.getExpTime() / 1000
+                    orZero(userInfo.getOutFlow()),
+                    orZero(userInfo.getInFlow()),
+                    orZero(userInfo.getFlow()) * GIGA,
+                    orZero(userInfo.getExpTime()) / 1000
             );
         } else {
             UserTunnel tunnelInfo = userTunnelService.getById(tunnel);
             if (tunnelInfo == null) return R.err("隧道不存在");
             if (!tunnelInfo.getUserId().toString().equals(userInfo.getId().toString())) return R.err("隧道不存在");
             headerValue = buildSubscriptionHeader(
-                    tunnelInfo.getOutFlow(),
-                    tunnelInfo.getInFlow(),
-                    tunnelInfo.getFlow() * GIGA,
-                    tunnelInfo.getExpTime() / 1000
+                    orZero(tunnelInfo.getOutFlow()),
+                    orZero(tunnelInfo.getInFlow()),
+                    orZero(tunnelInfo.getFlow()) * GIGA,
+                    orZero(tunnelInfo.getExpTime()) / 1000
             );
         }
 
@@ -92,6 +93,10 @@ public class OpenApiController extends BaseController {
     }
 
 
+
+    private static long orZero(Number value) {
+        return value == null ? 0L : value.longValue();
+    }
 
     private String buildSubscriptionHeader(long upload, long download, long total, long expire) {
         return String.format("upload=%d; download=%d; total=%d; expire=%d", download, upload, total, expire);

@@ -39,12 +39,4 @@ public interface ViteConfigService extends IService<ViteConfig> {
     /** 演示账号保存配置：只写入已分配区域内、且没有打码的配置项 */
     R updateConfigsAsDemo(Map<String, String> configMap, java.util.Set<String> areas);
 
-    /**
-     * 更新单个配置项
-     * @param name 配置名
-     * @param value 配置值
-     * @return 更新结果
-     */
-    R updateConfig(String name, String value);
-
 }

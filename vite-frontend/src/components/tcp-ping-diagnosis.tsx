@@ -129,7 +129,8 @@ function DiagnosisDetailModal({
               )}
             </ModalBody>
             <ModalFooter>
-              <Button variant="light" onPress={onClose}>关闭</Button>
+              {/* 与诊断结果弹窗的关闭按钮同一样式 */}
+              <Button size="sm" color="primary" className="dialog-btn" onPress={onClose}>关闭</Button>
             </ModalFooter>
           </>
         )}

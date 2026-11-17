@@ -20,7 +20,7 @@ class MenuPermissionTest {
     private static final Map<String, List<String>> PAGE_ENDPOINTS = new LinkedHashMap<>();
 
     static {
-        PAGE_ENDPOINTS.put("forward|forward", Arrays.asList("deviceGroup/list", "forward/create", "forward/dailyFlow", "forward/delete", "forward/diagnose", "forward/diagnoseDetail", "forward/forceDelete", "forward/list", "forward/pause", "forward/resume", "forward/update", "forwardGroup/create", "forwardGroup/delete", "forwardGroup/list", "forwardGroup/update", "tunnel/user/tunnel", "user/package"));
+        PAGE_ENDPOINTS.put("forward|forward", Arrays.asList("deviceGroup/list", "forward/clearFlow", "forward/updateOrder", "forward/create", "forward/dailyFlow", "forward/delete", "forward/diagnose", "forward/diagnoseDetail", "forward/forceDelete", "forward/list", "forward/pause", "forward/resume", "forward/update", "forwardGroup/create", "forwardGroup/delete", "forwardGroup/list", "forwardGroup/update", "tunnel/user/tunnel", "user/package"));
         PAGE_ENDPOINTS.put("shop|shop", Arrays.asList("order/purchase", "order/redeem", "package/list", "recharge/create", "user/package"));
         PAGE_ENDPOINTS.put("orders|orders", Arrays.asList("order/list"));
         PAGE_ENDPOINTS.put("singleTunnel|single-tunnel", Arrays.asList("singleTunnelGroup/create", "singleTunnelGroup/delete", "singleTunnelGroup/list", "singleTunnelGroup/update", "userDeviceGroup/create", "userDeviceGroup/delete", "userDeviceGroup/install", "userDeviceGroup/list", "userDeviceGroup/resetSecret", "userDeviceGroup/update"));
@@ -30,10 +30,10 @@ class MenuPermissionTest {
         PAGE_ENDPOINTS.put("config|config", Arrays.asList("config/list", "config/update"));
         PAGE_ENDPOINTS.put("pushNotification|push-notification", Arrays.asList("config/list", "config/update", "deviceGroup/list", "deviceGroup/offlineConfig", "telegramLog/list", "user/telegram/test"));
         PAGE_ENDPOINTS.put("tunnel|tunnel", Arrays.asList("node/list", "tunnel/create", "tunnel/delete", "tunnel/diagnose", "tunnel/diagnoseDetail", "tunnel/list", "tunnel/update"));
-        PAGE_ENDPOINTS.put("deviceGroup|devicegroup", Arrays.asList("node/config", "deviceGroup/updateConfig", "deviceGroup/batchDelete", "deviceGroup/create", "deviceGroup/delete", "deviceGroup/list", "deviceGroup/reorder", "deviceGroup/update", "node/create", "node/delete", "node/install", "node/list", "node/resetSecret", "node/update", "nodeGroup/list", "userGroup/list"));
+        PAGE_ENDPOINTS.put("deviceGroup|devicegroup", Arrays.asList("node/config", "deviceGroup/batchDelete", "deviceGroup/create", "deviceGroup/delete", "deviceGroup/list", "deviceGroup/reorder", "deviceGroup/update", "node/create", "node/delete", "node/install", "node/list", "node/resetSecret", "node/update", "nodeGroup/list", "userGroup/list"));
         PAGE_ENDPOINTS.put("nodeGroup|nodegroup", Arrays.asList("nodeGroup/batchDelete", "nodeGroup/create", "nodeGroup/delete", "nodeGroup/list", "nodeGroup/reorder", "nodeGroup/update"));
         PAGE_ENDPOINTS.put("user|user", Arrays.asList("demo/commit", "demo/permission", "demo/restore", "demo/updatePermission", "package/list", "tunnel/list", "tunnel/user/assign", "tunnel/user/list", "tunnel/user/remove", "tunnel/user/tunnel", "tunnel/user/update", "user/create", "user/delete", "user/list", "user/refreshLimits", "user/reset", "user/update", "userGroup/list"));
-        PAGE_ENDPOINTS.put("userGroup|usergroup", Arrays.asList("userGroup/batchDelete", "userGroup/create", "userGroup/delete", "userGroup/list", "userGroup/reorder", "userGroup/update"));
+        PAGE_ENDPOINTS.put("userGroup|usergroup", Arrays.asList("nodeGroup/list", "userGroup/batchDelete", "userGroup/create", "userGroup/delete", "userGroup/list", "userGroup/reorder", "userGroup/update"));
         PAGE_ENDPOINTS.put("package|package", Arrays.asList("package/batchDelete", "package/create", "package/delete", "package/list", "package/pushUpdate", "package/reorder", "package/update", "userGroup/list"));
         PAGE_ENDPOINTS.put("redeemCode|redeemcode", Arrays.asList("package/list", "redeemCode/batchCreate", "redeemCode/delete", "redeemCode/list"));
         PAGE_ENDPOINTS.put("inviteCode|invitecode", Arrays.asList("inviteCode/batchCreate", "inviteCode/delete", "inviteCode/list"));

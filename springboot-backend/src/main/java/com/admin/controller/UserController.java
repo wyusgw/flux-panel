@@ -80,12 +80,6 @@ public class UserController extends BaseController {
     }
 
     @LogAnnotation
-    @PostMapping("/updatePassword")
-    public R updatePassword(@Validated @RequestBody ChangePasswordDto changePasswordDto) {
-        return userService.updatePassword(changePasswordDto);
-    }
-
-    @LogAnnotation
     @RequireRole
     @PostMapping("/reset")
     public R reset(@Validated @RequestBody ResetFlowDto resetFlowDto) {

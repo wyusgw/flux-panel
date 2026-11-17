@@ -60,6 +60,20 @@ public class ForwardController extends BaseController {
     }
 
     @LogAnnotation
+    @PostMapping("/clearFlow")
+    public R clearFlow(@RequestBody Map<String, Object> params) {
+        Object ids = params == null ? null : params.get("ids");
+        if (!(ids instanceof java.util.List) || ((java.util.List<?>) ids).isEmpty()) {
+            return R.err(400, "请选择要清空流量的规则");
+        }
+        java.util.List<Long> forwardIds = new java.util.ArrayList<>();
+        for (Object id : (java.util.List<?>) ids) {
+            forwardIds.add(Long.valueOf(id.toString()));
+        }
+        return forwardService.clearForwardFlow(forwardIds);
+    }
+
+    @LogAnnotation
     @PostMapping("/forceDelete")
     public R forceDelete(@RequestBody Map<String, Object> params) {
         Long id = Long.valueOf(params.get("id").toString());

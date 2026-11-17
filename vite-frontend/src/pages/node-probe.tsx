@@ -26,6 +26,10 @@ type Node = {
   id: number; name: string; ip?: string; serverIp?: string; status?: number; version?: string; portSta?: number; portEnd?: number;
   nodeGroupIds?: number[];
   connectionStatus?: 'online' | 'offline';
+  /** 设备离线保留期：离线前最后一次上报的状态（节点列表里离线且在保留期内才有） */
+  retainedInfo?: string | null;
+  /** 最后状态保留到什么时候（毫秒），过了就清空；为空表示不在保留期 */
+  retainedUntil?: number | null;
   systemInfo?: {
     cpuUsage: number; cpuModel?: string;
     osName?: string; osVersion?: string; kernelVersion?: string; arch?: string; virtualization?: string;
@@ -40,6 +44,38 @@ type Node = {
 type DeviceGroup = { id: number; name: string; nodeId: number; nodeName?: string; node?: Node; userGroupIds?: number[]; ownerUserId?: number | null; singleTunnelGroupName?: string | null; ratio?: number; remark?: string; hideInProbe?: number };
 type UserGroup = { id: number; name: string };
 type NodeGroup = { id: number; name: string };
+
+/**
+ * 节点上报的状态 → 页面显示用的数据。prev 是上一次的数据，用来按两次上报的流量差算速度；
+ * 没有上一次（刚打开页面、离线保留的最后状态）时速度为 0
+ */
+const toSystemInfo = (info: any, prev: Node['systemInfo'] | null | undefined): NonNullable<Node['systemInfo']> => {
+  const uptime = Number(info.uptime) || 0, upload = Number(info.bytes_transmitted) || 0, download = Number(info.bytes_received) || 0;
+  const elapsed = uptime - (prev?.uptime || uptime);
+  return {
+    cpuUsage: Number(info.cpu_usage) || 0, cpuModel: info.cpu_model || undefined,
+    osName: info.os_name || undefined, osVersion: info.os_version || undefined, kernelVersion: info.kernel_version || undefined, arch: info.arch || undefined, virtualization: info.virtualization || undefined,
+    memoryUsage: Number(info.memory_usage) || 0, memoryTotal: Number(info.memory_total) || undefined, memoryUsed: Number(info.memory_used) || undefined, memoryAvailable: Number(info.memory_available) || undefined,
+    storageUsage: Number(info.storage_usage) || 0, storageTotal: Number(info.storage_total) || undefined, storageUsed: Number(info.storage_used) || undefined, storageFree: Number(info.storage_free) || undefined,
+    uploadTraffic: upload, downloadTraffic: download,
+    cycleUpload: info.cycle_upload !== undefined ? Number(info.cycle_upload) : undefined,
+    cycleDownload: info.cycle_download !== undefined ? Number(info.cycle_download) : undefined,
+    cycleStart: info.cycle_start !== undefined ? Number(info.cycle_start) : undefined,
+    uploadSpeed: elapsed > 0 ? Math.max(0, (upload - (prev?.uploadTraffic || upload)) / elapsed) : 0,
+    downloadSpeed: elapsed > 0 ? Math.max(0, (download - (prev?.downloadTraffic || download)) / elapsed) : 0,
+    inboundTcpConnections: info.inbound_tcp_connections !== undefined ? Number(info.inbound_tcp_connections) : undefined,
+    outboundTcpConnections: info.outbound_tcp_connections !== undefined ? Number(info.outbound_tcp_connections) : undefined,
+    inboundUdpConnections: info.inbound_udp_connections !== undefined ? Number(info.inbound_udp_connections) : undefined,
+    outboundUdpConnections: info.outbound_udp_connections !== undefined ? Number(info.outbound_udp_connections) : undefined,
+    uptime
+  };
+};
+
+const formatRetainedUntil = (value: number) => {
+  const d = new Date(value);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
 
 const formatBytes = (value = 0) => value >= 1024 ** 3 ? `${(value / 1024 ** 3).toFixed(2)} GB` : value >= 1024 ** 2 ? `${(value / 1024 ** 2).toFixed(2)} MB` : `${(value / 1024).toFixed(2)} KB`;
 const formatSpeed = (value = 0) => `${formatBytes(value)}/s`;
@@ -87,6 +123,7 @@ const buildStatusContent = (node: Node, groupMeta: DeviceGroup | undefined, effe
       <PopRow>可见用户组：{userGroupNames(groupMeta?.userGroupIds)}</PopRow>
       <PopRow>流量倍率：{groupMeta?.ratio ?? '—'}</PopRow>
       <PopRow>备注：{groupMeta?.remark || '—'}</PopRow>
+      {!isOnline && node.retainedUntil && <PopRow>最后状态保留至：{formatRetainedUntil(node.retainedUntil)}</PopRow>}
     </>
   ) : (
     <>
@@ -94,6 +131,7 @@ const buildStatusContent = (node: Node, groupMeta: DeviceGroup | undefined, effe
       <PopRow>服务器：{node.serverIp || '—'}</PopRow>
       <PopRow>流量倍率：{groupMeta?.ratio ?? '—'}</PopRow>
       <PopRow>状态：{isOnline ? '在线' : '离线'}</PopRow>
+      {!isOnline && node.retainedUntil && <PopRow>最后状态保留至：{formatRetainedUntil(node.retainedUntil)}</PopRow>}
     </>
   );
 };
@@ -233,7 +271,20 @@ export default function NodeProbePage() {
       const nodesById = new Map<number, Node>();
       if (nodeResponse.code === 0) (nodeResponse.data || []).forEach((node: Node) => nodesById.set(node.id, node));
       deviceGroups.forEach(group => { if (group.node) nodesById.set(group.node.id, { ...group.node, ...nodesById.get(group.node.id) }); });
-      setNodes(Array.from(nodesById.values()).map(node => ({ ...node, connectionStatus: node.status === 1 ? 'online' : 'offline', systemInfo: null })));
+      // 离线但还在保留期内的节点，先显示离线前最后一次上报的状态
+      const now = Date.now();
+      setNodes(Array.from(nodesById.values()).map(node => {
+        const retained = node.status !== 1 && node.retainedInfo && node.retainedUntil && node.retainedUntil > now;
+        let systemInfo: Node['systemInfo'] = null;
+        if (retained) {
+          try {
+            systemInfo = toSystemInfo(JSON.parse(node.retainedInfo as string), null);
+          } catch {
+            systemInfo = null;
+          }
+        }
+        return { ...node, connectionStatus: node.status === 1 ? 'online' : 'offline', systemInfo, retainedUntil: systemInfo ? node.retainedUntil : null };
+      }));
       if (groupResponse.code === 0) setGroups(deviceGroups);
       if (userGroupResponse.code === 0) setUserGroups(userGroupResponse.data || []);
       if (nodeGroupResponse.code === 0) setNodeGroups(nodeGroupResponse.data || []);
@@ -243,6 +294,18 @@ export default function NodeProbePage() {
   }, []);
 
   const closeDetail = useCallback(() => { setDetailKey(null); setDetailRect(null); setDetailPinned(false); }, []);
+
+  // 设备离线保留期到了：清空离线设备保留的最后状态（每 15 秒检查一次，没有到期的不触发重新渲染）
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNodes(current => {
+        const now = Date.now();
+        if (!current.some(node => node.retainedUntil && node.retainedUntil <= now)) return current;
+        return current.map(node => node.retainedUntil && node.retainedUntil <= now ? { ...node, systemInfo: null, retainedUntil: null } : node);
+      });
+    }, 15000);
+    return () => clearInterval(timer);
+  }, []);
 
   // 移动端窄屏下，弹出的详情卡片若直接贴着触发元素的左边缘定位，很容易超出屏幕右边界被切掉一半，
   // 这里在卡片实际渲染出尺寸后，按视口边界纠正一次位置（水平不超出左右边界，垂直放不下时改往上弹）
@@ -316,30 +379,22 @@ export default function NodeProbePage() {
           const message = JSON.parse(event.data);
           setNodes(current => current.map(node => {
             if (node.id !== Number(message.id)) return node;
-            if (message.type === 'status') return { ...node, connectionStatus: message.data === 1 ? 'online' : 'offline' };
+            if (message.type === 'status') {
+              if (message.data === 1) return { ...node, connectionStatus: 'online', retainedUntil: null };
+              // 设备离线保留期：带 retainedUntil 时按保留期处理（保留期内保留最后状态、速度归零，保留期为 0 则立即清空）；
+              // 没带表示没启用，沿用原来的行为
+              if (typeof message.retainedUntil === 'number') {
+                const keep = message.retainedUntil > Date.now() && node.systemInfo;
+                return {
+                  ...node, connectionStatus: 'offline', retainedUntil: keep ? message.retainedUntil : null,
+                  systemInfo: keep && node.systemInfo ? { ...node.systemInfo, uploadSpeed: 0, downloadSpeed: 0 } : null,
+                };
+              }
+              return { ...node, connectionStatus: 'offline' };
+            }
             if (message.type !== 'info') return node;
             const info = typeof message.data === 'string' ? JSON.parse(message.data) : message.data;
-            const uptime = Number(info.uptime) || 0, upload = Number(info.bytes_transmitted) || 0, download = Number(info.bytes_received) || 0;
-            const elapsed = uptime - (node.systemInfo?.uptime || uptime);
-            return {
-              ...node, connectionStatus: 'online', systemInfo: {
-                cpuUsage: Number(info.cpu_usage) || 0, cpuModel: info.cpu_model || undefined,
-                osName: info.os_name || undefined, osVersion: info.os_version || undefined, kernelVersion: info.kernel_version || undefined, arch: info.arch || undefined, virtualization: info.virtualization || undefined,
-                memoryUsage: Number(info.memory_usage) || 0, memoryTotal: Number(info.memory_total) || undefined, memoryUsed: Number(info.memory_used) || undefined, memoryAvailable: Number(info.memory_available) || undefined,
-                storageUsage: Number(info.storage_usage) || 0, storageTotal: Number(info.storage_total) || undefined, storageUsed: Number(info.storage_used) || undefined, storageFree: Number(info.storage_free) || undefined,
-                uploadTraffic: upload, downloadTraffic: download,
-                cycleUpload: info.cycle_upload !== undefined ? Number(info.cycle_upload) : undefined,
-                cycleDownload: info.cycle_download !== undefined ? Number(info.cycle_download) : undefined,
-                cycleStart: info.cycle_start !== undefined ? Number(info.cycle_start) : undefined,
-                uploadSpeed: elapsed > 0 ? Math.max(0, (upload - (node.systemInfo?.uploadTraffic || upload)) / elapsed) : 0,
-                downloadSpeed: elapsed > 0 ? Math.max(0, (download - (node.systemInfo?.downloadTraffic || download)) / elapsed) : 0,
-                inboundTcpConnections: info.inbound_tcp_connections !== undefined ? Number(info.inbound_tcp_connections) : undefined,
-                outboundTcpConnections: info.outbound_tcp_connections !== undefined ? Number(info.outbound_tcp_connections) : undefined,
-                inboundUdpConnections: info.inbound_udp_connections !== undefined ? Number(info.inbound_udp_connections) : undefined,
-                outboundUdpConnections: info.outbound_udp_connections !== undefined ? Number(info.outbound_udp_connections) : undefined,
-                uptime
-              }
-            };
+            return { ...node, connectionStatus: 'online', retainedUntil: null, systemInfo: toSystemInfo(info, node.systemInfo) };
           }));
         } catch {}
       };

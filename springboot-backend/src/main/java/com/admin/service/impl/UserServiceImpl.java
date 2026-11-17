@@ -505,53 +505,6 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
      * @return 修改结果响应
      */
     @Override
-    public R updatePassword(ChangePasswordDto changePasswordDto) {
-        try {
-            // 1. 获取当前用户信息
-            CurrentUserInfo currentUser = getCurrentUserInfo();
-            if (currentUser.isHasError()) {
-                return R.err(currentUser.getErrorMessage());
-            }
-
-            // 2. 验证新密码和确认密码是否匹配
-            if (!changePasswordDto.getNewPassword().equals(changePasswordDto.getConfirmPassword())) {
-                return R.err(ERROR_PASSWORD_NOT_MATCH);
-            }
-
-            // 3. 验证当前密码是否正确
-            User user = currentUser.getUser();
-            String currentPasswordMd5 = Md5Util.md5(changePasswordDto.getCurrentPassword());
-            if (!user.getPwd().equals(currentPasswordMd5)) {
-                return R.err(ERROR_CURRENT_PASSWORD_WRONG);
-            }
-
-            // 4. 用户名留空表示不修改，只改密码；填了且与当前用户名不同才需要校验唯一性
-            String newUsername = StringUtils.isBlank(changePasswordDto.getNewUsername())
-                    ? user.getUser() : changePasswordDto.getNewUsername().trim();
-            if (!user.getUser().equals(newUsername)) {
-                R usernameValidationResult = validateUsernameUniqueness(newUsername, user.getId());
-                if (usernameValidationResult.getCode() != 0) {
-                    return usernameValidationResult;
-                }
-            }
-
-            // 5. 更新用户名和密码
-            User updateUser = new User();
-            updateUser.setId(user.getId());
-            updateUser.setUser(newUsername);
-            updateUser.setPwd(Md5Util.md5(changePasswordDto.getNewPassword()));
-            updateUser.setUpdatedTime(System.currentTimeMillis());
-            
-            boolean result = this.updateById(updateUser);
-            return result ? R.ok("账号密码修改成功") : R.err(ERROR_UPDATE_FAILED);
-            
-        } catch (Exception e) {
-            e.printStackTrace();
-            return R.err("修改账号密码时发生错误：" + e.getMessage());
-        }
-    }
-
-    @Override
     public R reset(ResetFlowDto resetFlowDto) {
         if (resetFlowDto.getType() == 1){ // 清零账号流量
             User user = this.getById(resetFlowDto.getId());

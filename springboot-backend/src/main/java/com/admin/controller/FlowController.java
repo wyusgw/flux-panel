@@ -79,10 +79,10 @@ public class FlowController extends BaseController {
 
     /**
      * 容器健康检查入口
-     * Docker healthcheck 会访问 /flow/test
+     * Docker healthcheck 会访问 /flow/status
      */
-    @GetMapping("/test")
-    public String test() {
+    @GetMapping("/status")
+    public String status() {
         return SUCCESS_RESPONSE;
     }
 

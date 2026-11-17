@@ -25,11 +25,16 @@ public class OpenApiController extends BaseController {
     @javax.annotation.Resource
     private LoginAttemptLimiter loginAttemptLimiter;
 
+    /**
+     * 订阅流量查询。推荐用 token（个人中心复制的地址，每个账号一个，可重置，地址里不含密码）；
+     * 原来的 user + pwd 方式继续可用，已经配置在客户端里的旧地址不受影响
+     */
     @LogAnnotation
     @GetMapping("/subStore")
     public Object create(
-            @RequestParam("user") String user,
-            @RequestParam("pwd") String pwd,
+            @RequestParam(value = "token", required = false) String token,
+            @RequestParam(value = "user", required = false) String user,
+            @RequestParam(value = "pwd", required = false) String pwd,
             @RequestParam(value = "tunnel", required = false, defaultValue = "-1") String tunnel,
             @RequestParam(value = "format", required = false) String format,
             HttpServletResponse response) {
@@ -38,33 +43,12 @@ public class OpenApiController extends BaseController {
         result.put("download", 0);
         result.put("total", 0);
         result.put("expire", 0);
-        // 校验 user 是否为空
-        if (user == null || user.isEmpty()) {
-            return R.err("用户不能为空");
-        }
-        if (pwd == null || pwd.isEmpty()) {
-            return R.err("密码不能为空");
-        }
 
-        // 这个接口没有验证码，和登录共用尝试次数限制，否则可以绕过验证码猜密码
-        String clientIp = LoginAttemptLimiter.clientIp(HttpContextUtils.getHttpServletRequest());
-        String attemptKey = userService.loginAttemptKey(user);
-        if (loginAttemptLimiter.isBlocked(attemptKey, clientIp)) {
-            return R.err(429, LoginAttemptLimiter.TOO_MANY_ATTEMPTS);
+        Object auth = token != null && !token.trim().isEmpty() ? authenticateByToken(token.trim()) : authenticateByPassword(user, pwd);
+        if (auth instanceof R) {
+            return auth;
         }
-
-        User userInfo = userService.getOne(new QueryWrapper<User>().eq("user", user));
-        if (userInfo == null) {
-            loginAttemptLimiter.recordFailure(attemptKey, clientIp);
-            return R.err("鉴权失败");
-        }
-
-        String pwdMd5 = Md5Util.md5(pwd);
-        if (!Objects.equals(pwdMd5, userInfo.getPwd())) {
-            loginAttemptLimiter.recordFailure(attemptKey, clientIp);
-            return R.err("鉴权失败");
-        }
-        loginAttemptLimiter.recordSuccess(attemptKey, clientIp);
+        User userInfo = (User) auth;
 
         SubscriptionUsage usage;
         if ("-1".equals(tunnel)) {
@@ -123,6 +107,45 @@ public class OpenApiController extends BaseController {
     }
 
 
+
+    /** Token 是 128 位随机数，猜不出来；查不到一律按鉴权失败 */
+    private Object authenticateByToken(String token) {
+        if (!token.matches("[0-9a-f]{32}")) {
+            return R.err("鉴权失败");
+        }
+        User userInfo = userService.getOne(new QueryWrapper<User>().eq("sub_token", token));
+        return userInfo == null ? R.err("鉴权失败") : userInfo;
+    }
+
+    /** 旧的账号密码方式：没有验证码，和登录共用尝试次数限制，否则可以绕过验证码猜密码 */
+    private Object authenticateByPassword(String user, String pwd) {
+        if (user == null || user.isEmpty()) {
+            return R.err("用户不能为空");
+        }
+        if (pwd == null || pwd.isEmpty()) {
+            return R.err("密码不能为空");
+        }
+
+        String clientIp = LoginAttemptLimiter.clientIp(HttpContextUtils.getHttpServletRequest());
+        String attemptKey = userService.loginAttemptKey(user);
+        if (loginAttemptLimiter.isBlocked(attemptKey, clientIp)) {
+            return R.err(429, LoginAttemptLimiter.TOO_MANY_ATTEMPTS);
+        }
+
+        User userInfo = userService.getOne(new QueryWrapper<User>().eq("user", user));
+        if (userInfo == null) {
+            loginAttemptLimiter.recordFailure(attemptKey, clientIp);
+            return R.err("鉴权失败");
+        }
+
+        String pwdMd5 = Md5Util.md5(pwd);
+        if (!Objects.equals(pwdMd5, userInfo.getPwd())) {
+            loginAttemptLimiter.recordFailure(attemptKey, clientIp);
+            return R.err("鉴权失败");
+        }
+        loginAttemptLimiter.recordSuccess(attemptKey, clientIp);
+        return userInfo;
+    }
 
     private static long orZero(Number value) {
         return value == null ? 0L : value.longValue();

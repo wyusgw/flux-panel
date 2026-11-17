@@ -356,7 +356,8 @@ CREATE TABLE `user` (
   `demo_areas` varchar(255) DEFAULT NULL,
   `demo_restore_time` varchar(5) DEFAULT NULL,
   `menu_permissions` varchar(500) DEFAULT NULL,
-  `remark` varchar(500) DEFAULT NULL
+  `remark` varchar(500) DEFAULT NULL,
+  `sub_token` varchar(64) DEFAULT NULL COMMENT '订阅流量查询地址用的 Token，可在个人中心重置'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 --
@@ -711,7 +712,8 @@ ALTER TABLE `tunnel`
 -- 表的索引 `user`
 --
 ALTER TABLE `user`
-  ADD PRIMARY KEY (`id`);
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uk_user_sub_token` (`sub_token`);
 
 --
 -- 表的索引 `user_tunnel`

@@ -36,6 +36,12 @@ public interface UserService extends IService<User> {
     R refreshUserLimits(Long id);
 
     R getUserPackageInfo();
+
+    /** 当前账号的订阅流量 Token，没有时生成 */
+    R getSubscriptionToken();
+
+    /** 重新生成当前账号的订阅流量 Token，原来的订阅地址立即失效 */
+    R resetSubscriptionToken();
     
     R reset(ResetFlowDto resetFlowDto);
 

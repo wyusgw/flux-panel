@@ -39,6 +39,8 @@ export const refreshUserLimits = (id: number) => Network.post("/user/refreshLimi
 export const deleteUser = (id: number) => Network.post("/user/delete", { id });
 export const getUserPackageInfo = () => Network.post("/user/package");
 export const updateAutoRenew = (autoRenew: boolean) => Network.post("/user/autoRenew", { autoRenew });
+export const getSubscriptionToken = () => Network.post("/user/subscriptionToken");
+export const resetSubscriptionToken = () => Network.post("/user/resetSubscriptionToken");
 export const resetPassword = (currentPassword: string, newPassword?: string, newUsername?: string) => Network.post("/user/resetPassword", { currentPassword, newPassword, newUsername });
 export interface NotifySettingsPayload {
   paymentMode: number;

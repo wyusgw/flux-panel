@@ -93,6 +93,20 @@ public class UserController extends BaseController {
         return userService.updateAutoRenew(autoRenew);
     }
 
+    /** 个人中心「订阅流量」：取当前账号的订阅 Token（没有时生成） */
+    @LogAnnotation
+    @PostMapping("/subscriptionToken")
+    public R subscriptionToken() {
+        return userService.getSubscriptionToken();
+    }
+
+    /** 个人中心「订阅流量」：重置订阅 Token，原来的订阅地址立即失效 */
+    @LogAnnotation
+    @PostMapping("/resetSubscriptionToken")
+    public R resetSubscriptionToken() {
+        return userService.resetSubscriptionToken();
+    }
+
     @LogAnnotation
     @PostMapping("/resetPassword")
     public R resetPassword(@Validated @RequestBody ResetPasswordDto resetPasswordDto) {

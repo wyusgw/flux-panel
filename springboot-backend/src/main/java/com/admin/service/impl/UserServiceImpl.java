@@ -479,6 +479,45 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
      * @return 用户套餐信息响应
      */
     @Override
+    public R getSubscriptionToken() {
+        Integer userId = JwtUtil.getUserIdFromToken();
+        User user = userId == null ? null : this.getById(userId);
+        if (user == null) {
+            return R.err("用户不存在");
+        }
+        if (StringUtils.isBlank(user.getSubToken())) {
+            // 只在还没有 Token 时写入：两个请求同时第一次取地址，也只会有一个生效，大家拿到的是同一个
+            this.update(null, new UpdateWrapper<User>().eq("id", user.getId())
+                    .and(w -> w.isNull("sub_token").or().eq("sub_token", ""))
+                    .set("sub_token", newSubscriptionToken()));
+            user = this.getById(userId);
+        }
+        return R.ok(Collections.singletonMap("token", user.getSubToken()));
+    }
+
+    @Override
+    public R resetSubscriptionToken() {
+        Integer userId = JwtUtil.getUserIdFromToken();
+        if (userId == null || this.getById(userId) == null) {
+            return R.err("用户不存在");
+        }
+        String token = newSubscriptionToken();
+        this.update(null, new UpdateWrapper<User>().eq("id", userId).set("sub_token", token));
+        return R.ok(Collections.singletonMap("token", token));
+    }
+
+    /** 128 位随机数的十六进制（32 位），猜不出来，也不含账号信息 */
+    static String newSubscriptionToken() {
+        byte[] bytes = new byte[16];
+        new java.security.SecureRandom().nextBytes(bytes);
+        StringBuilder sb = new StringBuilder();
+        for (byte b : bytes) {
+            sb.append(String.format("%02x", b));
+        }
+        return sb.toString();
+    }
+
+    @Override
     public R getUserPackageInfo() {
         try {
                     // 1. 获取当前用户信息

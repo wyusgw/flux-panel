@@ -30,6 +30,8 @@ import {
   updateNotifySettings,
   getTelegramBindCode,
   unbindTelegram,
+  getSubscriptionToken,
+  resetSubscriptionToken,
 } from '@/api';
 
 interface UserInfo {
@@ -255,6 +257,16 @@ export default function AccountCenterPage() {
   const [flowMode, setFlowMode] = useState(1);
   const [pushSaving, setPushSaving] = useState(false);
   const [pushChannelOpen, setPushChannelOpen] = useState(false);
+
+  // 订阅流量 Token：页面打开时就取好（没有时后端生成），点击复制时直接用。
+  // HTTP 站点降级用的 execCommand 复制要求紧跟用户操作，点击后再等一次接口返回会静默失败
+  const [subToken, setSubToken] = useState('');
+  const [subTokenResetting, setSubTokenResetting] = useState(false);
+  useEffect(() => {
+    getSubscriptionToken().then(res => {
+      if (res.code === 0 && res.data?.token) setSubToken(res.data.token);
+    }).catch(() => {});
+  }, []);
   // 白名单 / 黑名单切到其它模式时，设备组一行收起过程中仍显示原来的名称，不跟着变
   const lastListModeRef = useRef(1);
   if (deviceMode === 1 || deviceMode === 2) lastListModeRef.current = deviceMode;
@@ -391,18 +403,52 @@ export default function AccountCenterPage() {
     }
   };
 
-  // 订阅流量查询地址（openApi/subStore）：账号密码放在地址参数里，页面不知道明文密码，用 YOUR_PASSWORD 占位让用户自己替换。
-  // 面板接口地址可能是相对路径（与页面同域）也可能是 App 里设置的绝对地址，统一转成完整地址
-  const handleCopySubscriptionUrl = async () => {
-    if (!userInfo) return;
+  // 订阅流量查询地址（openApi/subStore）：用账号专属的 Token，地址里不含账号密码。
+  // 面板接口地址可能是相对路径（与页面同域）也可能是 App 里设置的绝对地址，统一转成完整地址；
+  // format=json 时返回 {"upload","download","total","expire"}，响应头 subscription-userinfo 照常带上
+  const subscriptionUrl = (token: string) => {
     const base = new URL(axios.defaults.baseURL || '/api/v1/', window.location.href).toString().replace(/\/?$/, '/');
-    // format=json：返回 {"upload","download","total","expire"}，响应头 subscription-userinfo 照常带上
-    const url = `${base}openApi/subStore?user=${encodeURIComponent(userInfo.user)}&pwd=YOUR_PASSWORD&format=json`;
-    const success = await copyText(url);
+    return `${base}openApi/subStore?token=${token}&format=json`;
+  };
+
+  const handleCopySubscriptionUrl = async () => {
+    let token = subToken;
+    if (!token) {
+      try {
+        const res = await getSubscriptionToken();
+        if (res.code !== 0 || !res.data?.token) {
+          toast.error(res.msg || '获取订阅地址失败');
+          return;
+        }
+        token = res.data.token;
+        setSubToken(token);
+      } catch (error) {
+        toast.error('获取订阅地址失败');
+        return;
+      }
+    }
+    const success = await copyText(subscriptionUrl(token));
     if (success) {
-      toast.success('已复制，请把地址里的 YOUR_PASSWORD 换成你的登录密码');
+      toast.success('已复制订阅流量地址');
     } else {
       toast.error('复制失败，请手动复制');
+    }
+  };
+
+  const handleResetSubscriptionToken = async () => {
+    setSubTokenResetting(true);
+    try {
+      const res = await resetSubscriptionToken();
+      if (res.code === 0 && res.data?.token) {
+        setSubToken(res.data.token);
+        toast.success('已重置，原来的订阅地址已失效，请复制新地址');
+      } else {
+        toast.error(res.msg || '重置失败');
+      }
+    } catch (error) {
+      toast.error('重置失败');
+    } finally {
+      setSubTokenResetting(false);
     }
   };
 
@@ -590,12 +636,19 @@ export default function AccountCenterPage() {
             }
           />
           <Row
-            label={<HelpTooltip content="供 Sub-Store、Clash 等客户端读取本账号的已用流量、总流量和到期时间。地址返回 JSON，包含 upload、download、total（流量，字节）和 expire（到期时间，Unix 秒），同时带上 subscription-userinfo 响应头。复制后把地址里的 YOUR_PASSWORD 换成你的登录密码；修改密码后需要同步更新">订阅流量</HelpTooltip>}
+            label={<HelpTooltip content="供 Sub-Store、Clash 等客户端读取本账号的已用流量、总流量和到期时间。地址返回 JSON，包含 upload、download、total（流量，字节）和 expire（到期时间，Unix 秒），同时带上 subscription-userinfo 响应头。地址里是本账号专属的 Token，不含密码，改密码后也不用更新；地址泄露时点「重置」，原来的地址立即失效">订阅流量</HelpTooltip>}
             value=""
             action={
-              <Button size="sm" variant="bordered" className={OUTLINE_BUTTON} startContent={<CopyOutlined />} onPress={handleCopySubscriptionUrl}>
-                复制地址
-              </Button>
+              <>
+                <Button size="sm" variant="bordered" className={OUTLINE_BUTTON} startContent={<CopyOutlined />} onPress={handleCopySubscriptionUrl}>
+                  复制地址
+                </Button>
+                <PopConfirm title="重置后原来的订阅地址立即失效，确定重置？" onConfirm={handleResetSubscriptionToken}>
+                  <Button size="sm" variant="bordered" className={OUTLINE_BUTTON} startContent={<SyncOutlined />} isLoading={subTokenResetting}>
+                    重置
+                  </Button>
+                </PopConfirm>
+              </>
             }
           />
         </CardBody>

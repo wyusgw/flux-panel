@@ -1961,3 +1961,32 @@ SET @sql = (
 PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
+
+-- user 新增 sub_token：订阅流量查询地址（openApi/subStore?token=...）用的 Token，地址里不再需要账号密码；可在个人中心重置
+SET @sql = (
+    SELECT IF(
+        NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = DATABASE() AND table_name = 'user' AND column_name = 'sub_token'
+        ),
+        'ALTER TABLE `user` ADD COLUMN `sub_token` varchar(64) DEFAULT NULL COMMENT "订阅流量查询地址用的 Token，可在个人中心重置";',
+        'SELECT "Column `sub_token` already exists in `user`";'
+    )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @sql = (
+    SELECT IF(
+        NOT EXISTS (
+            SELECT 1 FROM information_schema.statistics
+            WHERE table_schema = DATABASE() AND table_name = 'user' AND index_name = 'uk_user_sub_token'
+        ),
+        'ALTER TABLE `user` ADD UNIQUE KEY `uk_user_sub_token` (`sub_token`);',
+        'SELECT "Index `uk_user_sub_token` already exists in `user`";'
+    )
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;

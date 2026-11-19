@@ -280,7 +280,7 @@ export function SimpleGroupPage({ label, countLabel, countKey, help, api, extraF
               selectionMode={api.batchRemove ? 'multiple' : 'none'}
               selectedKeys={selectedKeys}
               onSelectionChange={setSelectedKeys}
-              classNames={{ base: "w-full", table: "w-full min-w-[600px] table-fixed", th: "management-table-heading", td: "management-table-cell" }}>
+              classNames={{ base: "w-full", table: "w-full min-w-[600px] table-fixed management-table-selectable", th: "management-table-heading", td: "management-table-cell" }}>
               <TableHeader>
                 <TableColumn className="w-16">排序</TableColumn>
                 <TableColumn className="w-40">{label} ID</TableColumn>

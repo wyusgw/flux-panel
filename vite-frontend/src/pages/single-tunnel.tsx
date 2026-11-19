@@ -503,7 +503,7 @@ export default function SingleTunnelPage() {
               selectionMode="multiple"
               selectedKeys={selectedKeys}
               onSelectionChange={setSelectedKeys}
-              classNames={{ base: "w-full", th: "management-table-heading", td: "management-table-cell" }}
+              classNames={{ base: "w-full", table: "w-full management-table-selectable", th: "management-table-heading", td: "management-table-cell" }}
             >
               <TableHeader>
                 <TableColumn>名称</TableColumn>

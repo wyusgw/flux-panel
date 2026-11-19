@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/go-gost/x/config"
+	xudp "github.com/go-gost/x/internal/net/udp"
 	"github.com/go-gost/x/internal/util/crypto"
 	"github.com/go-gost/x/internal/util/panelproxy"
 	"github.com/go-gost/x/service"
@@ -52,8 +53,8 @@ type SystemInfo struct {
 	StorageFree            uint64  `json:"storage_free"`             // 存储剩余（字节）
 	InboundTCPConnections  int     `json:"inbound_tcp_connections"`  // 接收（入站）TCP 连接数：客户端连进本机监听端口的 TCP 连接
 	OutboundTCPConnections int     `json:"outbound_tcp_connections"` // 发送（出站）TCP 连接数：本机主动向目标地址拨出的 TCP 连接
-	InboundUDPConnections  int     `json:"inbound_udp_connections"`  // 接收（入站）UDP 套接字数：本地绑定、未设置对端地址（等待接收数据）
-	OutboundUDPConnections int     `json:"outbound_udp_connections"` // 发送（出站）UDP 套接字数：已设置对端地址（本机主动发送数据）
+	InboundUDPConnections  int     `json:"inbound_udp_connections"`  // 接收（入站）活动 UDP 会话数：优先使用系统 conntrack 流表
+	OutboundUDPConnections int     `json:"outbound_udp_connections"` // 发送（出站）活动 UDP 会话数：优先使用系统 conntrack 流表
 }
 
 // NetworkStats 网络统计信息
@@ -419,8 +420,8 @@ func (w *WebSocketReporter) collectSystemInfo() SystemInfo {
 // getConnectionDirectionStats 按协议+方向统计当前连接数，供节点状态页"点击上/下行"展示：
 // 接收（入站）＝客户端连接到本机监听端口的连接（TCP 本地端口命中某个 LISTEN 端口）；
 // 发送（出站）＝本机主动向目标地址拨出的连接（TCP 本地端口是临时端口，不在监听端口集合里）。
-// UDP 是无连接协议，这里用一个近似规则：未设置对端地址的套接字视为监听中接收数据（入站），
-// 已设置对端地址的视为本机主动发送数据的出站套接字。
+// 优先从系统 conntrack 表统计具有空闲超时的入站/出站 UDP 流；系统未提供 conntrack 时，
+// 回退为应用维护的入站会话数和系统中设置了远端地址的 UDP 套接字数。
 func getConnectionDirectionStats() (inboundTCP int, outboundTCP int, inboundUDP int, outboundUDP int) {
 	if tcpConns, err := psnet.Connections("tcp"); err == nil {
 		listenPorts := make(map[uint32]struct{})
@@ -441,11 +442,14 @@ func getConnectionDirectionStats() (inboundTCP int, outboundTCP int, inboundUDP 
 		}
 	}
 
+	if in, out, ok := xudp.ConntrackSessions(); ok {
+		inboundUDP, outboundUDP = in, out
+		return
+	}
+	inboundUDP = xudp.ActiveSessions()
 	if udpConns, err := psnet.Connections("udp"); err == nil {
 		for _, c := range udpConns {
-			if c.Raddr.Port == 0 {
-				inboundUDP++
-			} else {
+			if c.Raddr.Port != 0 {
 				outboundUDP++
 			}
 		}

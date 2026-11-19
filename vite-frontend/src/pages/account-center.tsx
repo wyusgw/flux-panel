@@ -222,7 +222,10 @@ const GroupMultiSelect = ({
 export default function AccountCenterPage() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
-  const [isAdminUser, setIsAdminUser] = useState(false);
+  const [isAdminUser, setIsAdminUser] = useState(() => {
+    const stored = localStorage.getItem('admin');
+    return stored === null ? parseInt(localStorage.getItem('role_id') || '1', 10) === 0 : stored === 'true';
+  });
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [plans, setPlans] = useState<PackagePlanItem[]>([]);
   const [deviceGroups, setDeviceGroups] = useState<DeviceGroupOption[]>([]);
@@ -636,7 +639,7 @@ export default function AccountCenterPage() {
             }
           />
           <Row
-            label={<HelpTooltip content="供 Sub-Store、Clash 等客户端读取本账号的已用流量、总流量和到期时间。地址返回 JSON，包含 upload、download、total（流量，字节）和 expire（到期时间，Unix 秒），同时带上 subscription-userinfo 响应头。地址里是本账号专属的 Token，不含密码，改密码后也不用更新；地址泄露时点「重置」，原来的地址立即失效">订阅流量</HelpTooltip>}
+            label={<HelpTooltip content="请勿分享，泄露后可重置。">订阅流量</HelpTooltip>}
             value=""
             action={
               <>

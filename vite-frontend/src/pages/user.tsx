@@ -179,7 +179,7 @@ const UNLIMITED_QUOTA = 99999;
 export default function UserPage() {
   // 状态管理
   const [users, setUsers] = useState<User[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   // 搜索词只在前端按用户名/昵称/UID 过滤，输入时实时生效，不再每次输入都重新请求后端
   // 搜索规则：表格只显示拥有匹配规则的用户；null 表示没有在搜索
   const [ruleFilters, setRuleFilters] = useState(EMPTY_RULE_SEARCH);

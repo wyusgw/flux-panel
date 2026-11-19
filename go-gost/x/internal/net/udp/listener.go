@@ -116,6 +116,8 @@ func (ln *listener) getConn(raddr net.Addr) *conn {
 	}
 
 	c = newConn(ln.conn, ln.Addr(), raddr, ln.config.ReadQueueSize, ln.config.Keepalive)
+	activeSessions.Add(1)
+	c.counted.Store(true)
 	select {
 	case ln.cqueue <- c:
 		ln.connPool.Set(raddr.String(), c)
@@ -134,6 +136,7 @@ type conn struct {
 	remoteAddr net.Addr
 	rc         chan []byte // data receive queue
 	idle       int32       // indicate the connection is idle
+	counted    atomic.Bool
 	closed     chan struct{}
 	closeMutex sync.Mutex
 	keepalive  bool
@@ -191,6 +194,9 @@ func (c *conn) Close() error {
 	case <-c.closed:
 	default:
 		close(c.closed)
+		if c.counted.CompareAndSwap(true, false) {
+			activeSessions.Add(-1)
+		}
 	}
 	return nil
 }

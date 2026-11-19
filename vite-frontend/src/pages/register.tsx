@@ -7,7 +7,7 @@ import { useNavigate, Link } from "react-router-dom";
 import toast from 'react-hot-toast';
 import DefaultLayout from "@/layouts/default";
 import { register } from "@/api";
-import { getCachedConfigs } from "@/config/site";
+import { getCachedConfigSync, getCachedConfigs } from "@/config/site";
 import { UserIcon, LockIcon, TicketIcon, EyeIcon, EyeOffIcon } from "@/components/icons";
 
 interface RegisterForm {
@@ -29,7 +29,10 @@ export default function RegisterPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   // disabled-不显示邀请码；optional-显示但选填；required-显示且必填
-  const [invitePolicy, setInvitePolicy] = useState<'disabled' | 'optional' | 'required'>('disabled');
+  const [invitePolicy, setInvitePolicy] = useState<'disabled' | 'optional' | 'required'>(() => {
+    const cached = getCachedConfigSync('invite_register_policy');
+    return cached === 'optional' || cached === 'required' ? cached : 'disabled';
+  });
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -37,6 +40,8 @@ export default function RegisterPage() {
       const policy = configs.invite_register_policy;
       if (policy === 'optional' || policy === 'required') {
         setInvitePolicy(policy);
+      } else if (policy === 'disabled') {
+        setInvitePolicy('disabled');
       }
     }).catch(() => {});
   }, []);

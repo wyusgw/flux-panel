@@ -370,8 +370,9 @@ const getInitialConfigs = (): Record<string, string> => {
 export default function ConfigPage() {
   const navigate = useNavigate();
   const initialConfigs = getInitialConfigs();
+  const hasCompleteInitialConfigs = CONFIG_ITEMS.every(item => initialConfigs[item.key] !== undefined);
   const [configs, setConfigs] = useState<Record<string, string>>(initialConfigs);
-  const [loading, setLoading] = useState(Object.keys(initialConfigs).length === 0); // 如果有缓存数据，不显示loading
+  const [loading, setLoading] = useState(!hasCompleteInitialConfigs); // 只有完整缓存可直接显示，避免缺项的开关先闪成默认值
   // 正在保存的分区：只让被点击的保存按钮转圈，其他分区的按钮在此期间仅禁用
   const [savingSection, setSavingSection] = useState<ConfigItem['section'] | null>(null);
   const [hasChanges, setHasChanges] = useState(false);

@@ -5,7 +5,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import toast from 'react-hot-toast';
 
 import { ThemeSwitch } from '@/components/theme-switch';
-import { siteConfig, getCachedConfigs } from '@/config/site';
+import { siteConfig, getCachedConfigSync, getCachedConfigs } from '@/config/site';
 import { canAccessPath, useMenuPermissions } from '@/utils/menu-permissions';
 import { primaryNavItems, managementNavItems } from '@/config/nav-items';
 import { safeLogout } from '@/utils/logout';
@@ -20,10 +20,13 @@ export default function H5Layout({
 }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [singleTunnelEnabled, setSingleTunnelEnabled] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(() => {
+    const stored = localStorage.getItem('admin');
+    return stored === null ? parseInt(localStorage.getItem('role_id') || '1', 10) === 0 : stored === 'true';
+  });
+  const [singleTunnelEnabled, setSingleTunnelEnabled] = useState(() => getCachedConfigSync('user_device_group_enabled') === 'true');
   const { permissions: menuPermissions } = useMenuPermissions();
-  const [lookingGlassEnabled, setLookingGlassEnabled] = useState(false);
+  const [lookingGlassEnabled, setLookingGlassEnabled] = useState(() => getCachedConfigSync('allow_looking_glass') === 'true');
   const [menuOpen, setMenuOpen] = useState(false);
   // 「管理」二级菜单是否展开：默认展开（与桌面端一致），用户可手动收起
   const [manageOpen, setManageOpen] = useState(true);
@@ -51,8 +54,8 @@ export default function H5Layout({
     }
 
     getCachedConfigs().then((configs) => {
-      setSingleTunnelEnabled(configs.user_device_group_enabled === 'true');
-      setLookingGlassEnabled(configs.allow_looking_glass === 'true');
+      if (configs.user_device_group_enabled !== undefined) setSingleTunnelEnabled(configs.user_device_group_enabled === 'true');
+      if (configs.allow_looking_glass !== undefined) setLookingGlassEnabled(configs.allow_looking_glass === 'true');
     }).catch(() => {});
   }, []);
 

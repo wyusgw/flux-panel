@@ -9,7 +9,7 @@ import axios from 'axios';
 import DefaultLayout from "@/layouts/default";
 import { login, LoginData, checkCaptcha } from "@/api";
 import { ThirdPartyCaptcha, type ThirdPartyProvider } from "@/components/third-party-captcha";
-import { getCachedConfigs } from "@/config/site";
+import { getCachedConfigSync, getCachedConfigs } from "@/config/site";
 import { UserIcon, LockIcon, EyeIcon, EyeOffIcon } from "@/components/icons";
 import "@/utils/tac.css";
 import "@/utils/tac.min.js";
@@ -54,7 +54,7 @@ export default function IndexPage() {
   // 第三方验证码（Google / Cloudflare）：不为 null 时显示对应的验证弹层
   const [thirdParty, setThirdParty] = useState<{ provider: ThirdPartyProvider; siteKey: string } | null>(null);
   const [showPassword, setShowPassword] = useState(false);
-  const [allowRegister, setAllowRegister] = useState(false);
+  const [allowRegister, setAllowRegister] = useState(() => getCachedConfigSync('allow_register') === 'true');
   const navigate = useNavigate();
   const tacInstanceRef = useRef<any>(null);
   const captchaContainerRef = useRef<HTMLDivElement>(null);
@@ -70,7 +70,7 @@ export default function IndexPage() {
   // 站点关闭注册时，登录页不显示"前往注册"入口
   useEffect(() => {
     getCachedConfigs().then((configs) => {
-      setAllowRegister(configs.allow_register === 'true');
+      if (configs.allow_register !== undefined) setAllowRegister(configs.allow_register === 'true');
     }).catch(() => {});
   }, []);
   // 验证表单

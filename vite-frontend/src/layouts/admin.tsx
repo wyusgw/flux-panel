@@ -9,7 +9,7 @@ import { UserMenu } from '@/components/user-menu';
 import { ToastWarningIcon } from '@/components/toast-icons';
 import { safeLogout } from '@/utils/logout';
 import { consumePasswordChangePrompt } from '@/utils/auth';
-import { siteConfig, getCachedConfigs } from '@/config/site';
+import { siteConfig, getCachedConfigSync, getCachedConfigs } from '@/config/site';
 import { canAccessPath, useMenuPermissions } from '@/utils/menu-permissions';
 import { navIcons } from '@/config/nav-icons';
 
@@ -34,10 +34,13 @@ export default function AdminLayout({
   const [mobileMenuVisible, setMobileMenuVisible] = useState(false);
   const [managementMenuOpen, setManagementMenuOpen] = useState(true);
   const [username, setUsername] = useState('');
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [singleTunnelEnabled, setSingleTunnelEnabled] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(() => {
+    const stored = localStorage.getItem('admin');
+    return stored === null ? parseInt(localStorage.getItem('role_id') || '1', 10) === 0 : stored === 'true';
+  });
+  const [singleTunnelEnabled, setSingleTunnelEnabled] = useState(() => getCachedConfigSync('user_device_group_enabled') === 'true');
   const { permissions: menuPermissions } = useMenuPermissions();
-  const [lookingGlassEnabled, setLookingGlassEnabled] = useState(false);
+  const [lookingGlassEnabled, setLookingGlassEnabled] = useState(() => getCachedConfigSync('allow_looking_glass') === 'true');
 
   // 菜单项配置
   const menuItems: MenuItem[] = [
@@ -195,8 +198,8 @@ export default function AdminLayout({
     }
 
     getCachedConfigs().then((configs) => {
-      setSingleTunnelEnabled(configs.user_device_group_enabled === 'true');
-      setLookingGlassEnabled(configs.allow_looking_glass === 'true');
+      if (configs.user_device_group_enabled !== undefined) setSingleTunnelEnabled(configs.user_device_group_enabled === 'true');
+      if (configs.allow_looking_glass !== undefined) setLookingGlassEnabled(configs.allow_looking_glass === 'true');
     }).catch(() => {});
 
     // 响应式检查

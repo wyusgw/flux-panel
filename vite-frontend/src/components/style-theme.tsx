@@ -1,5 +1,5 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { getCachedConfigs } from '@/config/site';
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useState, type ReactNode } from 'react';
+import { getCachedConfigSync, getCachedConfigs } from '@/config/site';
 
 /**
  * 主题风格（经典 / 透明），与明暗模式（浅色 / 深色）是两件独立的事：
@@ -45,9 +45,12 @@ const readPreference = (): StyleTheme | null => {
 };
 
 export function StyleThemeProvider({ children }: { children: ReactNode }) {
-  const [policy, setPolicy] = useState<ThemePolicy>('classic_only');
-  const [landscapeUrl, setLandscapeUrl] = useState('');
-  const [portraitUrl, setPortraitUrl] = useState('');
+  const [policy, setPolicy] = useState<ThemePolicy>(() => {
+    const cached = getCachedConfigSync('theme_policy') as ThemePolicy | null;
+    return cached && POLICIES.includes(cached) ? cached : 'classic_only';
+  });
+  const [landscapeUrl, setLandscapeUrl] = useState(() => safeBackgroundUrl(getCachedConfigSync('transparent_theme_landscape_url') || undefined));
+  const [portraitUrl, setPortraitUrl] = useState(() => safeBackgroundUrl(getCachedConfigSync('transparent_theme_portrait_url') || undefined));
   const [preference, setPreference] = useState<StyleTheme | null>(readPreference);
   const [isPortrait, setIsPortrait] = useState(() => window.matchMedia('(orientation: portrait)').matches);
 
@@ -55,10 +58,12 @@ export function StyleThemeProvider({ children }: { children: ReactNode }) {
   const loadConfig = useCallback(async () => {
     try {
       const configs = await getCachedConfigs();
-      const value = configs.theme_policy as ThemePolicy;
-      setPolicy(POLICIES.includes(value) ? value : 'classic_only');
-      setLandscapeUrl(safeBackgroundUrl(configs.transparent_theme_landscape_url));
-      setPortraitUrl(safeBackgroundUrl(configs.transparent_theme_portrait_url));
+      if (configs.theme_policy !== undefined) {
+        const value = configs.theme_policy as ThemePolicy;
+        setPolicy(POLICIES.includes(value) ? value : 'classic_only');
+      }
+      if (configs.transparent_theme_landscape_url !== undefined) setLandscapeUrl(safeBackgroundUrl(configs.transparent_theme_landscape_url));
+      if (configs.transparent_theme_portrait_url !== undefined) setPortraitUrl(safeBackgroundUrl(configs.transparent_theme_portrait_url));
     } catch {
       // 读取失败保持当前状态（默认经典主题）
     }
@@ -104,7 +109,7 @@ export function StyleThemeProvider({ children }: { children: ReactNode }) {
   }, [theme]);
 
   // 把结果同步到 <html>：透明主题加 theme-transparent 类，并把背景图写进 CSS 变量
-  useEffect(() => {
+  useLayoutEffect(() => {
     const root = document.documentElement;
     if (theme === 'transparent') {
       root.classList.add('theme-transparent');

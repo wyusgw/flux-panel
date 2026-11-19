@@ -132,16 +132,18 @@ const NodeOnlineChart = () => {
             <LegendKey colorClass={OFFLINE_BG} label="离线" />
           </div>
           <div className="flex items-center gap-1">
-            <Button size="sm" variant={range === 'day' ? 'flat' : 'light'} color="default" onPress={() => setRange('day')}>近 24 小时</Button>
-            <Button size="sm" variant={range === 'month' ? 'flat' : 'light'} color="default" onPress={() => setRange('month')}>近 30 天</Button>
+            <Button size="sm" variant={range === 'day' ? 'flat' : 'light'} color="default" onPress={() => { if (range !== 'day') { setLoaded(false); setRange('day'); } }}>近 24 小时</Button>
+            <Button size="sm" variant={range === 'month' ? 'flat' : 'light'} color="default" onPress={() => { if (range !== 'month') { setLoaded(false); setRange('month'); } }}>近 30 天</Button>
           </div>
         </div>
       </CardHeader>
       <CardBody className="px-4 py-4">
         <div className="h-60">
-          {failed ? (
+          {!loaded ? (
+            <div className="h-full flex items-center justify-center text-sm text-default-400">正在加载…</div>
+          ) : failed ? (
             <div className="h-full flex items-center justify-center text-sm text-default-400">数据不可用</div>
-          ) : loaded && data.length === 0 ? (
+          ) : data.length === 0 ? (
             <div className="h-full flex items-center justify-center text-sm text-default-400">数据采集中</div>
           ) : (
             <ResponsiveContainer width="100%" height="100%">

@@ -1,6 +1,6 @@
 import { LeftOutlined } from "@/components/ant-icons";
 import { EmptyState } from "@/components/empty-state";
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Input } from "@heroui/input";
 import { Button } from "@heroui/button";
 import { Card, CardBody } from "@heroui/card";
@@ -13,6 +13,7 @@ import {
   setCurrentPanelAddress, 
   deletePanelAddress, 
   validatePanelAddress,
+  isWebViewFunc,
 } from '@/utils/panel';
 
 interface PanelAddress {
@@ -25,17 +26,27 @@ interface PanelAddress {
 export const SettingsPage = () => {
   const navigate = useNavigate();
   const [panelAddresses, setPanelAddresses] = useState<PanelAddress[]>([]);
+  const [addressesLoading, setAddressesLoading] = useState(false);
+  const addressLoadTimerRef = useRef<number | null>(null);
   const [newName, setNewName] = useState('');
   const [newAddress, setNewAddress] = useState('');
 
 
   const setPanelAddressesFunc = (newAddress: PanelAddress[]) => {
     setPanelAddresses(newAddress); 
+    setAddressesLoading(false);
+    if (addressLoadTimerRef.current !== null) window.clearTimeout(addressLoadTimerRef.current);
   }
 
   // 加载面板地址列表
   const loadPanelAddresses = async () => {
-    (window as any).setPanelAddresses = setPanelAddressesFunc
+    if (!isWebViewFunc()) {
+      setAddressesLoading(false);
+      setPanelAddresses([]);
+      return;
+    }
+    setAddressesLoading(true);
+    (window as any).setPanelAddresses = setPanelAddressesFunc;
     getPanelAddresses();
   };
 
@@ -76,6 +87,10 @@ export const SettingsPage = () => {
   // 页面加载时获取数据
   useEffect(() => {
     loadPanelAddresses();
+    addressLoadTimerRef.current = window.setTimeout(() => setAddressesLoading(false), 2000);
+    return () => {
+      if (addressLoadTimerRef.current !== null) window.clearTimeout(addressLoadTimerRef.current);
+    };
   }, []);
 
   return (
@@ -132,7 +147,9 @@ export const SettingsPage = () => {
           <Card className="management-table-card">
             <CardBody className="p-6">
               <h2 className="text-lg font-medium text-foreground mb-4">已保存的面板地址</h2>
-              {panelAddresses.length === 0 ? (
+              {addressesLoading ? (
+                <div className="py-4 text-sm text-default-500">正在加载面板地址…</div>
+              ) : panelAddresses.length === 0 ? (
                 <EmptyState text="暂无保存的面板地址" />
               ) : (
                 <div className="space-y-3">

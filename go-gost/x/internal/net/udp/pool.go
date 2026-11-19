@@ -2,10 +2,22 @@ package udp
 
 import (
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-gost/core/logger"
 )
+
+var activeSessions atomic.Int64
+
+// ActiveSessions 返回当前 UDP listener 中仍处于活动期的客户端会话数。
+func ActiveSessions() int {
+	count := activeSessions.Load()
+	if count < 0 {
+		return 0
+	}
+	return int(count)
+}
 
 type connPool struct {
 	m      sync.Map

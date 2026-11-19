@@ -33,6 +33,27 @@
         // 立即设置主题类，避免闪烁
         applyDark(hasManualPreference() && saved ? saved === 'dark' : systemDark);
 
+        // 透明主题同样从已缓存的站点设置初始化，避免 React 启动后才切换页面背景。
+        try {
+          const root = document.documentElement;
+          const policy = localStorage.getItem('config_theme_policy');
+          const landscape = localStorage.getItem('config_transparent_theme_landscape_url') || '';
+          const portrait = localStorage.getItem('config_transparent_theme_portrait_url') || '';
+          const isPortrait = window.matchMedia && window.matchMedia('(orientation: portrait)').matches;
+          const background = isPortrait ? (portrait || landscape) : (landscape || portrait);
+          const preference = localStorage.getItem('flux-style-theme');
+          const validBackground = /^(https?:\/\/|\/)[^\s"'()\\]+$/i.test(background);
+          const transparent = validBackground && (
+            policy === 'transparent_only' ||
+            (policy === 'prefer_transparent' && preference !== 'classic') ||
+            (policy === 'prefer_classic' && preference === 'transparent')
+          );
+          if (transparent) {
+            root.classList.add('theme-transparent');
+            root.style.setProperty('--theme-bg-image', `url("${background}")`);
+          }
+        } catch (e) {}
+
         // 监听系统主题变化：手动选择过主题后不再跟随系统
         if (window.matchMedia) {
           window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function(e) {

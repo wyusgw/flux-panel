@@ -68,6 +68,15 @@ export const configCache = {
   }
 };
 
+/** 同步读取本地配置缓存，用于页面首次渲染，避免等 API 返回后界面状态跳变。 */
+export const getCachedConfigSync = (key: string): string | null => {
+  try {
+    return configCache.get(key);
+  } catch {
+    return null;
+  }
+};
+
 // 获取单个配置（优先从缓存）
 export const getCachedConfig = async (key: string): Promise<string | null> => {
   const cachedValue = configCache.get(key);
